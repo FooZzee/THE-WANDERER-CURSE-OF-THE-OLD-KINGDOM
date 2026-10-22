@@ -1,0 +1,6 @@
+{
+  "name": "The Wanderer: Curse of the Old Kingdom",
+  "description": "3D Dark Fantasy Action RPG in Three.js featuring open-world exploration, tactical sword combat, magic signs, monster hunting, branching quests, and inventory progression.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
