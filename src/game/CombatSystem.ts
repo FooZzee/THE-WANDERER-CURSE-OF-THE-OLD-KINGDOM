@@ -136,6 +136,8 @@ export class CombatSystem {
       defense: number;
       critChance?: number;
       bossDamageMultiplier?: number;
+      activeSet?: string | null;
+      mythicPassive?: string;
     },
     obstacles: CollisionCylinder[],
     onEnemyKilled: (enemy: EnemyData) => void,
@@ -151,6 +153,19 @@ export class CombatSystem {
     // Honest 3-phase attack evaluation: only hit during the 'active' swing phase
     if (player.getAttackPhase() === 'active' && !player.attackHitRegistered) {
       player.attackHitRegistered = true;
+
+      // Mythic Weapon: Sun Eater ('sun_eater') releases a fire wave on Heavy Attacks
+      if (player.isHeavyAttack && effectiveStats.mythicPassive === 'sun_eater') {
+        this.spawnDirectionalConeParticles(
+          player.stats.x,
+          player.stats.y + 1.1,
+          player.stats.z,
+          player.stats.rotationY,
+          0xf97316,
+          42,
+          Math.PI * 0.42
+        );
+      }
 
       const reach = player.isHeavyAttack ? 3.5 : 3.0;
       const halfCone = player.isHeavyAttack
@@ -195,6 +210,31 @@ export class CombatSystem {
             bossDamageMultiplier: effectiveStats.bossDamageMultiplier,
           });
 
+          // Check Crystal Colossus Armor ('boss_colossus'): 3 crystal growths on its back
+          if (ed.type === 'boss_colossus' && (ed.crystalArmorCount ?? 0) > 0) {
+            if (
+              player.isHeavyAttack ||
+              effectiveStats.mythicPassive === 'black_cleaver' ||
+              effectiveStats.mythicPassive === 'void_voice'
+            ) {
+              const rem = enemyAI.shatterColossusCrystal(ed.id);
+              this.spawnHitParticles(ed.x, ed.y + 1.8, ed.z, 0x38bdf8, 28);
+              onCombatLog(
+                `Вы раскололи кристальный нарост Колосса! Осталось кристаллов брони: ${rem}/3`,
+                'quest'
+              );
+              onFloatingDamage?.(`РАСКОЛ КРИСТАЛЛА (${rem}/3)`, true, false, '#38bdf8');
+            } else {
+              dmg = Math.max(4, Math.round(dmg * 0.2));
+              this.spawnHitParticles(ed.x, ed.y + 1.3, ed.z, 0x38bdf8, 14);
+              this.audio.playHitImpact(true);
+              onCombatLog(
+                `Кристальная броня Колосса поглощает удар (-${dmg} ОЗ)! Разбейте 3 кристалла Тяжёлыми ударами или знаком «Импульс»!`,
+                'info'
+              );
+            }
+          }
+
           // Check Gargoyle Armor ("Каменный жнец"): vulnerable only to Heavy attacks or Backstabs
           const attackDirX = Math.sin(player.stats.rotationY);
           const attackDirZ = Math.cos(player.stats.rotationY);
@@ -202,7 +242,13 @@ export class CombatSystem {
           const enemyFaceZ = Math.cos(ed.rotationY);
           const isBackstab = attackDirX * enemyFaceX + attackDirZ * enemyFaceZ > 0.25;
 
-          if (ed.type === 'gargoyle' && !player.isHeavyAttack && !isBackstab) {
+          if (
+            ed.type === 'gargoyle' &&
+            !player.isHeavyAttack &&
+            !isBackstab &&
+            effectiveStats.mythicPassive !== 'black_cleaver' &&
+            effectiveStats.mythicPassive !== 'void_voice'
+          ) {
             dmg = Math.max(2, Math.round(dmg * 0.15));
             this.spawnHitParticles(ed.x, ed.y + 1.15, ed.z, 0xa8a29e, 14);
             this.audio.playHitImpact(true);
@@ -214,17 +260,47 @@ export class CombatSystem {
             dmg = Math.round(dmg * 1.25);
           }
 
+          // Mythic Weapon Passives & Set Bonuses
+          if (effectiveStats.mythicPassive === 'void_voice') {
+            dmg = Math.round(dmg * 1.35);
+          }
+          if (effectiveStats.mythicPassive === 'sun_eater' && player.isHeavyAttack) {
+            dmg = Math.round(dmg * 1.25);
+            ed.burnTimer = Math.max(ed.burnTimer, 4.0);
+          }
+          if (effectiveStats.mythicPassive === 'plague_scythe') {
+            ed.bleedTimer = Math.max(ed.bleedTimer ?? 0, 5.0);
+          }
+          if (effectiveStats.mythicPassive === 'dusk_fangs' && player.comboStep === 3) {
+            const heal = Math.max(4, Math.round(dmg * 0.15));
+            player.stats.hp = Math.min(player.stats.maxHp, player.stats.hp + heal);
+            onFloatingDamage?.(`+${heal} ОЗ (Вампиризм)`, false, false, '#4ade80');
+          }
+          if (effectiveStats.activeSet === 'frost_warden') {
+            ed.slowTimer = Math.max(ed.slowTimer, 2.5);
+          }
+
           // Blade Oil bonus (+30% damage)
           const oil = player.stats.activeBladeOil ?? 'none';
           const oilMatches =
-            (oil === 'necrophage' && (ed.type === 'ghoul' || ed.type === 'skeleton')) ||
+            (oil === 'necrophage' &&
+              (ed.type === 'ghoul' || ed.type === 'skeleton' || ed.type === 'drowned')) ||
             (oil === 'cursed' &&
-              (ed.type === 'werewolf' || ed.type === 'demon' || ed.type === 'hag')) ||
+              (ed.type === 'werewolf' ||
+                ed.type === 'demon' ||
+                ed.type === 'hag' ||
+                ed.type === 'plague_reaper' ||
+                ed.type === 'boss_hydra' ||
+                ed.type === 'troglodyte')) ||
             (oil === 'specter' &&
               (ed.type === 'noonwraith' ||
+                ed.type === 'frost_wraith' ||
                 ed.type === 'boss' ||
                 ed.type === 'malakor' ||
-                ed.type === 'gargoyle'));
+                ed.type === 'gargoyle' ||
+                ed.type === 'boss_colossus' ||
+                ed.type === 'void_knight' ||
+                ed.type === 'boss_avatar'));
           if (oilMatches && (player.stats.bladeOilTimer ?? 0) > 0) {
             dmg = Math.round(dmg * 1.3);
           }
@@ -261,12 +337,14 @@ export class CombatSystem {
           ed.y = getGroundHeight(ed.x, ed.z);
           activeEnemy.rig.root.position.set(ed.x, ed.y, ed.z);
 
-          if (player.isHeavyAttack) {
-            ed.stunTimer = Math.max(ed.stunTimer, 1.15);
+          if (player.isHeavyAttack || effectiveStats.mythicPassive === 'black_cleaver') {
+            ed.stunTimer = Math.max(
+              ed.stunTimer,
+              effectiveStats.mythicPassive === 'black_cleaver' ? 1.65 : 1.15
+            );
           }
 
           enemyAI.triggerHitFlash(activeEnemy);
-          // Sparks + Blood particles
           this.spawnHitParticles(ed.x, ed.y + 1.15, ed.z, 0xf59e0b, 18);
           this.spawnHitParticles(ed.x, ed.y + 1.0, ed.z, 0xdc2626, 14);
           this.audio.playHitImpact(false);
@@ -335,7 +413,8 @@ export class CombatSystem {
     effectiveDefense: number,
     onCombatLog: (msg: string, type: 'info' | 'damage' | 'quest' | 'loot') => void,
     onCameraShake?: (intensity: number, duration: number) => void,
-    onBarrierShatter?: () => void
+    onBarrierShatter?: () => void,
+    activeSet?: string | null
   ): void {
     const isDodging = player.hasIFrames();
     const isBlocking = player.isBlocking && player.stats.stamina >= 8;
@@ -372,6 +451,28 @@ export class CombatSystem {
       return;
     }
 
+    // Obsidian Set ('obsidian') reflects 20% of incoming raw damage back to the attacker
+    if (activeSet === 'obsidian' && enemy.hp > 1) {
+      const reflected = Math.max(3, Math.round(rawDamage * 0.2));
+      enemy.hp = Math.max(1, enemy.hp - reflected);
+    }
+
+    // Northern enemy status effects on hit
+    if (
+      enemy.type === 'drowned' ||
+      enemy.type === 'plague_reaper' ||
+      enemy.type === 'boss_hydra'
+    ) {
+      const isHydraImmune =
+        player.stats.activeDecoction === 'hydra' && (player.stats.decoctionTimer ?? 0) > 0;
+      if (!isHydraImmune) {
+        player.stats.poisonTimer = 6.0;
+      }
+    }
+    if (enemy.type === 'frost_wraith') {
+      player.stats.stamina = Math.max(0, player.stats.stamina - 14);
+    }
+
     if (res.parried) {
       player.stats.stamina = Math.max(0, player.stats.stamina - 10);
       this.spawnHitParticles(
@@ -393,7 +494,13 @@ export class CombatSystem {
         18
       );
       this.audio.playHitImpact(false);
-      player.triggerHitReaction();
+      // Obsidian Set & Colossus Decoction grant hyperarmor (no stagger interruption)
+      const hasHyperarmor =
+        activeSet === 'obsidian' ||
+        (player.stats.activeDecoction === 'colossus' && (player.stats.decoctionTimer ?? 0) > 0);
+      if (!hasHyperarmor) {
+        player.triggerHitReaction();
+      }
       onCameraShake?.(0.18, 0.18);
       onCombatLog(`${enemy.name} наносит вам ${res.hpDamage} урона!`, 'damage');
     }

@@ -8,9 +8,63 @@ import type {
   Quest,
   SignType,
   SkillNode,
+  WaystoneData,
   WeatherType,
   WitcherSetId,
 } from './types.ts';
+
+export const WAYSTONES: WaystoneData[] = [
+  {
+    id: 'waystone_village',
+    name: 'Камень Вороньей Пади',
+    biomeName: 'Деревня Воронья Падь',
+    x: 4,
+    z: 6,
+    unlockedByDefault: true,
+  },
+  {
+    id: 'waystone_fortress',
+    name: 'Камень Северной Заставы',
+    biomeName: 'Разрушенная крепость',
+    x: 56,
+    z: -56,
+  },
+  {
+    id: 'waystone_cemetery',
+    name: 'Камень Пепельного Погоста',
+    biomeName: 'Пепельный Погост и Лагерь Ордена',
+    x: -6,
+    z: 62,
+  },
+  {
+    id: 'waystone_swamp',
+    name: 'Камень Затопленных Топей',
+    biomeName: 'Тракт Висельников и Затопленные Топи',
+    x: -8,
+    z: -145,
+  },
+  {
+    id: 'waystone_pass',
+    name: 'Камень Среброзубого Перевала',
+    biomeName: 'Среброзубый Перевал и Мёртвые Шахты',
+    x: 6,
+    z: -255,
+  },
+  {
+    id: 'waystone_bastion',
+    name: 'Камень Чёрного Бастиона',
+    biomeName: 'Чёрный Бастион Братства Пепла',
+    x: 0,
+    z: -365,
+  },
+  {
+    id: 'waystone_crater',
+    name: 'Камень Кратера Затмения',
+    biomeName: 'Кратер Затмения и Зал Трона Пустоты',
+    x: 0,
+    z: -468,
+  },
+];
 
 export const MAGIC_SIGNS: Record<SignType, MagicSignInfo> = {
   flame: {
@@ -174,16 +228,197 @@ export const BESTIARY_ENTRIES: BestiaryEntry[] = [
     trophyBonus: 'Корона Падшего Короля Малакора',
     dangerLevel: 5,
   },
+  // ===========================================================================
+  // СЕВЕРНЫЙ ПОХОД: НОВЫЕ ВРАГИ И БОССЫ 4 БИОМОВ
+  // ===========================================================================
+  {
+    id: 'bestiary_drowned',
+    type: 'drowned',
+    name: 'Болотный Утопленник',
+    title: 'Обитатель Затопленных Топей',
+    category: 'Трупоеды',
+    lore: 'Беженцы из столицы Вальдмарка, утопленные королевскими карателями в трясине у Тракта Висельников. Выпрыгивают из мутной воды, плюются болотной желчью, накладывая отравление и замедление.',
+    weaknessSigns: ['Пламя (Игнис)', 'Импульс (Аард)'],
+    weaknessOil: 'Масло против трупоедов (+30% урона)',
+    trophyBonus: 'Кровь упыря и болотная желчь',
+    dangerLevel: 3,
+  },
+  {
+    id: 'bestiary_plague_reaper',
+    type: 'plague_reaper',
+    name: 'Чумной Жнец',
+    title: 'Палач Тракта Висельников',
+    category: 'Проклятые',
+    lore: 'Бывшие королевские чумные лекари и вешатели, сросшиеся со своими двуручными косами. Окружены облаком трупных миазмов, наносящим урон вблизи, и совершают широкие круговые взмахи.',
+    weaknessSigns: ['Пламя (Игнис) — рассеивает миазмы', 'Барьер (Квен)'],
+    weaknessOil: 'Масло против проклятых (+30% урона)',
+    trophyBonus: 'Проклятая эссенция и осколки косы',
+    dangerLevel: 4,
+  },
+  {
+    id: 'bestiary_troglodyte',
+    type: 'troglodyte',
+    name: 'Горный Троглодит',
+    title: 'Мутант Мёртвых Шахт',
+    category: 'Огроиды и Мутанты',
+    lore: 'Рудокопы Среброзубого Перевала, чьи тела разрослись от испарений Чёрной Руды. Швыряют каменные глыбы издалека и наносят сокрушительные удары кайлом, пробивающие обычный блок.',
+    weaknessSigns: ['Иллюзия (Морок)', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Масло против проклятых (+30% урона)',
+    trophyBonus: 'Чёрная руда',
+    dangerLevel: 4,
+  },
+  {
+    id: 'bestiary_frost_wraith',
+    type: 'frost_wraith',
+    name: 'Ледяной Призрак Перевала',
+    title: 'Дух замёрзших каторжников',
+    category: 'Призраки',
+    lore: 'Тени горняков, заживо погребённых в обледенелых штольнях. Их прикосновение мгновенно выжигает выносливость охотника и сковывает движения морозным проклятием.',
+    weaknessSigns: ['Пламя (Игнис)', 'Импульс (Аард) — сбивает астрал'],
+    weaknessOil: 'Масло против призраков (+30% урона)',
+    trophyBonus: 'Ледяной лотос и Пыль пустоты',
+    dangerLevel: 4,
+  },
+  {
+    id: 'bestiary_fallen_ash',
+    type: 'fallen_ash',
+    name: 'Падший Зольник',
+    title: 'Одержимый брат Школы Пепла',
+    category: 'Отступники Братства',
+    lore: 'Бывшие братья-охотники Чёрного Бастиона, принявшие сторону Грандмастера Веспера или сломленные шёпотом Пустоты. Владеют стремительным фехтованием, перекатами и применяют против Корвуса те же боевые Печати Пепла.',
+    weaknessSigns: ['Импульс (Аард)', 'Иллюзия (Морок)'],
+    weaknessOil: 'Стальной клинок и Масло против проклятых',
+    trophyBonus: 'Чёрная руда и реликтовые чертежи Бастиона',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_void_knight',
+    type: 'void_knight',
+    name: 'Рыцарь Пустоты',
+    title: 'Бессмертный страж Кратера Затмения',
+    category: 'Порождения Бездны',
+    lore: 'Элитные телохранители трона, закованные в живой обсидиан. Способны мгновенно телепортироваться сквозь разломы пространства и обрушивать на врага удары багровой молнии.',
+    weaknessSigns: ['Барьер (Квен)', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Масло против призраков и реликтов (+30% урона)',
+    trophyBonus: 'Пыль пустоты и Чёрная руда',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_hydra',
+    type: 'boss_hydra',
+    name: 'Матерь Трясины (Болотная Гидра)',
+    title: 'Босс Затопленных Топей',
+    category: 'Древние Боссы Севера',
+    lore: 'Исполинское многоголовое порождение Чёрной Росы, гнездящееся в центре Затопленных Топей. Плюётся разъедающей броню кислотой и призывает из омутов утопленников и болотные щупальца.',
+    weaknessSigns: ['Пламя (Игнис) — прижигает регенерацию', 'Барьер (Квен)'],
+    weaknessOil: 'Масло против трупоедов (+30% урона)',
+    trophyBonus: 'Сердце гидры (Отвар Матери Трясины: иммунитет к яду и регенерация)',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_colossus',
+    type: 'boss_colossus',
+    name: 'Кристальный Колосс Чёрной Руды',
+    title: 'Босс Среброзубого Перевала и Мёртвых Шахт',
+    category: 'Древние Боссы Севера',
+    lore: 'Огромный голем из живой породы и замёрзшей крови Древнего Бога. Его панцирь почти неуязвим, пока охотник не расколет светящиеся кристальные наросты на его теле знаком «Импульс» (Аард) или сокрушительными тяжёлыми ударами.',
+    weaknessSigns: ['Импульс (Аард) — разбивает кристальную броню', 'Барьер (Квен)'],
+    weaknessOil: 'Масло против призраков и реликтов',
+    trophyBonus: 'Ядро Колосса (Отвар Кристального Колосса: +35% брони и несокрушимость)',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_vesper',
+    type: 'boss_vesper',
+    name: 'Грандмастер Веспер, Предатель Пепла',
+    title: 'Босс Чёрного Бастиона Братства',
+    category: 'Древние Боссы Севера',
+    lore: 'Приёмный отец и наставник Корвуса, некогда величайший мечник Школы Ворона. Помог Малакору провести ритуал Затмения, чтобы выковать из Корвуса идеальный сосуд против Сердца Пустоты. В дуэли использует парные клинки «Клыки Заката», все 5 Печатей Пепла, ведьмачьи эликсиры и молниеносные контратаки.',
+    weaknessSigns: ['Барьер (Квен)', 'Ледяная печать (Ирден)', 'Импульс (Аард)'],
+    weaknessOil: 'Безупречная реакция и знание приёмов Школы Ворона',
+    trophyBonus: 'Медальон Грандмастера и Парные клинки «Клыки Заката»',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_avatar',
+    type: 'boss_avatar',
+    name: 'Аватара Сердца Пустоты',
+    title: 'Архибосс Кратера Затмения (Финал)',
+    category: 'Первобытное Божество Бездны',
+    lore: 'Воплощение древней сущности под расколотой Королевской Горой, ставшей причиной Ночи Пепельного Затмения. Сражается в 3 эпохальных фазах: искажает гравитацию, обрушивает реки багровой энергии и призывает из Бездны теневые фантомы поверженных боссов.',
+    weaknessSigns: ['Все Пять Печатей Пепла', 'Барьер (Квен)', 'Пламя (Игнис)'],
+    weaknessOil: 'Масло против призраков и реликтов (+30% урона)',
+    trophyBonus: 'Право решить судьбу Вальдмарка у Алтаря Затмения',
+    dangerLevel: 5,
+  },
 ];
 
 /**
  * Deterministic procedural ground height function for the entire region.
  * Flat around the central village and key arenas so buildings sit flush.
+ * Seamless Northern Expansion extends from z = -105 to z = -550.
  */
 export function getGroundHeight(x: number, z: number): number {
   // Underground Catacombs chamber at (x > 80, z > 80)
   if (x > 75 && z > 75) {
     return 0;
+  }
+
+  // Seamless Northern Expansion (z < -102)
+  if (z < -102) {
+    // Transition blend at z in [-112, -102]
+    const northBlend = Math.min(1, Math.max(0, (-102 - z) / 10));
+
+    // Biome 1: Gallows Swamp (z in [-215, -102]) — low-lying sunken mire
+    if (z >= -215) {
+      const distSwampArena = Math.hypot(x - 0, z - -190);
+      const distCharonCamp = Math.hypot(x - -8, z - -145);
+      const arenaFlat = Math.min(1, Math.max(0, (distSwampArena - 18) / 10));
+      const campFlat = Math.min(1, Math.max(0, (distCharonCamp - 12) / 8));
+      // Wooden causeway / boardwalk along x in [-3.5, 3.5]
+      if (Math.abs(x) < 3.6) {
+        return -0.25 * northBlend;
+      }
+      const swampWaves =
+        Math.sin(x * 0.06) * Math.cos(z * 0.06) * 0.85 * arenaFlat * campFlat - 0.65;
+      return swampWaves * northBlend;
+    }
+
+    // Biome 2: Silvertooth Pass & Dead Mines (z in [-325, -215]) — ascending rocky canyon
+    if (z >= -325) {
+      const progress = Math.min(1, Math.max(0, (-215 - z) / 110));
+      const baseElevation = progress * 6.5; // Climbs from 0 to +6.5m
+      const distColossusArena = Math.hypot(x - 0, z - -300);
+      const distBromCamp = Math.hypot(x - 6, z - -255);
+      const flatFactor =
+        Math.min(1, Math.max(0, (distColossusArena - 20) / 10)) *
+        Math.min(1, Math.max(0, (distBromCamp - 12) / 8));
+      // Canyon road center vs rocky walls
+      const roadFactor = Math.min(1, Math.max(0, (Math.abs(x) - 10) / 18));
+      const crags =
+        (Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2.6 + roadFactor * 3.2) * flatFactor;
+      return baseElevation + crags;
+    }
+
+    // Biome 3: Black Bastion of the Brotherhood of Ash (z in [-435, -325]) — mountain plateau at +6.5m
+    if (z >= -435) {
+      const basePlateau = 6.5;
+      const distCourtyard = Math.hypot(x - 0, z - -395);
+      const distKaelCamp = Math.hypot(x - 0, z - -355);
+      const flatBastion =
+        Math.min(1, Math.max(0, (distCourtyard - 26) / 12)) *
+        Math.min(1, Math.max(0, (distKaelCamp - 14) / 8));
+      const ridges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.4 * flatBastion;
+      return basePlateau + ridges;
+    }
+
+    // Biome 4: Eclipse Crater & Throne of the Void (z < -435) — descends into obsidian caldera at +3.5m
+    const craterProgress = Math.min(1, Math.max(0, (-435 - z) / 25));
+    const baseCrater = 6.5 - craterProgress * 3.0; // Settles at +3.5m
+    const distThrone = Math.hypot(x - 0, z - -505);
+    const flatThrone = Math.min(1, Math.max(0, (distThrone - 28) / 12));
+    const rim = Math.min(1, Math.max(0, (Math.abs(x) - 26) / 20)) * 3.5 * flatThrone;
+    return baseCrater + rim;
   }
 
   // Distance from village center (0, 0)
@@ -230,6 +465,18 @@ export function getGroundHeight(x: number, z: number): number {
 export function getBiomeAt(x: number, z: number): { id: BiomeId; name: string } {
   if (x > 75 && z > 75) {
     return { id: 'catacombs', name: 'Подземные Катакомбы Древних Королей' };
+  }
+  if (z < -435) {
+    return { id: 'eclipse_crater', name: 'Кратер Затмения и Зал Трона Пустоты' };
+  }
+  if (z < -325) {
+    return { id: 'ash_bastion', name: 'Чёрный Бастион Братства Пепла' };
+  }
+  if (z < -215) {
+    return { id: 'silver_pass', name: 'Среброзубый Перевал и Мёртвые Шахты' };
+  }
+  if (z < -105) {
+    return { id: 'gallows_swamp', name: 'Тракт Висельников и Затопленные Топи' };
   }
   if (Math.hypot(x, z) < 30) {
     return { id: 'village', name: 'Деревня Воронья Падь' };
@@ -282,7 +529,7 @@ export function isTargetInAttackCone(
 
 /**
  * Calculates effective player combat stats taking equipped items, Witcher Set bonuses,
- * Trophy passives, socketed Runes, Elixirs, and skill tree into account.
+ * Trophy passives, socketed Runes, Elixirs, Decoctions, and skill tree into account.
  */
 export function computeEffectivePlayerStats(
   base: PlayerStats,
@@ -313,6 +560,9 @@ export function computeEffectivePlayerStats(
     raven: 0,
     bear: 0,
     flame: 0,
+    grandmaster: 0,
+    obsidian: 0,
+    frost_warden: 0,
   };
 
   for (const item of inventory) {
@@ -332,7 +582,10 @@ export function computeEffectivePlayerStats(
   }
 
   let activeSet: WitcherSetId | null = null;
-  if (setCounts.raven >= 2) activeSet = 'raven';
+  if (setCounts.grandmaster >= 2) activeSet = 'grandmaster';
+  else if (setCounts.obsidian >= 2) activeSet = 'obsidian';
+  else if (setCounts.frost_warden >= 2) activeSet = 'frost_warden';
+  else if (setCounts.raven >= 2) activeSet = 'raven';
   else if (setCounts.bear >= 2) activeSet = 'bear';
   else if (setCounts.flame >= 2) activeSet = 'flame';
 
@@ -343,6 +596,34 @@ export function computeEffectivePlayerStats(
     hpBonus += 55;
   } else if (activeSet === 'flame') {
     signBonus += 35;
+  } else if (activeSet === 'grandmaster') {
+    // Tier-5 Set: Empowers all 5 signs (+65% Sign Intensity) & +25% Crit Chance
+    signBonus += 65;
+    critChance += 0.25;
+    hpBonus += 60;
+  } else if (activeSet === 'obsidian') {
+    // Tier-5 Set: Unbreakable poise & massive armor + reflects 20% damage
+    defenseBonus = Math.round(defenseBonus * 1.55) + 16;
+    hpBonus += 110;
+  } else if (activeSet === 'frost_warden') {
+    // Tier-4 Set: Frost blade strikes & high defense/sign hybrid
+    defenseBonus = Math.round(defenseBonus * 1.3) + 10;
+    signBonus += 40;
+    hpBonus += 75;
+  }
+
+  // Boss Decoction buffs
+  if ((base.decoctionTimer ?? 0) > 0 && base.activeDecoction) {
+    if (base.activeDecoction === 'hydra') {
+      hpRegen += 8;
+      hpBonus += 60;
+    } else if (base.activeDecoction === 'colossus') {
+      defenseBonus += 22;
+      hpBonus += 80;
+    } else if (base.activeDecoction === 'vesper') {
+      critChance += 0.2;
+      signBonus += 40;
+    }
   }
 
   const combatSkill = skills.find((s) => s.id === 'skill_blade_mastery')?.level ?? 0;
@@ -359,15 +640,21 @@ export function computeEffectivePlayerStats(
     totalSilver = Math.round(totalSilver * 1.35);
   }
 
+  // Vesper Decoction: +20% sword damage
+  if ((base.decoctionTimer ?? 0) > 0 && base.activeDecoction === 'vesper') {
+    totalSteel = Math.round(totalSteel * 1.2);
+    totalSilver = Math.round(totalSilver * 1.2);
+  }
+
   const totalDefense = base.baseDefense + defenseBonus + vitalitySkill * 3;
   const totalMaxHp = base.maxHp + hpBonus + vitalitySkill * 25;
   const placeOfPowerBuff = (base.placeOfPowerTimer ?? 0) > 0 ? 25 : 0;
   const totalSignIntensity = base.signIntensity + signBonus + signSkill * 15 + placeOfPowerBuff;
 
-  // «Хранитель Памяти Вальдмарка»: +15% damage against bosses when all 12 lore texts are collected
-  const isLoreMaster =
-    Boolean(base.loreMasterUnlocked) || (base.discoveredLoreIds?.length ?? 0) >= 12;
-  const bossDamageMultiplier = isLoreMaster ? 1.15 : 1.0;
+  // «Хранитель Памяти Вальдмарка»: +15% damage against bosses when >= 12 lore texts are collected (+25% if all 22 collected)
+  const loreCount = base.discoveredLoreIds?.length ?? 0;
+  const isLoreMaster = Boolean(base.loreMasterUnlocked) || loreCount >= 12;
+  const bossDamageMultiplier = loreCount >= 22 ? 1.25 : isLoreMaster ? 1.15 : 1.0;
 
   return {
     steelAttack: totalSteel,
@@ -404,6 +691,10 @@ export function calculatePlayerAttackDamage(params: {
     params.enemy.isContractBoss ||
     params.enemy.type === 'boss' ||
     params.enemy.type === 'malakor' ||
+    params.enemy.type === 'boss_hydra' ||
+    params.enemy.type === 'boss_colossus' ||
+    params.enemy.type === 'boss_vesper' ||
+    params.enemy.type === 'boss_avatar' ||
     params.enemy.type === 'werewolf' ||
     params.enemy.type === 'noonwraith' ||
     params.enemy.type === 'gargoyle' ||
@@ -582,7 +873,14 @@ export function evaluateDicePokerHand(dice: number[]): {
 export const BESTIARY_DATA = BESTIARY_ENTRIES;
 
 export interface AlchemyRecipe {
-  id: 'potion_swallow' | 'potion_thunderbolt' | 'potion_cat' | 'potion_blizzard';
+  id:
+    | 'potion_swallow'
+    | 'potion_thunderbolt'
+    | 'potion_cat'
+    | 'potion_blizzard'
+    | 'decoction_hydra'
+    | 'decoction_colossus'
+    | 'decoction_vesper';
   name: string;
   description: string;
   ingredients: { itemId: string; name: string; count: number }[];
@@ -612,6 +910,33 @@ export const ALCHEMY_RECIPES: AlchemyRecipe[] = [
     name: 'Эликсир «Пурга» (x2)',
     description: 'Мгновенно восстанавливает +80 выносливости (+22 Токсичности).',
     ingredients: [{ itemId: 'herb_swallow', name: 'Ласточкина трава', count: 1 }],
+  },
+  {
+    id: 'decoction_hydra',
+    name: 'Отвар из Матери Трясины',
+    description: 'Высшая алхимия: +8 ОЗ/сек регенерации, +60 макс. ОЗ и иммунитет к яду на 180 сек.',
+    ingredients: [
+      { itemId: 'hydra_heart', name: 'Сердце гидры', count: 1 },
+      { itemId: 'herb_swallow', name: 'Ласточкина трава', count: 1 },
+    ],
+  },
+  {
+    id: 'decoction_colossus',
+    name: 'Отвар из Кристального Колосса',
+    description: 'Высшая алхимия: +22 Брони, +80 макс. ОЗ и устойчивость к сбиванию на 180 сек.',
+    ingredients: [
+      { itemId: 'black_ore', name: 'Чёрная руда', count: 2 },
+      { itemId: 'ice_lotus', name: 'Ледяной лотос', count: 1 },
+    ],
+  },
+  {
+    id: 'decoction_vesper',
+    name: 'Отвар Тлеющей Крови',
+    description: 'Высшая алхимия: +20% к урону клинками, +20% шанс крита и +40% мощи Печатей на 180 сек.',
+    ingredients: [
+      { itemId: 'void_dust', name: 'Пыль пустоты', count: 1 },
+      { itemId: 'cursed_essence', name: 'Проклятая эссенция', count: 1 },
+    ],
   },
 ];
 
@@ -795,7 +1120,7 @@ export function interpolateWeatherMetrics(
 /**
  * Pure helper for unlocking a world lore note / codex entry:
  * - Grants +25 XP on first discovery
- * - Unlocks the «Хранитель Памяти Вальдмарка» (+15% boss damage) talent when all 12 notes are found
+ * - Unlocks the «Хранитель Памяти Вальдмарка» (+15% boss damage) talent when 12 notes are found
  */
 export function discoverLoreEntry(
   stats: PlayerStats,
@@ -833,6 +1158,7 @@ export function discoverLoreEntry(
     unlockedLoreMaster,
   };
 }
+
 
 
 

@@ -247,8 +247,8 @@ test('interpolateWeatherMetrics smoothly blends atmospheric parameters between w
   assert.equal(foggy.mistIntensity, 1);
 });
 
-test('WORLD_LORE_NOTES defines 12 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 12/12', () => {
-  assert.equal(WORLD_LORE_NOTES.length, 12);
+test('WORLD_LORE_NOTES defines 22 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 22/22', () => {
+  assert.equal(WORLD_LORE_NOTES.length, 22);
   assert.equal(PROLOGUE_SLIDES.length, 3);
   assert.ok(CODEX_ARTICLES.length >= 6);
 
@@ -283,7 +283,7 @@ test('WORLD_LORE_NOTES defines 12 canonical chronicles and discoverLoreEntry awa
     const res = discoverLoreEntry(stats, note.id, WORLD_LORE_NOTES.length);
     assert.equal(res.newlyDiscovered, true);
     assert.equal((res.updated.discoveredLoreIds ?? []).length, i + 1);
-    assert.equal(res.unlockedLoreMaster, i + 1 === 12);
+    assert.equal(res.unlockedLoreMaster, i + 1 === WORLD_LORE_NOTES.length);
     stats = res.updated;
   }
 

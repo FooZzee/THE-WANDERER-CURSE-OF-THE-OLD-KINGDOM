@@ -21,7 +21,22 @@ export type ItemCategory =
   | 'rune'
   | 'blueprint';
 
-export type WitcherSetId = 'raven' | 'bear' | 'flame';
+export type WitcherSetId =
+  | 'raven'
+  | 'bear'
+  | 'flame'
+  | 'grandmaster'
+  | 'obsidian'
+  | 'frost_warden';
+
+export type MythicPassiveId =
+  | 'sun_eater'
+  | 'dusk_fangs'
+  | 'void_voice'
+  | 'black_cleaver'
+  | 'plague_scythe';
+
+export type DecoctionType = 'none' | 'hydra' | 'colossus' | 'vesper';
 
 export interface GameItem {
   id: string;
@@ -34,6 +49,8 @@ export interface GameItem {
   equipped?: boolean;
   upgradeLevel?: number;
   setId?: WitcherSetId;
+  mythicPassive?: MythicPassiveId;
+  decoctionEffect?: DecoctionType;
   socketedRuneId?: string;
   craftRecipe?: { itemId: string; count: number }[];
   craftsItemId?: string;
@@ -48,7 +65,7 @@ export interface GameItem {
     critChanceBonus?: number;
     goldBonus?: number;
     hpRegenBonus?: number;
-    runeEffect?: 'fire' | 'bleed' | 'vamp' | 'ward';
+    runeEffect?: 'fire' | 'bleed' | 'vamp' | 'ward' | 'frost' | 'void';
   };
 }
 
@@ -72,7 +89,17 @@ export type EnemyType =
   | 'noonwraith'
   | 'gargoyle'
   | 'skeleton'
-  | 'malakor';
+  | 'malakor'
+  | 'drowned'
+  | 'plague_reaper'
+  | 'troglodyte'
+  | 'frost_wraith'
+  | 'fallen_ash'
+  | 'void_knight'
+  | 'boss_hydra'
+  | 'boss_colossus'
+  | 'boss_vesper'
+  | 'boss_avatar';
 
 export type AIState =
   | 'IDLE'
@@ -112,12 +139,17 @@ export interface EnemyData {
   burnTimer: number;
   slowTimer: number;
   confusedTimer: number;
+  bleedTimer?: number;
   questTag?: string;
   phase?: 1 | 2 | 3;
   packId?: string;
   isContractBoss?: boolean;
   astralInvulnerable?: boolean;
   phylacteryShield?: boolean;
+  crystalArmorCount?: number;
+  crystalsRemaining?: number;
+  isSummonedShadow?: boolean;
+  vesperHealed?: boolean;
 }
 
 export interface HunterContract {
@@ -254,6 +286,29 @@ export interface LoreNoteData {
   corvusComment: string;
 }
 
+export interface AshEchoData {
+  id: string;
+  title: string;
+  biomeName: string;
+  regionName?: string;
+  x: number;
+  z: number;
+  visionTitle: string;
+  voices: string[];
+  corvusConclusion: string;
+  xpReward?: number;
+}
+
+export interface WaystoneData {
+  id: string;
+  name: string;
+  biomeName: string;
+  regionTitle?: string;
+  x: number;
+  z: number;
+  unlockedByDefault?: boolean;
+}
+
 export interface DialogueOption {
   id: string;
   text: string;
@@ -275,6 +330,26 @@ export interface DialogueOption {
     | 'side_village'
     | 'secret_redemption'
     | 'heal_player'
+    | 'accept_quest_drowned'
+    | 'complete_quest_drowned'
+    | 'accept_quest_mountain'
+    | 'complete_quest_mountain'
+    | 'accept_quest_bastion'
+    | 'complete_quest_bastion'
+    | 'spare_vesper'
+    | 'execute_vesper'
+    | 'accept_quest_dawn'
+    | 'start_quest_5'
+    | 'complete_quest_5'
+    | 'start_quest_6'
+    | 'complete_quest_6'
+    | 'start_quest_7'
+    | 'ending_seal_sacrifice'
+    | 'ending_purge_magic'
+    | 'ending_lord_of_ash'
+    | 'ending_destroy_heart'
+    | 'ending_absorb_power'
+    | 'ending_faction_transfer'
     | 'close';
   conditionQuestId?: string;
   conditionStatus?: 'available' | 'active' | 'completed';
@@ -304,7 +379,10 @@ export type InteractableType =
   | 'place_of_power'
   | 'catacombs_portal'
   | 'rune_pillar'
-  | 'lore_note';
+  | 'lore_note'
+  | 'waystone'
+  | 'ash_echo'
+  | 'obstacle_clearing';
 
 export interface WorldInteractable {
   id: string;
@@ -326,6 +404,8 @@ export interface WorldInteractable {
   goldAmount?: number;
   loreText?: string;
   loreNoteId?: string;
+  ashEchoId?: string;
+  waystoneId?: string;
   visualStyle?: LoreNoteData['visualStyle'];
   isPOI?: boolean;
   discovered?: boolean;
@@ -340,7 +420,11 @@ export type BiomeId =
   | 'cursed_sanctuary'
   | 'ruined_fortress'
   | 'ash_cemetery'
-  | 'catacombs';
+  | 'catacombs'
+  | 'gallows_swamp'
+  | 'silver_pass'
+  | 'ash_bastion'
+  | 'eclipse_crater';
 
 export type WeatherType = 'clear' | 'fog' | 'rain';
 
@@ -386,8 +470,18 @@ export interface PlayerStats {
   factionChoice?: 'none' | 'order' | 'village' | 'redemption';
   diceChampionsDefeated?: string[];
   discoveredLoreIds?: string[];
+  discoveredWaystones?: string[];
+  unlockedWaystones?: string[];
+  discoveredEchoIds?: string[];
+  viewedAshEchoIds?: string[];
   loreMasterUnlocked?: boolean;
   secretEndingUnlocked?: boolean;
+  activeDecoction?: DecoctionType;
+  decoctionTimer?: number;
+  vesperFate?: 'none' | 'spared' | 'executed';
+  finalEndingChoice?: 'none' | 'destroy_heart' | 'absorb_power' | 'faction_transfer';
+  eclipseEndingChoice?: 'sacrifice' | 'purge' | 'lord' | string;
+  poisonTimer?: number;
 }
 
 export type ActiveModalType =
@@ -409,7 +503,8 @@ export type ActiveModalType =
   | 'road_event'
   | 'codex'
   | 'lore_reader'
-  | 'prologue';
+  | 'prologue'
+  | 'ash_echo';
 
 export interface HUDState {
   player: PlayerStats;
@@ -452,10 +547,14 @@ export interface HUDState {
   bestiary?: BestiaryEntry[];
   discoveredLoreIds: string[];
   activeLoreNote: LoreNoteData | null;
+  activeAshEcho?: AshEchoData | null;
+  ashEchoes?: AshEchoData[];
+  waystones?: WaystoneData[];
   codexArticles?: CodexArticle[];
   worldLoreNotes?: LoreNoteData[];
   prologueSlideIndex: number;
   prologueSlides?: PrologueSlide[];
 }
+
 
 

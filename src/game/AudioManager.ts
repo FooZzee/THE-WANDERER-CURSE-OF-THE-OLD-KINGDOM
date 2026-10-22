@@ -46,6 +46,31 @@ export class AudioManager {
     }
   }
 
+  public setBiomeAtmosphere(biomeId: string): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (this.ambientFilter && this.ambientOsc) {
+      let targetNote = 55;
+      let targetFreq = 150;
+      if (biomeId === 'gallows_swamp') {
+        targetNote = 46.25; // Deep murky F#1 swamp drone
+        targetFreq = 115;
+      } else if (biomeId === 'silver_pass') {
+        targetNote = 61.74; // Cold icy B1 mountain wind
+        targetFreq = 260;
+      } else if (biomeId === 'ash_bastion') {
+        targetNote = 51.91; // Solemn G#1 fortress echo
+        targetFreq = 175;
+      } else if (biomeId === 'eclipse_crater') {
+        targetNote = 41.2; // Abyssal E1 Void throne resonance
+        targetFreq = 210;
+      }
+      this.ambientOsc.frequency.setTargetAtTime(targetNote, now, 1.2);
+      this.ambientFilter.frequency.setTargetAtTime(targetFreq, now, 1.2);
+    }
+  }
+
   private ensureContext(): AudioContext | null {
     if (!this.enabled) return null;
     if (!this.ctx && typeof window !== 'undefined') {

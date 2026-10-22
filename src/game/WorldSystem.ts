@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { AssetManager } from './AssetManager';
-import { WORLD_LORE_NOTES } from './loreData';
-import { getGroundHeight } from './rules';
+import { ASH_ECHOES, WORLD_LORE_NOTES } from './loreData';
+import { getGroundHeight, WAYSTONES } from './rules';
 import type { WorldInteractable } from './types';
 
 export class WorldSystem {
@@ -235,7 +235,7 @@ export class WorldSystem {
     });
 
     // =========================================================================
-    // ДОСКА ОБЪЯВЛЕНИЙ В ЦЕНТРЕ ДЕРЕВНИ ВОРОНЬЯ ПАДЬ
+    // ДОСКА ОБЪЯЯВЛЕНИЙ В ЦЕНТРЕ ДЕРЕВНИ ВОРОНЬЯ ПАДЬ
     // =========================================================================
     add({
       id: 'notice_board_village',
@@ -388,7 +388,6 @@ export class WorldSystem {
     // =========================================================================
     // 6 СКРЫТЫХ ТОЧЕК ИНТЕРЕСА (? НА КАРТЕ И КОМПАСЕ)
     // =========================================================================
-    // 1-2. Два Гнезда чудовищ (спавнят упырей, уничтожаются по E знаком Пламени)
     add({
       id: 'poi_nest_forest',
       type: 'monster_nest',
@@ -428,7 +427,6 @@ export class WorldSystem {
       ],
     });
 
-    // 3-4. Два Места Силы (дают +1 бесплатное очко навыков и бафф к урону Знаков)
     add({
       id: 'poi_power_forest',
       type: 'place_of_power',
@@ -458,7 +456,6 @@ export class WorldSystem {
       discovered: false,
     });
 
-    // 5-6. Два Спрятанных сокровища под охраной (с редкими чертежами снаряжения и рунами)
     add({
       id: 'poi_treasure_west',
       type: 'chest',
@@ -528,7 +525,6 @@ export class WorldSystem {
       repeatable: true,
     });
 
-    // Загадка с поворотом 3 рунических колонн в Катакомбах (нужно выставить все 3 в символ Пламени = 1)
     add({
       id: 'catacombs_pillar_0',
       type: 'rune_pillar',
@@ -611,7 +607,7 @@ export class WorldSystem {
       id: 'shrine_malakor_throne',
       type: 'shrine',
       name: 'Трон Короля-Лича Малакора Бессмертного',
-      roleOrSubtitle: 'Разлом Сердца Пустоты (Финал Хроник)',
+      roleOrSubtitle: 'Разлом Сердца Пустоты (Акт II)',
       promptText: 'Обратиться к духу Малакора Бессмертного',
       x: 0,
       z: 81,
@@ -622,14 +618,298 @@ export class WorldSystem {
     });
 
     // =========================================================================
-    // 12 ИНТЕРАКТИВНЫХ ЗАПИСОК, ДНЕВНИКОВ И ФОЛИАНТОВ ВАЛЬДМАРКА (КОДЕКС [L])
+    // ДОРОЖНЫЕ ПУТЕВЫЕ КАМНИ (FAST TRAVEL WAYSTONES — 7 ОБЕЛИСКОВ)
+    // =========================================================================
+    for (const ws of WAYSTONES) {
+      add({
+        id: ws.id,
+        type: 'waystone',
+        name: `🔷 ${ws.name}`,
+        roleOrSubtitle: `${ws.regionTitle ?? ws.biomeName} · Дорожный Путевой Камень`,
+        promptText: `Активировать Путевой Камень / Быстрое перемещение [Карта M]`,
+        x: ws.x,
+        z: ws.z,
+        radius: 4.0,
+        interacted: Boolean(ws.unlockedByDefault),
+        repeatable: true,
+        waystoneId: ws.id,
+        isPOI: true,
+        discovered: Boolean(ws.unlockedByDefault),
+      });
+    }
+
+    // =========================================================================
+    // СЕВЕРНЫЙ ПОХОД: ПОЛЕВЫЕ ЛАГЕРЯ NPC, КОСТРЫ, ПРЕПЯТСТВИЯ, РЕАГЕНТЫ И ФИНАЛЬНЫЙ АЛТАРЬ
+    // =========================================================================
+    // Биом 1: Тракт Висельников и Затопленные Топи (z: -105..-215)
+    add({
+      id: 'npc_charon',
+      type: 'npc',
+      name: 'Лодочник Харон',
+      roleOrSubtitle: 'Проводник через Затопленные Топи',
+      promptText: 'Поговорить с Лодочником Хароном',
+      x: -6,
+      z: -143,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'charon_root',
+    });
+    add({
+      id: 'campfire_swamp_north',
+      type: 'campfire',
+      name: 'Полевой костёр у причала Харона',
+      roleOrSubtitle: 'Отдых, алхимия и смена времени суток',
+      promptText: 'Медитировать у костра (Восстановить ОЗ, снять токсичность)',
+      x: -10,
+      z: -142,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'obstacle_ferry',
+      type: 'obstacle_clearing',
+      name: 'Заросшая цепь паромной переправы',
+      roleOrSubtitle: 'Препятствие на пути к логову Матери Трясины',
+      promptText: 'Сжечь болотные корни и освободить цепь парома знаком «Пламя» [E]',
+      x: 0,
+      z: -162,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_drowned_path',
+      questStageId: 'q5_clear_ferry',
+      loreText: 'Пламя сжигает ядовитые плети! Паромная гать на север открыта.',
+    });
+    add({
+      id: 'chest_swamp_north',
+      type: 'chest',
+      name: 'Затопленный сундук беженцев Вальдмарка',
+      roleOrSubtitle: 'Сокровище Затопленных Топей',
+      promptText: 'Открыть сундук (Коса Чумного Доктора и чертёж Стража Стужи)',
+      x: 16,
+      z: -175,
+      radius: 3.4,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 190,
+      lootItems: [
+        { itemId: 'mythic_plague_scythe', count: 1 },
+        { itemId: 'bp_frost_armor', count: 1 },
+        { itemId: 'bp_frost_sword', count: 1 },
+      ],
+    });
+
+    // Биом 2: Среброзубый Перевал и Мёртвые Шахты (z: -215..-325)
+    add({
+      id: 'npc_brom',
+      type: 'npc',
+      name: 'Старый Рудокоп Бром',
+      roleOrSubtitle: 'Мастер-кузнец Среброзубого Перевала',
+      promptText: 'Поговорить с Рудокопом Бромом (Кузня Чёрной Руды)',
+      x: 8,
+      z: -253,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'brom_root',
+    });
+    add({
+      id: 'campfire_silver_pass',
+      type: 'campfire',
+      name: 'Горный очаг у Мёртвых Шахт',
+      roleOrSubtitle: 'Отдых, алхимия и смена времени суток',
+      promptText: 'Медитировать у костра (Восстановить ОЗ, снять токсичность)',
+      x: 11,
+      z: -251,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'obstacle_mine_lift',
+      type: 'obstacle_clearing',
+      name: 'Обледенелый подъёмник Мёртвых Шахт',
+      roleOrSubtitle: 'Путь в главный штрек Кристального Колосса',
+      promptText: 'Разбить ледяную глыбу на шестернях знаком «Импульс» [E]',
+      x: 0,
+      z: -275,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_mountain_blood',
+      questStageId: 'q6_repair_lift',
+      loreText: 'Ударная волна «Импульса» дробит вековой лёд! Подъёмник в нижний штрек запущен.',
+    });
+    add({
+      id: 'herb_ice_lotus_1',
+      type: 'herb',
+      name: 'Друза Ледяного Лотоса и Чёрной Руды',
+      promptText: 'Собрать Ледяной лотос и Чёрную руду',
+      x: -14,
+      z: -262,
+      radius: 3.2,
+      interacted: false,
+      repeatable: false,
+      lootItems: [
+        { itemId: 'ice_lotus', count: 2 },
+        { itemId: 'black_ore', count: 2 },
+      ],
+    });
+    add({
+      id: 'chest_silver_pass_mythic',
+      type: 'chest',
+      name: 'Оружейный ящик королевских горняков',
+      roleOrSubtitle: 'Сокровище Мёртвых Шахт',
+      promptText: 'Открыть ящик (Дробитель Чёрной Горы и Великая руна Мороза)',
+      x: 18,
+      z: -292,
+      radius: 3.4,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 240,
+      lootItems: [
+        { itemId: 'mythic_black_cleaver', count: 1 },
+        { itemId: 'rune_frost_sup', count: 1 },
+        { itemId: 'black_ore', count: 2 },
+      ],
+    });
+
+    // Биом 3: Чёрный Бастион Братства Пепла (z: -325..-435)
+    add({
+      id: 'npc_kael',
+      type: 'npc',
+      name: 'Выживший Адепт Каэль',
+      roleOrSubtitle: 'Хранитель архивов Братства Пепла',
+      promptText: 'Поговорить с Адептом Каэлем',
+      x: -4,
+      z: -358,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'kael_root',
+    });
+    add({
+      id: 'campfire_bastion',
+      type: 'campfire',
+      name: 'Жаровня во дворе Чёрного Бастиона',
+      roleOrSubtitle: 'Отдых, алхимия и смена времени суток',
+      promptText: 'Медитировать у жаровни (Восстановить ОЗ, снять токсичность)',
+      x: 4,
+      z: -358,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'obstacle_three_seals',
+      type: 'obstacle_clearing',
+      name: 'Врата Испытания Трёх Печатей',
+      roleOrSubtitle: 'Вход во Внутренний двор Цитадели',
+      promptText: 'Начертать знаки Пламени, Мороза и Импульса на вратах [E]',
+      x: 0,
+      z: -376,
+      radius: 4.5,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_ash_brotherhood',
+      questStageId: 'q7_three_seals_trial',
+      loreText: 'Три рунные печати вспыхивают янтарным огнём! Врата во Внутренний двор Грандмастера Веспера отворены.',
+    });
+    add({
+      id: 'chest_bastion_grandmaster',
+      type: 'chest',
+      name: 'Реликварий Грандмастеров Пепла',
+      roleOrSubtitle: 'Сокровище Чёрного Бастиона',
+      promptText: 'Открыть реликварий (Чертежи Грандмастера, Клыки Сумерек и Пожиратель Солнца)',
+      x: -16,
+      z: -392,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 320,
+      lootItems: [
+        { itemId: 'bp_gm_armor', count: 1 },
+        { itemId: 'bp_gm_sword', count: 1 },
+        { itemId: 'mythic_dusk_fangs', count: 1 },
+        { itemId: 'mythic_sun_eater', count: 1 },
+      ],
+    });
+
+    // Биом 4: Кратер Затмения и Зал Трона Пустоты (z: -435..-550)
+    add({
+      id: 'chest_crater_obsidian',
+      type: 'chest',
+      name: 'Обсидиановый ковчег Предтеч',
+      roleOrSubtitle: 'Сокровище Кратера Затмения',
+      promptText: 'Открыть ковчег (Чертежи Обсидианового Вестника и Глас Пустоты)',
+      x: 15,
+      z: -478,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 400,
+      lootItems: [
+        { itemId: 'bp_obs_armor', count: 1 },
+        { itemId: 'bp_obs_sword', count: 1 },
+        { itemId: 'mythic_void_voice', count: 1 },
+        { itemId: 'rune_void_sup', count: 1 },
+        { itemId: 'void_dust', count: 3 },
+      ],
+    });
+    add({
+      id: 'shrine_eclipse_altar',
+      type: 'shrine',
+      name: 'Алтарь Пепельного Затмения (Сердце Пустоты)',
+      roleOrSubtitle: 'Финальный выбор судьбы Вальдмарка',
+      promptText: 'Решить судьбу Сердца Пустоты и мира Вальдмарк [E]',
+      x: 0,
+      z: -518,
+      radius: 4.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'eclipse_altar_root',
+    });
+
+    // =========================================================================
+    // 4 ПРИЗРАЧНЫЕ СЦЕНЫ «ОТГОЛОСКИ ПЕПЛА» (ЧУТЬЁ ЗОЛЬНИКА [V] + [E])
+    // =========================================================================
+    for (const echo of ASH_ECHOES) {
+      add({
+        id: echo.id,
+        type: 'ash_echo',
+        name: `👁️ ${echo.title}`,
+        roleOrSubtitle: `${echo.regionName ?? echo.biomeName} · Отголосок Пепла (Чутьё [V])`,
+        promptText: `Воспроизвести призрачную сцену «${echo.title}» (+40 XP в Кодекс [L])`,
+        x: echo.x,
+        z: echo.z,
+        radius: 4.2,
+        interacted: false,
+        repeatable: true,
+        ashEchoId: echo.id,
+        isPOI: true,
+        discovered: false,
+      });
+    }
+
+    // =========================================================================
+    // 22 ИНТЕРАКТИВНЫХ ЗАПИСОК, ДНЕВНИКОВ И ФОЛИАНТОВ ВАЛЬДМАРКА (КОДЕКС [L])
     // =========================================================================
     for (const note of WORLD_LORE_NOTES) {
       add({
         id: note.id,
         type: 'lore_note',
         name: `📜 ${note.title}`,
-        roleOrSubtitle: `Запись Кодекса #${note.number}/12 · ${note.locationHint}`,
+        roleOrSubtitle: `Запись Кодекса #${note.number}/${WORLD_LORE_NOTES.length} · ${note.locationHint}`,
         promptText: `Прочесть «${note.title}» (+25 XP в Кодекс [L])`,
         x: note.x,
         z: note.z,
@@ -652,12 +932,96 @@ export class WorldSystem {
         ? 'merchant'
         : item.id.includes('inquisitor')
         ? 'inquisitor'
+        : item.id.includes('charon')
+        ? 'charon'
+        : item.id.includes('brom')
+        ? 'brom'
+        : item.id.includes('kael')
+        ? 'kael'
         : 'herbalist';
       const npcMesh = this.assetManager.createNPCModel(role);
       npcMesh.position.set(item.x, item.y, item.z);
-      npcMesh.lookAt(0, item.y, 4);
+      npcMesh.lookAt(0, item.y, item.z + 4);
       this.scene.add(npcMesh);
       this.meshes.set(item.id, npcMesh);
+    } else if (item.type === 'waystone') {
+      const wsGroup = new THREE.Group();
+      const stoneMat = this.assetManager.getMaterial('stone');
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.35, 8), stoneMat);
+      base.position.y = 0.175;
+      const monolith = new THREE.Mesh(new THREE.BoxGeometry(0.75, 3.1, 0.48), stoneMat);
+      monolith.position.y = 1.65;
+      monolith.castShadow = true;
+      const runeCrystal = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 2.2,
+        })
+      );
+      runeCrystal.position.set(0, 3.45, 0);
+      runeCrystal.name = 'waystoneBeacon';
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.95, 1.15, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.04;
+      wsGroup.add(base, monolith, runeCrystal, ring);
+      wsGroup.position.set(item.x, item.y, item.z);
+      this.scene.add(wsGroup);
+      this.meshes.set(item.id, wsGroup);
+    } else if (item.type === 'ash_echo') {
+      const echoGroup = new THREE.Group();
+      const phantomMat = new THREE.MeshStandardMaterial({
+        color: 0xa855f7,
+        emissive: 0x9333ea,
+        emissiveIntensity: 1.8,
+        transparent: true,
+        opacity: 0.72,
+      });
+      const figureA = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 1.05, 6, 10), phantomMat);
+      figureA.position.set(-0.42, 0.95, 0);
+      const figureB = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 1.05, 6, 10), phantomMat);
+      figureB.position.set(0.42, 0.95, 0);
+      const vortex = new THREE.Mesh(
+        new THREE.TorusGeometry(0.9, 0.05, 8, 24),
+        phantomMat
+      );
+      vortex.rotation.x = Math.PI / 2;
+      vortex.position.y = 0.25;
+      vortex.name = 'echoBeacon';
+      echoGroup.add(figureA, figureB, vortex);
+      echoGroup.position.set(item.x, item.y, item.z);
+      this.scene.add(echoGroup);
+      this.meshes.set(item.id, echoGroup);
+    } else if (item.type === 'obstacle_clearing' || item.type === 'shrine') {
+      const shrineGroup = new THREE.Group();
+      const stoneMat = this.assetManager.getMaterial('stone');
+      const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.15, 1.2, 8), stoneMat);
+      pedestal.position.y = 0.6;
+      const orbColor = item.type === 'shrine' ? 0xef4444 : 0xf59e0b;
+      const orb = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.38, 1),
+        new THREE.MeshStandardMaterial({
+          color: orbColor,
+          emissive: orbColor,
+          emissiveIntensity: 1.9,
+        })
+      );
+      orb.position.y = 1.65;
+      orb.name = 'poiBeacon';
+      shrineGroup.add(pedestal, orb);
+      shrineGroup.position.set(item.x, item.y, item.z);
+      this.scene.add(shrineGroup);
+      this.meshes.set(item.id, shrineGroup);
     } else if (item.type === 'notice_board') {
       const boardGroup = new THREE.Group();
       const woodMat = this.assetManager.getMaterial('wood');
@@ -872,7 +1236,6 @@ export class WorldSystem {
       this.scene.add(pouchGroup);
       this.meshes.set(item.id, pouchGroup);
     } else if (item.type === 'lore_note') {
-      // Composite 3D Environmental Storytelling Vignette for each Lore Note
       const loreGroup = new THREE.Group();
       const stoneMat = this.assetManager.getMaterial('stone');
       const woodMat = this.assetManager.getMaterial('wood');
@@ -888,7 +1251,6 @@ export class WorldSystem {
       });
 
       if (item.visualStyle === 'skeleton_scroll') {
-        // Fallen courier / skeleton vignette with ribcage, skull, broken spear & glowing scroll
         const ribcage = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.45, 7), boneMat);
         ribcage.rotation.z = Math.PI / 2.2;
         ribcage.position.set(-0.15, 0.18, 0);
@@ -902,7 +1264,6 @@ export class WorldSystem {
         scroll.position.set(0.22, 0.12, 0.14);
         loreGroup.add(ribcage, skull, spearShaft, scroll);
       } else if (item.visualStyle === 'camp_diary') {
-        // Abandoned hunter stump / tavern table with leather-bound journal & dagger
         const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.46, 0.62, 8), woodMat);
         stump.position.y = 0.31;
         const bookCover = new THREE.Mesh(
@@ -924,7 +1285,6 @@ export class WorldSystem {
         item.visualStyle === 'royal_lectern' ||
         item.visualStyle === 'alchemist_desk'
       ) {
-        // Stone lectern / alchemy pedestal with ancient folio & glowing vial/seal
         const base = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.18, 0.68), stoneMat);
         base.position.y = 0.09;
         const column = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.85, 6), stoneMat);
@@ -937,7 +1297,6 @@ export class WorldSystem {
         tome.rotation.x = 0.32;
         loreGroup.add(base, column, deskTop, tome);
       } else {
-        // Ancient carved stone stele / edict pillar with pinned parchment
         const stele = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.45, 0.24), stoneMat);
         stele.position.y = 0.72;
         const sheet = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.48, 0.04), parchmentMat);
@@ -945,7 +1304,6 @@ export class WorldSystem {
         loreGroup.add(stele, sheet);
       }
 
-      // Floating amber lore crystal above the note for clear readability & Hunter Vision [V]
       const loreBeacon = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.2, 0),
         new THREE.MeshStandardMaterial({
@@ -977,9 +1335,6 @@ export class WorldSystem {
     }
   }
 
-  /**
-   * Spawns an interactive loot pouch at a defeated enemy's coordinates that can be picked up with [E].
-   */
   public spawnLootPouch(opts: {
     enemyId: string;
     enemyName: string;
@@ -1083,11 +1438,30 @@ export class WorldSystem {
           beacon.rotation.y = elapsed * 2.4;
           beacon.position.y = 0.92 + Math.sin(elapsed * 3.2) * 0.12;
         }
-      } else if (mesh && (item.type === 'monster_nest' || item.type === 'place_of_power')) {
+      } else if (
+        mesh &&
+        (item.type === 'monster_nest' ||
+          item.type === 'place_of_power' ||
+          item.type === 'obstacle_clearing' ||
+          item.type === 'shrine')
+      ) {
         const beacon = mesh.getObjectByName('poiBeacon');
         if (beacon) {
           beacon.rotation.y = elapsed * 1.8;
         }
+      } else if (mesh && item.type === 'waystone') {
+        const beacon = mesh.getObjectByName('waystoneBeacon');
+        if (beacon) {
+          beacon.rotation.y = elapsed * 2.2;
+          beacon.position.y = 3.45 + Math.sin(elapsed * 2.5) * 0.12;
+        }
+      } else if (mesh && item.type === 'ash_echo') {
+        const beacon = mesh.getObjectByName('echoBeacon');
+        if (beacon) {
+          beacon.rotation.z = elapsed * (witcherSenseActive ? 3.5 : 1.5);
+        }
+        const s = witcherSenseActive ? 1.18 + Math.sin(elapsed * 5) * 0.1 : 0.85;
+        mesh.scale.set(s, s, s);
       } else if (mesh && item.type === 'lore_note') {
         const beacon = mesh.getObjectByName('loreBeacon') as THREE.Mesh | undefined;
         if (beacon) {
@@ -1114,7 +1488,8 @@ export class WorldSystem {
         (item.type === 'herb' ||
           item.type === 'loot' ||
           item.type === 'monster_nest' ||
-          item.type === 'clue')
+          item.type === 'clue' ||
+          item.type === 'obstacle_clearing')
       ) {
         mesh.visible = false;
       }

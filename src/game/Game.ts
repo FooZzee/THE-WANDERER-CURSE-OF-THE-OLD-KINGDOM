@@ -4,7 +4,12 @@ import { CombatSystem } from './CombatSystem';
 import { DialogueSystem } from './DialogueSystem';
 import { EnemyAI } from './EnemyAI';
 import { InventorySystem } from './InventorySystem';
-import { CODEX_ARTICLES, PROLOGUE_SLIDES, WORLD_LORE_NOTES } from './loreData';
+import {
+  ASH_ECHOES,
+  CODEX_ARTICLES,
+  PROLOGUE_SLIDES,
+  WORLD_LORE_NOTES,
+} from './loreData';
 import { MagicSystem } from './MagicSystem';
 import { PlayerController } from './PlayerController';
 import { QuestSystem } from './QuestSystem';
@@ -22,12 +27,14 @@ import {
   pickNpcRerollIndices,
   resolveDicePokerOutcome,
   rollDiceArray,
+  WAYSTONES,
   WEATHER_PRESETS,
 } from './rules';
 import { SaveSystem } from './SaveSystem';
 import { SceneManager } from './SceneManager';
 import { ThirdPersonCamera } from './ThirdPersonCamera';
 import type {
+  AshEchoData,
   BladeOilType,
   CodexArticle,
   DicePokerState,
@@ -70,6 +77,7 @@ export class Game {
   public activeModal: HUDState['activeModal'] = 'none';
   public activeDialogueNode: DialogueNode | null = null;
   public activeLoreNote: LoreNoteData | null = null;
+  public activeAshEcho: AshEchoData | null = null;
   public prologueSlideIndex = 0;
   private prologueLookAt = new THREE.Vector3(0, 2, -20);
   public notificationBanner: { title: string; subtitle: string } | null = null;
@@ -81,6 +89,7 @@ export class Game {
   private catacombsTrapTimer = 0;
   private roadEventTimer = 42;
   private weatherCycleTimer = 45;
+  private lastBiomeId = 'crows_hollow';
   private triggeredRoadEventIds: Set<string> = new Set();
 
   public settings: GraphicsSettings = {
@@ -166,43 +175,14 @@ export class Game {
       (i) => i.category === 'armor' && i.equipped
     );
     const equippedWeapon = this.inventory.items.find(
-      (i) => i.category === 'weapon' && i.equipped && i.socketedRuneId
+      (i) => i.category === 'weapon' && i.equipped
     );
 
-    const cloakMesh = this.player.rig.cloak as THREE.Mesh | undefined;
-    if (cloakMesh && cloakMesh.material instanceof THREE.MeshStandardMaterial) {
-      const setId = equippedArmor?.setId;
-      if (setId === 'raven') {
-        cloakMesh.material.color.setHex(0x1e293b);
-      } else if (setId === 'bear') {
-        cloakMesh.material.color.setHex(0x451a03);
-      } else if (setId === 'flame') {
-        cloakMesh.material.color.setHex(0x7f1d1d);
-      } else {
-        cloakMesh.material.color.setHex(0x292524);
-      }
-    }
-
-    const weaponMesh = this.player.rig.weaponMesh as THREE.Mesh | undefined;
-    if (
-      weaponMesh &&
-      weaponMesh.material instanceof THREE.MeshStandardMaterial
-    ) {
-      const runeEffect = equippedWeapon?.stats?.runeEffect;
-      if (runeEffect === 'fire') {
-        weaponMesh.material.emissive.setHex(0xf97316);
-        weaponMesh.material.emissiveIntensity = 0.85;
-      } else if (runeEffect === 'vamp') {
-        weaponMesh.material.emissive.setHex(0xdc2626);
-        weaponMesh.material.emissiveIntensity = 0.85;
-      } else if (runeEffect === 'bleed') {
-        weaponMesh.material.emissive.setHex(0xf43f5e);
-        weaponMesh.material.emissiveIntensity = 0.7;
-      } else {
-        weaponMesh.material.emissive.setHex(0x000000);
-        weaponMesh.material.emissiveIntensity = 0;
-      }
-    }
+    this.sceneManager.getAssetManager().updateHeroEquipmentVisuals(
+      this.player.rig,
+      equippedArmor?.setId ?? null,
+      equippedWeapon?.stats?.runeEffect ?? null
+    );
   }
 
   public addFloatingDamage(
@@ -313,7 +293,7 @@ export class Game {
       return;
     }
 
-    if (this.activeModal === 'lore_reader') {
+    if (this.activeModal === 'lore_reader' || this.activeModal === 'ash_echo') {
       if (e.code === 'KeyE' || e.code === 'Space') {
         e.preventDefault();
         this.setModal('none');
@@ -450,7 +430,12 @@ export class Game {
   };
 
   public triggerDodge(): void {
-    if (this.player.startDodge(this.cameraController.yaw)) {
+    const eff = computeEffectivePlayerStats(
+      this.player.stats,
+      this.inventory.items,
+      this.inventory.skills
+    );
+    if (this.player.startDodge(this.cameraController.yaw, eff.activeSet === 'grandmaster')) {
       this.audio.playDodge();
       this.emitHUD();
     }
@@ -493,8 +478,9 @@ export class Game {
       this.inventory.items,
       this.inventory.skills
     );
+    const activeSign = this.player.stats.activeSign;
     const casted = this.magic.castSign(
-      this.player.stats.activeSign,
+      activeSign,
       this.player,
       eff.signIntensity,
       this.enemyAI,
@@ -504,6 +490,34 @@ export class Game {
       this.addLog
     );
     if (casted) {
+      // If casting Impulse near Crystal Colossus, shatter one of its 3 Black Ore crystals!
+      if (activeSign === 'impulse') {
+        const colossus = this.enemyAI.enemies.find(
+          (e) => e.data.id === 'boss_colossus' && e.data.state !== 'DEAD'
+        );
+        if (
+          colossus &&
+          Math.hypot(
+            colossus.data.x - this.player.stats.x,
+            colossus.data.z - this.player.stats.z
+          ) < 8.5
+        ) {
+          const shattered = this.enemyAI.shatterColossusCrystal('boss_colossus');
+          if (shattered) {
+            const rem = colossus.data.crystalsRemaining ?? 0;
+            this.addLog(
+              `Знак «Импульс» расколол нарост Чёрной Руды Колосса! (Осталось кристаллов: ${rem})`,
+              'quest'
+            );
+            this.showBanner(
+              'Кристальная броня Колосса пробита!',
+              rem > 0
+                ? `Осталось сбить кристаллов: ${rem}`
+                : 'Все 3 кристалла разрушены — Колосс полностью уязвим!'
+            );
+          }
+        }
+      }
       this.emitHUD();
     }
   }
@@ -623,7 +637,14 @@ export class Game {
   }
 
   public brewAlchemyRecipe(
-    recipeId: 'potion_swallow' | 'potion_thunderbolt' | 'potion_cat' | 'potion_blizzard'
+    recipeId:
+      | 'potion_swallow'
+      | 'potion_thunderbolt'
+      | 'potion_cat'
+      | 'potion_blizzard'
+      | 'decoction_hydra'
+      | 'decoction_colossus'
+      | 'decoction_vesper'
   ): void {
     const res = this.inventory.brewElixir(recipeId);
     if (res.ok) {
@@ -985,7 +1006,7 @@ export class Game {
       }
     }
 
-    // 5.5 Interactive Lore Notes, Diaries & Tomes (12 World Chronicles)
+    // 5.5 Interactive Lore Notes, Diaries & Tomes (22 World Chronicles)
     if (nearest.type === 'lore_note') {
       const note = WORLD_LORE_NOTES.find(
         (n) => n.id === (nearest.loreNoteId ?? nearest.id)
@@ -1019,7 +1040,7 @@ export class Game {
             this.audio.playQuestChime();
             this.showBanner(
               'Хранитель Памяти Вальдмарка!',
-              'Собраны все 12 хроник (+15% к урону по боссам, открыт истинный финал)'
+              'Собраны все хроники (+15% к урону по боссам, открыт истинный финал)'
             );
             this.addLog(
               'Достижение разблокировано: «Хранитель Памяти Вальдмарка»! Ваш урон по всем боссам увеличен на +15%, а у Короны Малакора открыт секретный финал.',
@@ -1038,6 +1059,71 @@ export class Game {
         this.setModal('lore_reader');
         this.emitHUD();
       }
+      return;
+    }
+
+    // 5.6 Fast Travel Waystone Obelisks (Дорожные Путевые Камни)
+    if (nearest.type === 'waystone') {
+      this.audio.playQuestChime();
+      this.world.markInteracted(nearest.id);
+      const wsId = nearest.waystoneId ?? nearest.id;
+      const unlocked = new Set(this.player.stats.unlockedWaystones ?? []);
+      unlocked.add(wsId);
+      this.player.stats.unlockedWaystones = Array.from(unlocked);
+      this.addLog(
+        `Активирован Дорожный Путевой Камень: «${nearest.name}». Доступен быстрый переход [M].`,
+        'quest'
+      );
+      this.showBanner(
+        nearest.name,
+        'Рунный обелиск активирован · Выберите регион на карте для быстрого перехода'
+      );
+      this.setModal('map');
+      return;
+    }
+
+    // 5.7 Spectral Echoes of Ash (Отголоски Пепла — призрачные сцены прошлого)
+    if (nearest.type === 'ash_echo') {
+      const echo = ASH_ECHOES.find(
+        (e) => e.id === (nearest.ashEchoId ?? nearest.id)
+      );
+      if (echo) {
+        this.audio.playQuestChime();
+        this.world.markInteracted(nearest.id);
+        this.activeAshEcho = echo;
+        const viewed = new Set(this.player.stats.viewedAshEchoIds ?? []);
+        if (!viewed.has(echo.id)) {
+          viewed.add(echo.id);
+          this.player.stats.viewedAshEchoIds = Array.from(viewed);
+          const xpVal = echo.xpReward ?? 40;
+          this.player.stats = applyExperienceGain(this.player.stats, xpVal).updated;
+          this.addLog(
+            `Отголосок Пепла: «${echo.title}» (+${xpVal} XP)`,
+            'quest'
+          );
+          this.showBanner(
+            `Отголосок Пепла: ${echo.title}`,
+            `+${xpVal} XP · Видение прошлого Братства и Вальдмарка`
+          );
+        }
+        this.setModal('ash_echo');
+        this.emitHUD();
+      }
+      return;
+    }
+
+    // 5.8 Northern March Obstacle Clearings (Ferry Winch, Mine Lift, Three Seals Gate)
+    if (nearest.type === 'obstacle_clearing') {
+      this.audio.playQuestChime();
+      this.world.markInteracted(nearest.id);
+      if (nearest.loreText) {
+        this.addLog(nearest.loreText, 'quest');
+        this.showBanner(nearest.name, nearest.loreText);
+      }
+      if (nearest.questId && nearest.questStageId) {
+        this.advanceQuestAndReward(nearest.questId, nearest.questStageId);
+      }
+      this.emitHUD();
       return;
     }
 
@@ -1202,6 +1288,113 @@ export class Game {
     } else if (option.action === 'start_quest_3') {
       this.quests.activateQuest('quest_ancient_king');
       this.showBanner('Новое задание', 'Сердце древнего короля');
+    } else if (option.action === 'start_quest_5') {
+      this.quests.activateQuest('quest_drowned_path');
+      this.advanceQuestAndReward('quest_drowned_path', 'q5_talk_charon');
+      this.showBanner(
+        'Северный поход: Дорога Утопленников',
+        'Расчистите паромную переправу и одолейте Болотную Гидру'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_5') {
+      this.advanceQuestAndReward('quest_drowned_path', 'q5_kill_hydra');
+      this.quests.activateQuest('quest_mountain_blood');
+      this.showBanner(
+        'Путь в Среброзубый Перевал открыт!',
+        'Новое задание: «Кровь Горы» — найдите рудокопа Брома'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_6') {
+      this.quests.activateQuest('quest_mountain_blood');
+      this.advanceQuestAndReward('quest_mountain_blood', 'q6_talk_brom');
+      this.showBanner(
+        'Задание: Кровь Горы',
+        'Почините подъёмник Мёртвых Шахт и сокрушите Кристального Колосса'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_6') {
+      this.advanceQuestAndReward('quest_mountain_blood', 'q6_kill_colossus');
+      this.quests.activateQuest('quest_ash_brotherhood');
+      this.showBanner(
+        'Подъём к Чёрному Бастиону открыт!',
+        'Новое задание: «Пепел Братства»'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_7') {
+      this.quests.activateQuest('quest_ash_brotherhood');
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_talk_kael');
+      this.showBanner(
+        'Задание: Пепел Братства',
+        'Пройдите Испытание Трёх Печатей и сразитесь с Великим Магистром Веспером'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'spare_vesper') {
+      this.player.stats.vesperFate = 'spared';
+      this.inventory.addItemById('trophy_vesper', 1);
+      this.inventory.addItemById('bp_armor_grandmaster', 1);
+      this.inventory.addItemById('mythic_dusk_fangs', 1);
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
+      this.quests.activateQuest('quest_dawn_valdmark');
+      this.showBanner(
+        'Милосердие Зольника: Веспер пощажён',
+        'Получены «Клыки Сумерек» и Чертёж Доспеха Великого Магистра · Врата Кратера открыты!'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'execute_vesper') {
+      this.player.stats.vesperFate = 'executed';
+      this.inventory.addItemById('trophy_vesper', 1);
+      this.inventory.addItemById('bp_armor_obsidian', 1);
+      this.inventory.addItemById('mythic_sun_eater', 1);
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
+      this.quests.activateQuest('quest_dawn_valdmark');
+      this.showBanner(
+        'Правосудие Пепла: Приговор исполнен',
+        'Получен двуручник «Пожиратель Солнца» и Чертёж Обсидианового Доспеха · Врата Кратера открыты!'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'ending_seal_sacrifice') {
+      this.audio.playQuestChime();
+      this.player.stats.eclipseEndingChoice = 'seal_sacrifice';
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
+      this.showBanner(
+        'Финал I: Страж Запечатанного Затмения',
+        'Корвус заковал Сердце Пустоты собственной Тлеющей Кровью, вернув солнце Вальдмарку'
+      );
+      this.setModal('victory');
+      return;
+    } else if (option.action === 'ending_purge_magic') {
+      this.audio.playQuestChime();
+      this.player.stats.eclipseEndingChoice = 'purge_magic';
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
+      this.showBanner(
+        'Финал II: Рассвет Смертных',
+        'Сердце Пустоты уничтожено навсегда — магия и чудовища покинули мир'
+      );
+      this.setModal('victory');
+      return;
+    } else if (option.action === 'ending_lord_of_ash') {
+      this.audio.playQuestChime();
+      this.player.stats.eclipseEndingChoice = 'lord_of_ash';
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
+      this.showBanner(
+        'Финал III: Владыка Пепельного Трона',
+        'Корвус поглотил мощь Древнего Бога и возвысился над Вальдмарком'
+      );
+      this.setModal('victory');
+      return;
     } else if (option.action === 'destroy_artifact') {
       this.inventory.addItemById('amulet_abyss', 1);
       this.advanceQuestAndReward('quest_swamp_whisper', 'q2_artifact_choice');
@@ -1446,7 +1639,110 @@ export class Game {
       this.quests.activateQuest('quest_act2_malakor');
       this.quests.completeStage('quest_act2_malakor', 'q4_talk_inquisitor');
       this.advanceQuestAndReward('quest_act2_malakor', 'q4_kill_malakor');
-      this.setModal('victory');
+      this.quests.activateQuest('quest_drowned_path');
+      this.showBanner(
+        'Король-Лич Малакор повержен! Путь на Север открыт',
+        'Отправляйтесь на север в Затопленные Топи (z < -105) или примите эпилог'
+      );
+    }
+
+    // Northern March Quest 5: Gallows Swamp & Hydra
+    if (enemy.questTag === 'q5_swamp_monsters') {
+      const rem = this.enemyAI.enemies.filter(
+        (e) => e.data.questTag === 'q5_swamp_monsters' && e.data.state !== 'DEAD'
+      );
+      if (rem.length === 0) {
+        this.quests.activateQuest('quest_drowned_path');
+        this.quests.completeStage('quest_drowned_path', 'q5_talk_charon');
+        this.advanceQuestAndReward('quest_drowned_path', 'q5_clear_ferry');
+      }
+    }
+
+    if (enemy.questTag === 'q5_hydra') {
+      this.quests.activateQuest('quest_drowned_path');
+      this.quests.completeStage('quest_drowned_path', 'q5_talk_charon');
+      this.quests.completeStage('quest_drowned_path', 'q5_clear_ferry');
+      this.advanceQuestAndReward('quest_drowned_path', 'q5_kill_hydra');
+      this.inventory.addItemById('mythic_plague_scythe', 1);
+      this.quests.activateQuest('quest_mountain_blood');
+      this.showBanner(
+        'Тысячеглавая Гидра Топей повержена!',
+        'Получена мифическая «Коса Чумного Жнеца» · Открыт подъём в Среброзубый Перевал'
+      );
+    }
+
+    // Northern March Quest 6: Silvertooth Pass & Crystal Colossus
+    if (enemy.questTag === 'q6_mine_monsters') {
+      const rem = this.enemyAI.enemies.filter(
+        (e) => e.data.questTag === 'q6_mine_monsters' && e.data.state !== 'DEAD'
+      );
+      if (rem.length === 0) {
+        this.quests.activateQuest('quest_mountain_blood');
+        this.quests.completeStage('quest_mountain_blood', 'q6_talk_brom');
+        this.advanceQuestAndReward('quest_mountain_blood', 'q6_repair_lift');
+      }
+    }
+
+    if (enemy.questTag === 'q6_colossus') {
+      this.quests.activateQuest('quest_mountain_blood');
+      this.quests.completeStage('quest_mountain_blood', 'q6_talk_brom');
+      this.quests.completeStage('quest_mountain_blood', 'q6_repair_lift');
+      this.advanceQuestAndReward('quest_mountain_blood', 'q6_kill_colossus');
+      this.inventory.addItemById('mythic_black_cleaver', 1);
+      this.quests.activateQuest('quest_ash_brotherhood');
+      this.showBanner(
+        'Кристальный Колосс сокрушён!',
+        'Получен мифический «Колун Чёрной Руды» · Открыт мост к Чёрному Бастиону'
+      );
+    }
+
+    // Northern March Quest 7: Black Bastion & Grandmaster Vesper Duel
+    if (enemy.questTag === 'q7_fallen_ash') {
+      const rem = this.enemyAI.enemies.filter(
+        (e) => e.data.questTag === 'q7_fallen_ash' && e.data.state !== 'DEAD'
+      );
+      if (rem.length === 0) {
+        this.quests.activateQuest('quest_ash_brotherhood');
+        this.quests.completeStage('quest_ash_brotherhood', 'q7_talk_kael');
+        this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_three_seals_trial');
+      }
+    }
+
+    if (enemy.questTag === 'q7_vesper') {
+      this.quests.activateQuest('quest_ash_brotherhood');
+      this.quests.completeStage('quest_ash_brotherhood', 'q7_talk_kael');
+      this.quests.completeStage('quest_ash_brotherhood', 'q7_three_seals_trial');
+      const choiceNode = this.dialogue.getDialogueNode(
+        'vesper_duel_choice',
+        this.quests.quests,
+        true
+      );
+      if (choiceNode) {
+        this.activeDialogueNode = choiceNode;
+        this.setModal('dialogue');
+      }
+    }
+
+    // Northern March Quest 8: Eclipse Crater & Avatar of the Void
+    if (enemy.questTag === 'q8_void_knights') {
+      const rem = this.enemyAI.enemies.filter(
+        (e) => e.data.questTag === 'q8_void_knights' && e.data.state !== 'DEAD'
+      );
+      if (rem.length === 0) {
+        this.quests.activateQuest('quest_dawn_valdmark');
+        this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_enter_crater');
+      }
+    }
+
+    if (enemy.questTag === 'q8_avatar') {
+      this.quests.activateQuest('quest_dawn_valdmark');
+      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_defeat_avatar');
+      this.inventory.addItemById('mythic_void_voice', 1);
+      this.showBanner(
+        'Аватар Сердца Пустоты повержен!',
+        'Получен клинок «Голос Пустоты» · Подойдите к Алтарю Затмения [E] для финального выбора судьбы мира'
+      );
     }
 
     this.emitHUD();
@@ -1602,7 +1898,7 @@ export class Game {
     this.player.stats.y = y;
     this.player.rig.root.position.set(x, y, z);
     this.activeModal = 'none';
-    this.showBanner(label, 'Быстрое перемещение по дорожному указателю');
+    this.showBanner(label, 'Быстрое перемещение по Дорожному Путевому Камню');
     this.emitHUD();
   }
 
@@ -1741,7 +2037,7 @@ export class Game {
       if (this.weatherCycleTimer <= 0) {
         this.cycleWeather();
       }
-      // Passive HP Regen from Equipped Trophy (e.g. Noonwraith Trophy)
+      // Passive HP Regen from Equipped Trophy / Decoction
       if (
         effStats.hpRegen > 0 &&
         this.player.stats.hp > 0 &&
@@ -1769,8 +2065,48 @@ export class Game {
         this.sceneManager.colliderMeshes
       );
 
-      // Discover hidden ? Points of Interest when player approaches within 16m
+      // Seamless Biome Transition Detection & Cinematic Location Banner
+      const isCatacombsNow = this.player.stats.x > 75 && this.player.stats.z > 75;
+      const curBiome = isCatacombsNow
+        ? { id: 'catacombs' as const, name: 'Подземные Катакомбы Древних Королей' }
+        : getBiomeAt(this.player.stats.x, this.player.stats.z);
+      if (curBiome.id !== this.lastBiomeId) {
+        this.lastBiomeId = curBiome.id;
+        this.audio.setBiomeAtmosphere(curBiome.id);
+        const biomeSubtitles: Record<string, string> = {
+          gallows_swamp:
+            'Северный Поход · Биом I: Ядовитые гати, полузатопленные деревни и логово Болотной Гидры',
+          silver_pass:
+            'Северный Поход · Биом II: Заснеженные каньоны, Мёртвые Шахты и жилы Чёрной Руды',
+          ash_bastion:
+            'Северный Поход · Биом III: Горная твердыня Братства Пепла и двор павших клинков',
+          eclipse_crater:
+            'Северный Поход · Биом IV: Эпицентр Ночи Пепельного Затмения и Зал Трона Пустоты',
+        };
+        if (biomeSubtitles[curBiome.id]) {
+          this.audio.playQuestChime();
+          this.showBanner(curBiome.name, biomeSubtitles[curBiome.id]);
+          this.addLog(`Вы вступили в новый регион: ${curBiome.name}`, 'quest');
+        }
+      }
+
+      // Auto-unlock Waystones & Discover hidden ? Points of Interest when player approaches within 16m
       for (const poi of this.world.interactables) {
+        if (poi.type === 'waystone' && poi.waystoneId) {
+          if (Math.hypot(poi.x - this.player.stats.x, poi.z - this.player.stats.z) < 18) {
+            const unlocked = new Set(this.player.stats.unlockedWaystones ?? []);
+            if (!unlocked.has(poi.waystoneId)) {
+              unlocked.add(poi.waystoneId);
+              this.player.stats.unlockedWaystones = Array.from(unlocked);
+              poi.discovered = true;
+              this.audio.playQuestChime();
+              this.addLog(
+                `Открыт Дорожный Путевой Камень: «${poi.name}» (доступен быстрый переход [M])`,
+                'quest'
+              );
+            }
+          }
+        }
         if (poi.isPOI && !poi.discovered) {
           if (Math.hypot(poi.x - this.player.stats.x, poi.z - this.player.stats.z) < 16) {
             poi.discovered = true;
@@ -1959,7 +2295,11 @@ export class Game {
         e.data.type === 'malakor' ||
         e.data.type === 'werewolf' ||
         e.data.type === 'noonwraith' ||
-        e.data.type === 'gargoyle';
+        e.data.type === 'gargoyle' ||
+        e.data.type === 'boss_hydra' ||
+        e.data.type === 'boss_colossus' ||
+        e.data.type === 'boss_vesper' ||
+        e.data.type === 'boss_avatar';
       if (isMajorBoss && (d < 34 || biome.id === 'ruined_fortress')) {
         bossEnemy = { ...e.data };
       }
@@ -1990,6 +2330,9 @@ export class Game {
       activeDialogueNode: this.activeDialogueNode,
       discoveredLoreIds: [...(this.player.stats.discoveredLoreIds ?? [])],
       activeLoreNote: this.activeLoreNote,
+      activeAshEcho: this.activeAshEcho,
+      ashEchoes: ASH_ECHOES,
+      waystones: WAYSTONES,
       codexArticles: this.getCodexArticlesWithUnlockState(),
       worldLoreNotes: WORLD_LORE_NOTES,
       prologueSlideIndex: this.prologueSlideIndex,

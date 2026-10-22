@@ -85,7 +85,9 @@ export default function App() {
               <span>·</span>
               <span>5 Печатей Пепла</span>
               <span>·</span>
-              <span>12 Летописей Кодекса [L]</span>
+              <span>22 Летописи Кодекса [L]</span>
+              <span>·</span>
+              <span>Северный Поход (4 Биома)</span>
             </div>
             <button
               onClick={() => handleStartNewGame(false)}

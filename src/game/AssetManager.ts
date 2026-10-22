@@ -423,8 +423,8 @@ export class AssetManager {
    */
   public updateHeroEquipmentVisuals(
     rig: CharacterRig,
-    activeSet: 'raven' | 'bear' | 'flame' | null,
-    runeEffect?: 'fire' | 'bleed' | 'vamp' | 'ward'
+    activeSet: 'raven' | 'bear' | 'flame' | 'grandmaster' | 'obsidian' | 'frost_warden' | null,
+    runeEffect?: 'fire' | 'bleed' | 'vamp' | 'ward' | 'frost' | 'void' | null
   ): void {
     const cuirass = rig.root.getObjectByName('heroCuirass') as THREE.Mesh | undefined;
     const cloak = rig.root.getObjectByName('heroCloak') as THREE.Mesh | undefined;
@@ -440,6 +440,15 @@ export class AssetManager {
       } else if (activeSet === 'flame') {
         cuirass.material.color.setHex(0x7f1d1d);
         cuirass.material.metalness = 0.7;
+      } else if (activeSet === 'frost_warden') {
+        cuirass.material.color.setHex(0x0284c7);
+        cuirass.material.metalness = 0.78;
+      } else if (activeSet === 'grandmaster') {
+        cuirass.material.color.setHex(0x18181b);
+        cuirass.material.metalness = 0.85;
+      } else if (activeSet === 'obsidian') {
+        cuirass.material.color.setHex(0x3b0764);
+        cuirass.material.metalness = 0.92;
       } else {
         cuirass.material.color.setHex(0x4a3222);
         cuirass.material.metalness = 0.15;
@@ -453,6 +462,12 @@ export class AssetManager {
         cloak.material.color.setHex(0x292524);
       } else if (activeSet === 'flame') {
         cloak.material.color.setHex(0x450a0a);
+      } else if (activeSet === 'frost_warden') {
+        cloak.material.color.setHex(0x0c4a6e);
+      } else if (activeSet === 'grandmaster') {
+        cloak.material.color.setHex(0x27272a);
+      } else if (activeSet === 'obsidian') {
+        cloak.material.color.setHex(0x581c87);
       } else {
         cloak.material.color.setHex(0x1f242d);
       }
@@ -468,6 +483,12 @@ export class AssetManager {
       } else if (runeEffect === 'vamp') {
         blade.material.emissive.setHex(0x9333ea);
         blade.material.emissiveIntensity = 0.9;
+      } else if (runeEffect === 'frost') {
+        blade.material.emissive.setHex(0x38bdf8);
+        blade.material.emissiveIntensity = 1.1;
+      } else if (runeEffect === 'void') {
+        blade.material.emissive.setHex(0xa855f7);
+        blade.material.emissiveIntensity = 1.25;
       } else {
         blade.material.emissive.setHex(0x38bdf8);
         blade.material.emissiveIntensity = 0.15;
@@ -479,7 +500,15 @@ export class AssetManager {
    * Builds composite NPC models with distinct silhouettes and clothing colors.
    */
   public createNPCModel(
-    role: 'elder' | 'blacksmith' | 'merchant' | 'herbalist' | 'inquisitor'
+    role:
+      | 'elder'
+      | 'blacksmith'
+      | 'merchant'
+      | 'herbalist'
+      | 'inquisitor'
+      | 'charon'
+      | 'brom'
+      | 'kael'
   ): THREE.Group {
     const group = new THREE.Group();
     const skinMat = this.getMaterial('skin');
@@ -491,12 +520,15 @@ export class AssetManager {
       merchant: 0x1e3a8a,
       herbalist: 0x14532d,
       inquisitor: 0x991b1b,
+      charon: 0x115e59,
+      brom: 0x44403c,
+      kael: 0x1e1b4b,
     };
 
     const tunicMat = new THREE.MeshStandardMaterial({
       color: tunicColors[role],
       roughness: 0.7,
-      metalness: role === 'inquisitor' ? 0.45 : 0.1,
+      metalness: role === 'inquisitor' || role === 'kael' ? 0.45 : 0.1,
     });
 
     const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.85, 10), woodMat);
@@ -519,9 +551,9 @@ export class AssetManager {
       );
       crownHat.position.y = 1.9;
       group.add(crownHat);
-    } else if (role === 'blacksmith') {
+    } else if (role === 'blacksmith' || role === 'brom') {
       const hammer = new THREE.Mesh(
-        new THREE.BoxGeometry(0.24, 0.14, 0.14),
+        new THREE.BoxGeometry(0.28, 0.16, 0.16),
         this.getMaterial('steel')
       );
       hammer.position.set(0.36, 1.05, 0.22);
@@ -533,19 +565,31 @@ export class AssetManager {
       );
       pack.position.set(0, 1.2, -0.26);
       group.add(pack);
-    } else if (role === 'herbalist') {
+    } else if (role === 'herbalist' || role === 'charon') {
       const hood = new THREE.Mesh(
         new THREE.ConeGeometry(0.26, 0.35, 8),
         tunicMat
       );
       hood.position.y = 1.92;
       group.add(hood);
-    } else if (role === 'inquisitor') {
+      if (role === 'charon') {
+        const lantern = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.14, 0),
+          new THREE.MeshStandardMaterial({
+            color: 0x2dd4bf,
+            emissive: 0x14b8a6,
+            emissiveIntensity: 1.8,
+          })
+        );
+        lantern.position.set(-0.38, 1.1, 0.28);
+        group.add(lantern);
+      }
+    } else if (role === 'inquisitor' || role === 'kael') {
       const sunHalo = new THREE.Mesh(
         new THREE.TorusGeometry(0.26, 0.03, 6, 14),
         new THREE.MeshStandardMaterial({
-          color: 0xfbbf24,
-          emissive: 0xd97706,
+          color: role === 'kael' ? 0xf59e0b : 0xfbbf24,
+          emissive: role === 'kael' ? 0xea580c : 0xd97706,
           emissiveIntensity: 1.1,
           metalness: 0.85,
         })
@@ -638,28 +682,68 @@ export class AssetManager {
       const br = new THREE.Mesh(legGeo, darkFur);
       br.position.y = -0.26;
       rightLeg.add(br);
-    } else if (type === 'ghoul' || type === 'skeleton') {
+    } else if (
+      type === 'ghoul' ||
+      type === 'skeleton' ||
+      type === 'drowned' ||
+      type === 'fallen_ash' ||
+      type === 'boss_vesper'
+    ) {
       const isSkel = type === 'skeleton';
+      const isDrowned = type === 'drowned';
+      const isAsh = type === 'fallen_ash' || type === 'boss_vesper';
+      const isVesper = type === 'boss_vesper';
+
       const fleshMat = new THREE.MeshStandardMaterial({
-        color: isSkel ? 0xd6d3d1 : 0x57413a,
-        roughness: isSkel ? 0.55 : 0.75,
-        metalness: 0.1,
+        color: isVesper
+          ? 0x18181b
+          : isAsh
+          ? 0x27272a
+          : isDrowned
+          ? 0x134e4a
+          : isSkel
+          ? 0xd6d3d1
+          : 0x57413a,
+        roughness: isAsh ? 0.35 : 0.7,
+        metalness: isAsh ? 0.75 : 0.1,
       });
       const spineMat = new THREE.MeshStandardMaterial({
-        color: isSkel ? 0x38bdf8 : 0x991b1b,
-        emissive: isSkel ? 0x0284c7 : 0x000000,
-        emissiveIntensity: isSkel ? 0.8 : 0,
-        roughness: 0.5,
+        color: isVesper
+          ? 0xf59e0b
+          : isAsh
+          ? 0xf97316
+          : isDrowned
+          ? 0x22c55e
+          : isSkel
+          ? 0x38bdf8
+          : 0x991b1b,
+        emissive: isVesper
+          ? 0xd97706
+          : isAsh
+          ? 0xea580c
+          : isDrowned
+          ? 0x15803d
+          : isSkel
+          ? 0x0284c7
+          : 0x000000,
+        emissiveIntensity: isVesper ? 1.8 : isAsh || isDrowned || isSkel ? 1.1 : 0,
+        roughness: 0.4,
       });
       const clothMat = this.getMaterial('darkCloth');
 
-      body.position.set(0, 0.78, 0);
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.66, 0.4), fleshMat);
+      body.position.set(0, isVesper ? 0.92 : 0.78, 0);
+      const torso = new THREE.Mesh(
+        new THREE.BoxGeometry(isVesper ? 0.62 : 0.54, isVesper ? 0.76 : 0.66, 0.4),
+        fleshMat
+      );
       torso.position.set(0, 0.22, 0.06);
-      torso.rotation.x = isSkel ? 0.08 : 0.32;
+      torso.rotation.x = isAsh || isSkel ? 0.06 : 0.32;
       torso.castShadow = true;
 
-      const tatteredCloak = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.65, 0.05), clothMat);
+      const tatteredCloak = new THREE.Mesh(
+        new THREE.BoxGeometry(isVesper ? 0.68 : 0.5, isVesper ? 0.95 : 0.65, 0.05),
+        clothMat
+      );
       tatteredCloak.position.set(0, 0.15, -0.18);
       tatteredCloak.rotation.x = 0.25;
       cloakMesh = tatteredCloak;
@@ -674,7 +758,7 @@ export class AssetManager {
 
       head.position.set(0, 0.58, 0.24);
       const skull = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 8), fleshMat);
-      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), isSkel ? spineMat : eyeMat);
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), spineMat);
       eyeL.position.set(-0.08, 0.03, 0.18);
       const eyeR = eyeL.clone();
       eyeR.position.x = 0.08;
@@ -687,11 +771,17 @@ export class AssetManager {
       armL.position.set(0, -0.24, 0.08);
       armL.rotation.x = -0.35;
       leftArm.add(armL);
+      if (isVesper) {
+        const offhandBlade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.88, 0.08), spineMat);
+        offhandBlade.position.set(0, -0.55, 0.28);
+        offhandBlade.rotation.x = Math.PI / 2.3;
+        leftArm.add(offhandBlade);
+      }
 
       rightArm.position.set(0.34, 0.42, 0.12);
       const armR = armL.clone();
       const boneBlade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.72, 0.12),
+        new THREE.BoxGeometry(0.05, isVesper ? 1.05 : 0.72, 0.12),
         spineMat
       );
       boneBlade.position.set(0, -0.52, 0.28);
@@ -709,23 +799,31 @@ export class AssetManager {
       rightLeg.position.set(0.19, 0.78, 0);
       const legR = legL.clone();
       rightLeg.add(legR);
-    } else if (type === 'hag' || type === 'noonwraith') {
+    } else if (
+      type === 'hag' ||
+      type === 'noonwraith' ||
+      type === 'plague_reaper' ||
+      type === 'frost_wraith'
+    ) {
       const isNoon = type === 'noonwraith';
+      const isFrost = type === 'frost_wraith';
+      const isPlague = type === 'plague_reaper';
+
       const robeMat = new THREE.MeshStandardMaterial({
-        color: isNoon ? 0xe2e8f0 : 0x1f2937,
-        emissive: isNoon ? 0x2dd4bf : 0x000000,
-        emissiveIntensity: isNoon ? 0.55 : 0,
-        transparent: isNoon,
-        opacity: isNoon ? 0.78 : 1.0,
+        color: isFrost ? 0xbae6fd : isPlague ? 0x14532d : isNoon ? 0xe2e8f0 : 0x1f2937,
+        emissive: isFrost ? 0x0284c7 : isPlague ? 0x15803d : isNoon ? 0x2dd4bf : 0x000000,
+        emissiveIntensity: isFrost || isNoon ? 0.65 : isPlague ? 0.35 : 0,
+        transparent: isNoon || isFrost,
+        opacity: isNoon || isFrost ? 0.78 : 1.0,
         roughness: 0.7,
       });
       const rotMat = new THREE.MeshStandardMaterial({
-        color: isNoon ? 0x99f6e4 : 0x4d7c0f,
+        color: isFrost ? 0x38bdf8 : isNoon ? 0x99f6e4 : 0x4d7c0f,
         roughness: 0.8,
       });
       const orbMat = new THREE.MeshStandardMaterial({
-        color: isNoon ? 0x2dd4bf : 0xa855f7,
-        emissive: isNoon ? 0x14b8a6 : 0x9333ea,
+        color: isFrost ? 0x38bdf8 : isPlague ? 0x84cc16 : isNoon ? 0x2dd4bf : 0xa855f7,
+        emissive: isFrost ? 0x0284c7 : isPlague ? 0x4d7c0f : isNoon ? 0x14b8a6 : 0x9333ea,
         emissiveIntensity: 1.6,
       });
 
@@ -758,7 +856,10 @@ export class AssetManager {
       );
       staff.position.set(0.06, -0.1, 0.22);
       staff.rotation.x = 0.25;
-      const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), orbMat);
+      const orb = new THREE.Mesh(
+        isPlague ? new THREE.BoxGeometry(0.55, 0.12, 0.06) : new THREE.OctahedronGeometry(0.16, 0),
+        orbMat
+      );
       orb.position.set(0.06, 0.85, 0.44);
       weaponMesh = staff;
       rightArm.add(sleeveR, staff, orb);
@@ -772,41 +873,112 @@ export class AssetManager {
       rightLeg.position.set(0.18, 0.75, 0);
       const bootR = bootL.clone();
       rightLeg.add(bootR);
-    } else if (type === 'demon' || type === 'werewolf' || type === 'gargoyle') {
+    } else if (
+      type === 'demon' ||
+      type === 'werewolf' ||
+      type === 'gargoyle' ||
+      type === 'troglodyte' ||
+      type === 'boss_hydra' ||
+      type === 'boss_colossus'
+    ) {
       const isWerewolf = type === 'werewolf';
       const isGargoyle = type === 'gargoyle';
+      const isTroglodyte = type === 'troglodyte';
+      const isHydra = type === 'boss_hydra';
+      const isColossus = type === 'boss_colossus';
+
       const barkMat = new THREE.MeshStandardMaterial({
-        color: isWerewolf ? 0x1c1917 : isGargoyle ? 0x57534e : 0x292018,
-        roughness: isGargoyle ? 0.45 : 0.9,
-        metalness: isGargoyle ? 0.5 : 0.1,
+        color: isColossus
+          ? 0x1e293b
+          : isHydra
+          ? 0x14532d
+          : isTroglodyte
+          ? 0x44403c
+          : isWerewolf
+          ? 0x1c1917
+          : isGargoyle
+          ? 0x57534e
+          : 0x292018,
+        roughness: isColossus || isGargoyle ? 0.35 : 0.85,
+        metalness: isColossus ? 0.75 : isGargoyle ? 0.5 : 0.1,
       });
       const boneMat = new THREE.MeshStandardMaterial({
-        color: isWerewolf ? 0x7f1d1d : isGargoyle ? 0xa8a29e : 0xd6d3d1,
-        roughness: 0.5,
+        color: isColossus
+          ? 0x38bdf8
+          : isHydra
+          ? 0x4ade80
+          : isWerewolf
+          ? 0x7f1d1d
+          : isGargoyle
+          ? 0xa8a29e
+          : 0xd6d3d1,
+        roughness: 0.4,
       });
       const runeMat = new THREE.MeshStandardMaterial({
-        color: isWerewolf ? 0xef4444 : isGargoyle ? 0xf59e0b : 0xf97316,
-        emissive: isWerewolf ? 0xdc2626 : isGargoyle ? 0xd97706 : 0xea580c,
-        emissiveIntensity: 1.5,
+        color: isColossus
+          ? 0x38bdf8
+          : isHydra
+          ? 0x22c55e
+          : isTroglodyte
+          ? 0xa855f7
+          : isWerewolf
+          ? 0xef4444
+          : isGargoyle
+          ? 0xf59e0b
+          : 0xf97316,
+        emissive: isColossus
+          ? 0x0284c7
+          : isHydra
+          ? 0x16a34a
+          : isTroglodyte
+          ? 0x7e22ce
+          : isWerewolf
+          ? 0xdc2626
+          : isGargoyle
+          ? 0xd97706
+          : 0xea580c,
+        emissiveIntensity: 1.6,
       });
 
-      body.position.set(0, 1.1, 0);
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.35, 0.58), barkMat);
-      torso.position.y = 0.55;
-      torso.castShadow = true;
-      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), runeMat);
-      core.position.set(0, 0.6, 0.28);
-      const mossCape = new THREE.Mesh(
-        new THREE.BoxGeometry(isGargoyle ? 1.55 : 0.98, 1.35, 0.08),
+      const scaleMult = isHydra || isColossus ? 1.28 : 1.0;
+      body.position.set(0, 1.1 * scaleMult, 0);
+      const torso = new THREE.Mesh(
+        new THREE.BoxGeometry(0.95 * scaleMult, 1.35 * scaleMult, 0.58 * scaleMult),
         barkMat
       );
-      mossCape.position.set(0, 0.55, -0.32);
+      torso.position.y = 0.55 * scaleMult;
+      torso.castShadow = true;
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.26 * scaleMult, 0), runeMat);
+      core.position.set(0, 0.6 * scaleMult, 0.28 * scaleMult);
+      const mossCape = new THREE.Mesh(
+        new THREE.BoxGeometry(isGargoyle ? 1.55 : 0.98 * scaleMult, 1.35 * scaleMult, 0.08),
+        barkMat
+      );
+      mossCape.position.set(0, 0.55 * scaleMult, -0.32 * scaleMult);
       cloakMesh = mossCape;
       body.add(torso, core, mossCape);
 
-      head.position.set(0, 1.45, 0.18);
+      // Hydra extra serpent heads or Colossus 3 crystal growths
+      if (isHydra) {
+        const neckL = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 0.95, 8), barkMat);
+        neckL.position.set(-0.55, 1.55, 0.25);
+        neckL.rotation.z = 0.38;
+        const neckR = neckL.clone();
+        neckR.position.x = 0.55;
+        neckR.rotation.z = -0.38;
+        body.add(neckL, neckR);
+      } else if (isColossus) {
+        for (let c = 0; c < 3; c++) {
+          const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), runeMat);
+          crystal.name = `colossusCrystal_${c}`;
+          crystal.position.set((c - 1) * 0.55, 1.35 + (c === 1 ? 0.25 : 0), -0.25);
+          body.add(crystal);
+        }
+      }
+
+      head.position.set(0, 1.45 * scaleMult, 0.18 * scaleMult);
       const skull = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.62), boneMat);
-      const antlerL = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.75, 6), boneMat);
+      const antlerL = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.75, 6), runeMat);
       antlerL.position.set(-0.35, 0.4, -0.05);
       antlerL.rotation.z = 0.45;
       const antlerR = antlerL.clone();
@@ -815,72 +987,82 @@ export class AssetManager {
       head.add(skull, antlerL, antlerR);
       body.add(head);
 
-      const armGeo = new THREE.BoxGeometry(0.28, 1.15, 0.28);
-      leftArm.position.set(-0.66, 1.05, 0.08);
+      const armGeo = new THREE.BoxGeometry(0.28 * scaleMult, 1.15 * scaleMult, 0.28 * scaleMult);
+      leftArm.position.set(-0.66 * scaleMult, 1.05 * scaleMult, 0.08);
       const armL = new THREE.Mesh(armGeo, barkMat);
-      armL.position.y = -0.48;
+      armL.position.y = -0.48 * scaleMult;
       leftArm.add(armL);
 
-      rightArm.position.set(0.66, 1.05, 0.08);
+      rightArm.position.set(0.66 * scaleMult, 1.05 * scaleMult, 0.08);
       const armR = armL.clone();
-      const runicClub = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.35, 0.24), runeMat);
+      const runicClub = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.45, 0.26), runeMat);
       runicClub.position.set(0, -0.95, 0.45);
       runicClub.rotation.x = Math.PI / 2.3;
       weaponMesh = runicClub;
       rightArm.add(armR, runicClub);
       body.add(leftArm, rightArm);
 
-      const legGeo = new THREE.CylinderGeometry(0.18, 0.14, 1.1, 8);
-      leftLeg.position.set(-0.28, 1.1, 0);
+      const legGeo = new THREE.CylinderGeometry(0.18, 0.14, 1.1 * scaleMult, 8);
+      leftLeg.position.set(-0.28 * scaleMult, 1.1 * scaleMult, 0);
       const legL = new THREE.Mesh(legGeo, barkMat);
-      legL.position.y = -0.55;
+      legL.position.y = -0.55 * scaleMult;
       leftLeg.add(legL);
 
-      rightLeg.position.set(0.28, 1.1, 0);
+      rightLeg.position.set(0.28 * scaleMult, 1.1 * scaleMult, 0);
       const legR = legL.clone();
       rightLeg.add(legR);
     } else {
-      // Story Boss: Ancient Guardian ('boss') or Act II Final Boss: Lich King Malakor ('malakor')
+      // Story Bosses & Void Entities: Ancient Guardian ('boss'), Lich King Malakor ('malakor'), Void Knight ('void_knight'), Avatar of Void ('boss_avatar')
       const isMalakor = type === 'malakor';
+      const isAvatar = type === 'boss_avatar';
+      const isVoidKnight = type === 'void_knight';
+      const scaleMult = isAvatar ? 1.32 : isVoidKnight ? 0.92 : 1.0;
+
       const armorMat = new THREE.MeshPhysicalMaterial({
-        color: isMalakor ? 0x0f172a : 0x1c1917,
-        roughness: 0.22,
-        metalness: 0.9,
-        clearcoat: 0.5,
+        color: isAvatar ? 0x090414 : isMalakor || isVoidKnight ? 0x0f172a : 0x1c1917,
+        roughness: 0.2,
+        metalness: 0.92,
+        clearcoat: 0.6,
       });
       const goldMat = new THREE.MeshStandardMaterial({
-        color: isMalakor ? 0xfbbf24 : 0xd97706,
-        emissive: isMalakor ? 0xb45309 : 0x000000,
-        emissiveIntensity: isMalakor ? 0.6 : 0,
+        color: isAvatar ? 0xef4444 : isMalakor ? 0xfbbf24 : 0xd97706,
+        emissive: isAvatar ? 0xdc2626 : isMalakor ? 0xb45309 : 0x000000,
+        emissiveIntensity: isAvatar ? 1.2 : isMalakor ? 0.6 : 0,
         roughness: 0.3,
         metalness: 0.9,
       });
       const spectralMat = new THREE.MeshStandardMaterial({
-        color: isMalakor ? 0xa855f7 : 0x38bdf8,
-        emissive: isMalakor ? 0x9333ea : 0x0284c7,
-        emissiveIntensity: 2.0,
+        color: isAvatar ? 0xef4444 : isMalakor || isVoidKnight ? 0xa855f7 : 0x38bdf8,
+        emissive: isAvatar ? 0xdc2626 : isMalakor || isVoidKnight ? 0x9333ea : 0x0284c7,
+        emissiveIntensity: 2.2,
       });
 
-      body.position.set(0, 1.2, 0);
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(1.18, 1.55, 0.68), armorMat);
-      torso.position.y = 0.7;
+      body.position.set(0, 1.2 * scaleMult, 0);
+      const torso = new THREE.Mesh(
+        new THREE.BoxGeometry(1.18 * scaleMult, 1.55 * scaleMult, 0.68 * scaleMult),
+        armorMat
+      );
+      torso.position.y = 0.7 * scaleMult;
       torso.castShadow = true;
 
-      const heartCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 1), spectralMat);
-      heartCore.position.set(0, 0.75, 0.36);
+      const heartCore = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32 * scaleMult, 1),
+        spectralMat
+      );
+      heartCore.position.set(0, 0.75 * scaleMult, 0.36 * scaleMult);
 
       const cape = new THREE.Mesh(
-        new THREE.BoxGeometry(1.3, 1.95, 0.08),
+        new THREE.BoxGeometry(1.3 * scaleMult, 1.95 * scaleMult, 0.08),
         new THREE.MeshStandardMaterial({
-          color: isMalakor ? 0x3b0764 : 0x450a0a,
+          color: isAvatar ? 0x450a0a : isMalakor || isVoidKnight ? 0x3b0764 : 0x450a0a,
           roughness: 0.85,
         })
       );
-      cape.position.set(0, 0.35, -0.36);
+      cape.position.set(0, 0.35 * scaleMult, -0.36 * scaleMult);
       cloakMesh = cape;
       body.add(torso, heartCore, cape);
 
-      head.position.set(0, 1.72, 0);
+      head.position.set(0, 1.72 * scaleMult, 0);
       const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.52, 10), armorMat);
       const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.3, 0.22, 8), goldMat);
       crown.position.set(0, 0.3, 0);
@@ -889,34 +1071,52 @@ export class AssetManager {
       head.add(helm, crown, visor);
       body.add(head);
 
-      leftArm.position.set(-0.84, 1.25, 0);
-      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.35, 0.34), armorMat);
-      armL.position.y = -0.55;
+      leftArm.position.set(-0.84 * scaleMult, 1.25 * scaleMult, 0);
+      const armL = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34 * scaleMult, 1.35 * scaleMult, 0.34 * scaleMult),
+        armorMat
+      );
+      armL.position.y = -0.55 * scaleMult;
       leftArm.add(armL);
 
-      rightArm.position.set(0.84, 1.25, 0);
+      rightArm.position.set(0.84 * scaleMult, 1.25 * scaleMult, 0);
       const armR = armL.clone();
-      const greatsword = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.35, 0.06), spectralMat);
-      greatsword.position.set(0, -1.05, 0.85);
+      const greatsword = new THREE.Mesh(
+        new THREE.BoxGeometry(0.22 * scaleMult, 2.45 * scaleMult, 0.06),
+        spectralMat
+      );
+      greatsword.position.set(0, -1.05 * scaleMult, 0.85 * scaleMult);
       greatsword.rotation.x = Math.PI / 2.3;
       weaponMesh = greatsword;
       rightArm.add(armR, greatsword);
       body.add(leftArm, rightArm);
 
-      leftLeg.position.set(-0.34, 1.2, 0);
-      const legL = new THREE.Mesh(new THREE.BoxGeometry(0.38, 1.2, 0.38), armorMat);
-      legL.position.y = -0.6;
+      leftLeg.position.set(-0.34 * scaleMult, 1.2 * scaleMult, 0);
+      const legL = new THREE.Mesh(
+        new THREE.BoxGeometry(0.38 * scaleMult, 1.2 * scaleMult, 0.38 * scaleMult),
+        armorMat
+      );
+      legL.position.y = -0.6 * scaleMult;
       leftLeg.add(legL);
 
-      rightLeg.position.set(0.34, 1.2, 0);
+      rightLeg.position.set(0.34 * scaleMult, 1.2 * scaleMult, 0);
       const legR = legL.clone();
       rightLeg.add(legR);
     }
 
     const shadowRadius =
-      type === 'boss' || type === 'malakor'
-        ? 1.25
-        : type === 'demon' || type === 'werewolf' || type === 'gargoyle'
+      type === 'boss' ||
+      type === 'malakor' ||
+      type === 'boss_hydra' ||
+      type === 'boss_colossus' ||
+      type === 'boss_avatar'
+        ? 1.35
+        : type === 'demon' ||
+          type === 'werewolf' ||
+          type === 'gargoyle' ||
+          type === 'troglodyte' ||
+          type === 'void_knight' ||
+          type === 'boss_vesper'
         ? 0.9
         : 0.55;
     const shadow = new THREE.Mesh(

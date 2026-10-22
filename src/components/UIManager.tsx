@@ -96,6 +96,8 @@ export const UIManager: React.FC<UIManagerProps> = ({
     activeModal,
     activeDialogueNode,
     activeLoreNote,
+    activeAshEcho,
+    waystones,
     codexArticles,
     worldLoreNotes,
     prologueSlideIndex,
@@ -109,7 +111,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
     bestiary,
   } = hud;
   const discoveredLoreIds = player.discoveredLoreIds ?? [];
-  const totalLoreNotes = worldLoreNotes?.length ?? 12;
+  const totalLoreNotes = worldLoreNotes?.length ?? 22;
 
   const effStats = computeEffectivePlayerStats(player, inventory, skills);
   const currentSignInfo = MAGIC_SIGNS[player.activeSign];
@@ -136,9 +138,30 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
   const oreCount =
     inventory.find((i) => i.id === 'iron_ore')?.quantity ?? 0;
+  const blackOreCount =
+    inventory.find((i) => i.id === 'black_ore')?.quantity ?? 0;
 
   const equippedTrophy = inventory.find((i) => i.category === 'trophy' && i.equipped);
   const availableRunes = inventory.filter((i) => i.category === 'rune' && i.quantity > 0);
+
+  const getSetDisplayName = (setId?: string | null) => {
+    switch (setId) {
+      case 'raven':
+        return 'Школа Ворона';
+      case 'bear':
+        return 'Школа Медведя';
+      case 'flame':
+        return 'Школа Пламени';
+      case 'frost_warden':
+        return 'Морозный Страж (T4)';
+      case 'grandmaster':
+        return 'Великий Магистр Пепла (T5)';
+      case 'obsidian':
+        return 'Обсидиановый Король (T5)';
+      default:
+        return 'Братство Пепла';
+    }
+  };
 
   return (
     <div className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-4 md:p-6">
@@ -147,7 +170,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
         <div className="fixed inset-0 pointer-events-none z-10 border-4 border-amber-500/40 bg-amber-950/15 shadow-[inset_0_0_90px_rgba(245,158,11,0.35)] transition-opacity">
           <div className="absolute top-20 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-stone-950/95 border border-amber-500/80 text-amber-300 text-xs font-display font-bold tracking-wider uppercase shadow-xl flex items-center gap-2">
             <Eye className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            Чутьё Зольника активно — улики, летописи Вальдмарка и тайники подсвечены
+            Чутьё Зольника активно — улики, Отголоски Пепла, летописи и тайники подсвечены
           </div>
           {hud.worldInteractables
             .filter(
@@ -155,11 +178,13 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 !w.interacted &&
                 (w.type === 'clue' ||
                   w.type === 'lore_note' ||
+                  w.type === 'ash_echo' ||
+                  w.type === 'waystone' ||
                   w.type === 'loot' ||
                   w.type === 'monster_nest' ||
                   w.type === 'place_of_power' ||
                   w.isPOI) &&
-                Math.hypot(w.x - player.x, w.z - player.z) < 55
+                Math.hypot(w.x - player.x, w.z - player.z) < 65
             )
             .slice(0, 5)
             .map((w, idx) => {
@@ -170,7 +195,14 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   style={{ bottom: `${9 + idx * 2.2}rem` }}
                   className="absolute left-1/2 -translate-x-1/2 px-3 py-1 rounded bg-stone-950/90 border border-amber-500/70 text-xs text-amber-200 font-mono-tabular shadow-lg"
                 >
-                  {w.type === 'lore_note' ? '📜 Летопись:' : '🔍'} {w.name} — {dist} м
+                  {w.type === 'lore_note'
+                    ? '📜 Летопись:'
+                    : w.type === 'ash_echo'
+                    ? '👻 Отголосок Пепла:'
+                    : w.type === 'waystone'
+                    ? '🗿 Путевой Камень:'
+                    : '🔍'}{' '}
+                  {w.name} — {dist} м
                 </div>
               );
             })}
@@ -302,8 +334,9 @@ export const UIManager: React.FC<UIManagerProps> = ({
             </div>
           </div>
 
-          {/* Active Oils, Elixirs, Trophy & Set Bonus Badges */}
+          {/* Active Oils, Elixirs, Decoctions, Trophy & Set Bonus Badges */}
           {((player.activeBladeOil && player.activeBladeOil !== 'none') ||
+            (player.activeDecoction && player.activeDecoction !== 'none') ||
             (player.thunderElixirTimer ?? 0) > 0 ||
             (player.placeOfPowerTimer ?? 0) > 0 ||
             equippedTrophy ||
@@ -312,6 +345,11 @@ export const UIManager: React.FC<UIManagerProps> = ({
               {player.activeBladeOil && player.activeBladeOil !== 'none' && (
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-950/90 border border-amber-600/60 text-amber-300 font-mono-tabular">
                   🗡️ Масло ({Math.ceil(player.bladeOilTimer ?? 0)}с)
+                </span>
+              )}
+              {player.activeDecoction && player.activeDecoction !== 'none' && (
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-lime-950/90 border border-lime-500/70 text-lime-300 font-mono-tabular">
+                  🧪 Отвар ({Math.ceil(player.decoctionTimer ?? 0)}с)
                 </span>
               )}
               {(player.thunderElixirTimer ?? 0) > 0 && (
@@ -331,12 +369,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
               )}
               {effStats.activeSet && (
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-950/90 border border-emerald-600/60 text-emerald-300">
-                  🛡️ Сет:{' '}
-                  {effStats.activeSet === 'raven'
-                    ? 'Школа Ворона'
-                    : effStats.activeSet === 'bear'
-                    ? 'Школа Медведя'
-                    : 'Школа Пламени'}
+                  🛡️ Сет: {getSetDisplayName(effStats.activeSet)}
                 </span>
               )}
             </div>
@@ -414,17 +447,29 @@ export const UIManager: React.FC<UIManagerProps> = ({
           {bossEnemy && bossEnemy.state !== 'DEAD' ? (
             <div className="w-full bg-stone-950/95 border border-amber-700/70 rounded-lg px-4 py-2.5 shadow-2xl">
               <div className="flex justify-between items-center text-xs font-display font-bold text-amber-400 mb-1">
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center gap-1.5 flex-wrap">
                   <Skull className="w-4 h-4 text-red-500" /> {bossEnemy.name}
                   <span
                     className={`ml-1 px-1.5 py-0.5 text-[10px] rounded border ${
-                      bossEnemy.phase === 2
+                      bossEnemy.phase === 3
+                        ? 'bg-purple-950/90 border-purple-400 text-purple-200'
+                        : bossEnemy.phase === 2
                         ? 'bg-red-950/90 border-red-500 text-red-300'
                         : 'bg-amber-950/80 border-amber-700/70 text-amber-300'
                     }`}
                   >
-                    {bossEnemy.phase === 2 ? 'Фаза II · Ярость' : 'Фаза I'}
+                    {bossEnemy.phase === 3
+                      ? 'Фаза III · Коллапс Бездны'
+                      : bossEnemy.phase === 2
+                      ? 'Фаза II · Ярость'
+                      : 'Фаза I'}
                   </span>
+                  {typeof bossEnemy.crystalsRemaining === 'number' &&
+                    bossEnemy.crystalsRemaining > 0 && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-sky-950 border border-sky-400 text-sky-200">
+                        💎 Кристаллы: {bossEnemy.crystalsRemaining}/3 (Импульс [3])
+                      </span>
+                    )}
                 </span>
                 <span className="font-mono-tabular">
                   {Math.ceil(bossEnemy.hp)} / {bossEnemy.maxHp}
@@ -433,13 +478,17 @@ export const UIManager: React.FC<UIManagerProps> = ({
               <div className="relative w-full h-3 bg-stone-900 rounded overflow-hidden border border-stone-800">
                 <div
                   className={`h-full transition-all duration-150 ${
-                    bossEnemy.phase === 2 ? 'bg-amber-500' : 'bg-red-600'
+                    bossEnemy.phase === 3
+                      ? 'bg-purple-500'
+                      : bossEnemy.phase === 2
+                      ? 'bg-amber-500'
+                      : 'bg-red-600'
                   }`}
                   style={{
                     width: `${Math.max(0, Math.min(100, (bossEnemy.hp / bossEnemy.maxHp) * 100))}%`,
                   }}
                 />
-                {/* 50% Phase II transition marker */}
+                {/* Phase transition marker */}
                 <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-stone-950/80" />
               </div>
             </div>
@@ -2326,7 +2375,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 <div className="text-xs text-amber-400/90">
                   {player.loreMasterUnlocked
                     ? '👑 Статус «Хранитель Памяти Вальдмарка» активен (+15% урона по боссам)'
-                    : `Соберите все 12 записей для титула «Хранитель Памяти Вальдмарка» (${discoveredLoreIds.length}/${totalLoreNotes})`}
+                    : `Соберите все ${totalLoreNotes} записей для титула «Хранитель Памяти Вальдмарка» (${discoveredLoreIds.length}/${totalLoreNotes})`}
                 </div>
                 <div className="flex items-center gap-2.5">
                   <button
@@ -2364,7 +2413,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   </h2>
                 </div>
                 <p className="text-xs text-stone-400 mt-0.5">
-                  Канон Старого Королевства, Братство Пепла, персонажи, бестиарий и 12 найденных летописей (+25 XP за каждую)
+                  Канон Старого Королевства, Братство Пепла, персонажи, бестиарий и {totalLoreNotes} найденных летописей (+25 XP за каждую)
                 </p>
               </div>
 
@@ -2378,7 +2427,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 >
                   {player.loreMasterUnlocked ? (
                     <span>
-                      👑 Хранитель Памяти Вальдмарка (12/12 · +15% к урону по боссам · Секретный финал открыт)
+                      👑 Хранитель Памяти Вальдмарка ({totalLoreNotes}/{totalLoreNotes} · +15% к урону по боссам · Секретный финал открыт)
                     </span>
                   ) : (
                     <span>
@@ -2386,7 +2435,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                       <strong className="text-amber-400">
                         {discoveredLoreIds.length}/{totalLoreNotes}
                       </strong>{' '}
-                      (соберите все 12 для +15% к урону по боссам)
+                      (соберите все {totalLoreNotes} для +15% к урону по боссам)
                     </span>
                   )}
                 </div>

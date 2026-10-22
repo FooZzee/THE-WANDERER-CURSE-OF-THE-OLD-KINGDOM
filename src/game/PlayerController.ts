@@ -91,6 +91,12 @@ export class PlayerController {
       discoveredLoreIds: [],
       loreMasterUnlocked: false,
       secretEndingUnlocked: false,
+      activeDecoction: 'none',
+      decoctionTimer: 0,
+      poisonTimer: 0,
+      unlockedWaystones: ['ws_village'],
+      viewedAshEchoIds: [],
+      vesperFate: 'none',
     };
 
     this.rig.root.position.set(startX, startY, startZ);
@@ -170,17 +176,18 @@ export class PlayerController {
     return true;
   }
 
-  public startDodge(cameraYaw: number): boolean {
+  public startDodge(cameraYaw: number, freeGrandmasterDash = false): boolean {
+    const cost = freeGrandmasterDash ? 8 : 18;
     if (
       this.actionState === 'dead' ||
       this.dodgeTimer > 0 ||
-      this.stats.stamina < 18
+      this.stats.stamina < cost
     ) {
       return false;
     }
 
-    this.stats.stamina = Math.max(0, this.stats.stamina - 18);
-    this.dodgeDuration = 0.42;
+    this.stats.stamina = Math.max(0, this.stats.stamina - cost);
+    this.dodgeDuration = freeGrandmasterDash ? 0.36 : 0.42;
     this.dodgeTimer = this.dodgeDuration;
     this.attackTimer = 0;
     this.actionState = 'dodge';
@@ -266,6 +273,20 @@ export class PlayerController {
     }
     if ((this.stats.blizzardElixirTimer ?? 0) > 0) {
       this.stats.blizzardElixirTimer = Math.max(0, (this.stats.blizzardElixirTimer ?? 0) - dt);
+    }
+    if ((this.stats.decoctionTimer ?? 0) > 0) {
+      this.stats.decoctionTimer = Math.max(0, (this.stats.decoctionTimer ?? 0) - dt);
+      if (this.stats.decoctionTimer === 0) {
+        this.stats.activeDecoction = 'none';
+      }
+    }
+    if ((this.stats.poisonTimer ?? 0) > 0) {
+      this.stats.poisonTimer = Math.max(0, (this.stats.poisonTimer ?? 0) - dt);
+      const isHydraImmune =
+        this.stats.activeDecoction === 'hydra' && (this.stats.decoctionTimer ?? 0) > 0;
+      if (!isHydraImmune && this.stats.hp > 1) {
+        this.stats.hp = Math.max(1, this.stats.hp - 4.5 * dt);
+      }
     }
     if (this.comboResetTimer > 0) {
       this.comboResetTimer = Math.max(0, this.comboResetTimer - dt);
@@ -383,6 +404,10 @@ export class PlayerController {
       // Underground Catacombs chamber bounds
       nextX = Math.max(89, Math.min(121, nextX));
       nextZ = Math.max(89, Math.min(121, nextZ));
+    } else if (nextZ < -95) {
+      // Northern March expansion bounds (z down to -542, x in [-105, 105])
+      nextX = Math.max(-105, Math.min(105, nextX));
+      nextZ = Math.max(-542, nextZ);
     } else {
       const distFromOrigin = Math.hypot(nextX, nextZ);
       if (distFromOrigin > 108) {

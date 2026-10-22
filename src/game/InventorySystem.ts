@@ -248,6 +248,68 @@ export class InventorySystem {
         upgradeLevel: 0,
         stats: { silverAttack: 36, signIntensity: 15 },
       },
+      {
+        id: 'bp_frost_warden_armor',
+        name: 'Чертёж: Доспех Хранителя Хлада (Тир-4)',
+        description: 'Северный латный комплект Среброзубого Перевала: удары мечом накладывают мороз и замедляют врагов.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 165,
+        quantity: 1,
+        craftsItemId: 'set_frost_warden_armor',
+        craftRecipe: [
+          { itemId: 'iron_ore', count: 1 },
+          { itemId: 'ice_lotus', count: 1 },
+        ],
+      },
+      {
+        id: 'bp_grandmaster_armor',
+        name: 'Чертёж: Доспех Грандмастера Пепла (Тир-5)',
+        description: 'Высшее облачение Чёрного Бастиона: усиливает все 5 Печатей (+65%) и даёт двойной рывок с теневым следом.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 220,
+        quantity: 1,
+        craftsItemId: 'set_grandmaster_armor',
+        craftRecipe: [
+          { itemId: 'black_ore', count: 1 },
+          { itemId: 'iron_ore', count: 1 },
+        ],
+      },
+      {
+        id: 'bp_obsidian_armor',
+        name: 'Чертёж: Латы Обсидианового Стража (Тир-5)',
+        description: 'Броня Кратера Затмения: дарует иммунитет к прерыванию атак и возвращает 20% урона врагам.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 240,
+        quantity: 1,
+        craftsItemId: 'set_obsidian_armor',
+        craftRecipe: [
+          { itemId: 'black_ore', count: 1 },
+          { itemId: 'void_dust', count: 1 },
+        ],
+      },
+      {
+        id: 'rune_frost_sup',
+        name: 'Высшая Руна Вечной Мерзлоты',
+        description: 'Замораживает кровь врагов при ударе (+16 к серебру, +20% к Печатям).',
+        category: 'rune',
+        rarity: 'relic',
+        value: 145,
+        quantity: 2,
+        stats: { runeEffect: 'frost', attack: 14, silverAttack: 16, signIntensity: 20 },
+      },
+      {
+        id: 'rune_void_sup',
+        name: 'Высшая Руна Сердца Пустоты',
+        description: 'Обжигает врагов багровой энергией Бездны (+20 к урону сталью и серебром).',
+        category: 'rune',
+        rarity: 'relic',
+        value: 175,
+        quantity: 2,
+        stats: { runeEffect: 'void', attack: 20, silverAttack: 20, critChanceBonus: 0.1 },
+      },
     ];
   }
 
@@ -317,6 +379,38 @@ export class InventorySystem {
         category: 'resource',
         rarity: 'common',
         value: 20,
+      },
+      black_ore: {
+        id: 'black_ore',
+        name: 'Чёрная руда',
+        description: 'Кристаллизованная кровь Древнего Бога из Мёртвых Шахт. Необходима для ковки снаряжения Тир-5 и отваров.',
+        category: 'resource',
+        rarity: 'relic',
+        value: 65,
+      },
+      hydra_heart: {
+        id: 'hydra_heart',
+        name: 'Сердце гидры',
+        description: 'Пульсирующее сердце Матери Трясины. Ключевой реагент для Отвара Матери Трясины.',
+        category: 'resource',
+        rarity: 'relic',
+        value: 140,
+      },
+      void_dust: {
+        id: 'void_dust',
+        name: 'Пыль пустоты',
+        description: 'Сияющий пепел из Кратера Затмения для Высшей Алхимии и обсидиановой ковки.',
+        category: 'resource',
+        rarity: 'rare',
+        value: 55,
+      },
+      ice_lotus: {
+        id: 'ice_lotus',
+        name: 'Ледяной лотос',
+        description: 'Редкий морозный цветок со скал Среброзубого Перевала для отваров и брони Хранителя Хлада.',
+        category: 'resource',
+        rarity: 'rare',
+        value: 45,
       },
       cursed_essence: {
         id: 'cursed_essence',
@@ -425,6 +519,175 @@ export class InventorySystem {
         socketedRuneId: 'rune_vamp',
         stats: { attack: 40, silverAttack: 48, critChanceBonus: 0.15, runeEffect: 'vamp' },
       },
+      // =======================================================================
+      // 5 МИФИЧЕСКИХ ОРУЖИЙ СЕВЕРНОГО ПОХОДА
+      // =======================================================================
+      mythic_sun_eater: {
+        id: 'mythic_sun_eater',
+        name: 'Двуручный клинок «Пожиратель Солнца»',
+        description: 'Мифическое оружие Кратера Затмения: тяжёлые удары выпускают испепеляющие огненные волны.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 520,
+        equipped: true,
+        upgradeLevel: 2,
+        setId: 'obsidian',
+        mythicPassive: 'sun_eater',
+        stats: { attack: 58, silverAttack: 64, signIntensity: 35, runeEffect: 'fire' },
+      },
+      mythic_dusk_fangs: {
+        id: 'mythic_dusk_fangs',
+        name: 'Парные клинки Веспера «Клыки Заката»',
+        description: 'Личное оружие Грандмастера Братства Пепла: сверхбыстрые серии ударов и исцеление вампиризмом (12% от урона).',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 540,
+        equipped: true,
+        upgradeLevel: 2,
+        setId: 'grandmaster',
+        mythicPassive: 'dusk_fangs',
+        stats: { attack: 54, silverAttack: 62, critChanceBonus: 0.25, runeEffect: 'vamp' },
+      },
+      mythic_void_voice: {
+        id: 'mythic_void_voice',
+        name: 'Клинок «Глас Бездны»',
+        description: 'Выкован из осколка Трона Пустоты: полностью игнорирует и пробивает любую броню, панцири и щиты врагов.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 560,
+        equipped: true,
+        upgradeLevel: 2,
+        setId: 'grandmaster',
+        mythicPassive: 'void_voice',
+        stats: { attack: 60, silverAttack: 68, signIntensity: 40, runeEffect: 'void' },
+      },
+      mythic_black_cleaver: {
+        id: 'mythic_black_cleaver',
+        name: 'Колун Чёрной Руды',
+        description: 'Мифический трофей Мёртвых Шахт: мгновенно раскалывает кристальную броню големов и оглушает врагов.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 460,
+        equipped: true,
+        upgradeLevel: 1,
+        setId: 'frost_warden',
+        mythicPassive: 'black_cleaver',
+        stats: { attack: 52, silverAttack: 56, defense: 14, runeEffect: 'frost' },
+      },
+      mythic_plague_scythe: {
+        id: 'mythic_plague_scythe',
+        name: 'Коса Чумного Жнеца',
+        description: 'Мифическое оружие Затопленных Топей: каждый удар накладывает смертоносное ядовитое кровотечение.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 440,
+        equipped: true,
+        upgradeLevel: 1,
+        mythicPassive: 'plague_scythe',
+        stats: { attack: 48, silverAttack: 54, critChanceBonus: 0.18, runeEffect: 'bleed' },
+      },
+      // =======================================================================
+      // КОМПЛЕКТЫ ТИР-4 И ТИР-5 СЕВЕРНОГО ПОХОДА
+      // =======================================================================
+      set_frost_warden_armor: {
+        id: 'set_frost_warden_armor',
+        name: 'Доспех Хранителя Хлада (Тир-4)',
+        description: 'Сет Хранителя Хлада: удары мечом накладывают мороз и замедляют врагов, +30% к броне.',
+        category: 'armor',
+        rarity: 'relic',
+        value: 360,
+        equipped: true,
+        setId: 'frost_warden',
+        stats: { defense: 34, maxHealth: 105, signIntensity: 30 },
+      },
+      set_frost_warden_sword: {
+        id: 'set_frost_warden_sword',
+        name: 'Ледяной клинок Среброзуба (Тир-4)',
+        description: 'Парный клинок комплекта Хранителя Хлада, сковывающий движения чудовищ.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 350,
+        equipped: true,
+        setId: 'frost_warden',
+        stats: { attack: 45, silverAttack: 50, signIntensity: 25, runeEffect: 'frost' },
+      },
+      set_grandmaster_armor: {
+        id: 'set_grandmaster_armor',
+        name: 'Доспех Грандмастера Пепла (Тир-5)',
+        description: 'Высший сет Чёрного Бастиона: усиливает все 5 Знаков (+65% мощи) и даёт двойной рывок с теневым следом.',
+        category: 'armor',
+        rarity: 'relic',
+        value: 480,
+        equipped: true,
+        setId: 'grandmaster',
+        stats: { defense: 40, maxHealth: 130, signIntensity: 55, critChanceBonus: 0.15 },
+      },
+      set_grandmaster_sword: {
+        id: 'set_grandmaster_sword',
+        name: 'Клинок Великого Магистра Пепла (Тир-5)',
+        description: 'Реликтовый меч Грандмастера Пепла с рунами всех пяти стихий.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 490,
+        equipped: true,
+        setId: 'grandmaster',
+        stats: { attack: 55, silverAttack: 62, signIntensity: 45, critChanceBonus: 0.2 },
+      },
+      set_obsidian_armor: {
+        id: 'set_obsidian_armor',
+        name: 'Латы Обсидианового Стража (Тир-5)',
+        description: 'Сет Обсидианового Стража: даёт иммунитет к прерыванию атак и возвращает 20% урона врагам.',
+        category: 'armor',
+        rarity: 'relic',
+        value: 510,
+        equipped: true,
+        setId: 'obsidian',
+        stats: { defense: 48, maxHealth: 160 },
+      },
+      set_obsidian_sword: {
+        id: 'set_obsidian_sword',
+        name: 'Обсидиановый Бастард Трона (Тир-5)',
+        description: 'Тяжёлый меч комплекта Обсидианового Стража.',
+        category: 'weapon',
+        rarity: 'relic',
+        value: 500,
+        equipped: true,
+        setId: 'obsidian',
+        stats: { attack: 56, silverAttack: 60, defense: 15 },
+      },
+      // =======================================================================
+      // ВЫСШАЯ АЛХИМИЯ: ОТВАРЫ ИЗ ТРОФЕЕВ БОССОВ
+      // =======================================================================
+      decoction_hydra: {
+        id: 'decoction_hydra',
+        name: 'Отвар из Матери Трясины',
+        description: 'Трофейный отвар: +8 ОЗ/сек регенерации, +60 макс. ОЗ и полный иммунитет к болотному яду на 180 сек.',
+        category: 'potion',
+        rarity: 'relic',
+        value: 160,
+        decoctionEffect: 'hydra',
+        stats: { healAmount: 90, hpRegenBonus: 8 },
+      },
+      decoction_colossus: {
+        id: 'decoction_colossus',
+        name: 'Отвар из Кристального Колосса',
+        description: 'Трофейный отвар: +22 к Броне, +80 макс. ОЗ и каменная несокрушимость на 180 сек.',
+        category: 'potion',
+        rarity: 'relic',
+        value: 170,
+        decoctionEffect: 'colossus',
+        stats: { healAmount: 80, defense: 22 },
+      },
+      decoction_vesper: {
+        id: 'decoction_vesper',
+        name: 'Отвар Тлеющей Крови',
+        description: 'Трофейный отвар Братства: +20% к урону мечом, +20% крит и +40% мощи Печатей на 180 сек.',
+        category: 'potion',
+        rarity: 'relic',
+        value: 190,
+        decoctionEffect: 'vesper',
+        stats: { healAmount: 75, staminaBoost: 100 },
+      },
       set_raven_armor: {
         id: 'set_raven_armor',
         name: 'Доспех Школы Ворона',
@@ -518,6 +781,45 @@ export class InventorySystem {
           { itemId: 'ghoul_blood', count: 1 },
         ],
       },
+      bp_frost_warden_sword: {
+        id: 'bp_frost_warden_sword',
+        name: 'Чертёж: Ледяной клинок Среброзуба (Тир-4)',
+        description: 'Позволяет выковать у кузнеца меч Хранителя Хлада.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 160,
+        craftsItemId: 'set_frost_warden_sword',
+        craftRecipe: [
+          { itemId: 'black_ore', count: 1 },
+          { itemId: 'ice_lotus', count: 1 },
+        ],
+      },
+      bp_grandmaster_sword: {
+        id: 'bp_grandmaster_sword',
+        name: 'Чертёж: Клинок Великого Магистра Пепла (Тир-5)',
+        description: 'Позволяет выковать высший клинок Чёрного Бастиона.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 210,
+        craftsItemId: 'set_grandmaster_sword',
+        craftRecipe: [
+          { itemId: 'black_ore', count: 2 },
+          { itemId: 'void_dust', count: 1 },
+        ],
+      },
+      bp_obsidian_sword: {
+        id: 'bp_obsidian_sword',
+        name: 'Чертёж: Обсидиановый Бастард Трона (Тир-5)',
+        description: 'Позволяет выковать тяжёлый обсидиановый клинок Кратера Затмения.',
+        category: 'blueprint',
+        rarity: 'relic',
+        value: 225,
+        craftsItemId: 'set_obsidian_sword',
+        craftRecipe: [
+          { itemId: 'black_ore', count: 2 },
+          { itemId: 'void_dust', count: 1 },
+        ],
+      },
       rune_fire: {
         id: 'rune_fire',
         name: 'Рунический камень Огня (Игнис)',
@@ -553,6 +855,24 @@ export class InventorySystem {
         rarity: 'rare',
         value: 80,
         stats: { runeEffect: 'ward', defense: 8, signIntensity: 12 },
+      },
+      rune_frost_sup: {
+        id: 'rune_frost_sup',
+        name: 'Высшая Руна Вечной Мерзлоты',
+        description: 'Замораживает врагов при ударе (+16 к серебру, +20% к Печатям).',
+        category: 'rune',
+        rarity: 'relic',
+        value: 145,
+        stats: { runeEffect: 'frost', attack: 14, silverAttack: 16, signIntensity: 20 },
+      },
+      rune_void_sup: {
+        id: 'rune_void_sup',
+        name: 'Высшая Руна Сердца Пустоты',
+        description: 'Обжигает врагов багровой энергией Бездны (+20 к урону).',
+        category: 'rune',
+        rarity: 'relic',
+        value: 175,
+        stats: { runeEffect: 'void', attack: 20, silverAttack: 20, critChanceBonus: 0.1 },
       },
       sword_hunter_steel: {
         id: 'sword_hunter_steel',
@@ -714,6 +1034,16 @@ export class InventorySystem {
       player.catElixirTimer = 60;
     } else if (potion.id === 'potion_blizzard') {
       player.blizzardElixirTimer = 40;
+    } else if (potion.id === 'decoction_hydra') {
+      player.activeDecoction = 'hydra';
+      player.decoctionTimer = 180;
+      player.poisonTimer = 0;
+    } else if (potion.id === 'decoction_colossus') {
+      player.activeDecoction = 'colossus';
+      player.decoctionTimer = 180;
+    } else if (potion.id === 'decoction_vesper') {
+      player.activeDecoction = 'vesper';
+      player.decoctionTimer = 180;
     }
 
     player.potionCooldown = 2.0;
@@ -721,8 +1051,41 @@ export class InventorySystem {
   }
 
   public brewElixir(
-    elixirId: 'potion_swallow' | 'potion_thunderbolt' | 'potion_cat' | 'potion_blizzard'
+    elixirId:
+      | 'potion_swallow'
+      | 'potion_thunderbolt'
+      | 'potion_cat'
+      | 'potion_blizzard'
+      | 'decoction_hydra'
+      | 'decoction_colossus'
+      | 'decoction_vesper'
   ): { ok: boolean; message: string } {
+    if (elixirId.startsWith('decoction_')) {
+      const herb = this.items.find((i) => i.id === 'herb_swallow' && i.quantity >= 1);
+      const special =
+        this.items.find(
+          (i) =>
+            (i.id === 'hydra_heart' ||
+              i.id === 'black_ore' ||
+              i.id === 'void_dust' ||
+              i.id === 'ice_lotus' ||
+              i.id === 'cursed_essence') &&
+            i.quantity >= 1
+        ) ?? herb;
+      if (!special || special.quantity < 1) {
+        return {
+          ok: false,
+          message: 'Недостаточно реагентов Севера или Ласточкиной травы (нужно 1 шт.)',
+        };
+      }
+      special.quantity -= 1;
+      const brewedDecoction = this.addItemById(elixirId, 1);
+      return {
+        ok: true,
+        message: `Сварен трофейный отвар: ${brewedDecoction.name}!`,
+      };
+    }
+
     const herb = this.items.find((i) => i.id === 'herb_swallow');
     if (!herb || herb.quantity < 1) {
       return { ok: false, message: 'Недостаточно Ласточкиной травы (нужно 1 шт.)' };
@@ -747,9 +1110,11 @@ export class InventorySystem {
       return { ok: false, message: `Недостаточно золота для работы кузнеца (${goldCost} крон)` };
     }
 
-    const ore = this.items.find((i) => i.id === 'iron_ore');
+    const ore =
+      this.items.find((i) => i.id === 'black_ore' && i.quantity >= 1) ??
+      this.items.find((i) => i.id === 'iron_ore' && i.quantity >= 1);
     if (!ore || ore.quantity < 1) {
-      return { ok: false, message: 'Нужна хотя бы 1 Тёмная железная руда' };
+      return { ok: false, message: 'Нужна хотя бы 1 Тёмная или Чёрная руда' };
     }
 
     player.gold -= goldCost;
