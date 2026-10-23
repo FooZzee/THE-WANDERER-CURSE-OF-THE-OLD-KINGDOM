@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { CharacterRig } from './AssetManager';
-import { getGroundHeight } from './rules';
+import { getGroundHeight, resolveSlidingCollision } from './rules';
 import type { CollisionCylinder } from './SceneManager';
-import type { PlayerStats, SignType } from './types';
+import type { ActiveSwordType, CollisionBox, PlayerStats, SignType } from './types';
 
 export type PlayerActionState =
   | 'idle'
@@ -46,8 +46,29 @@ export class PlayerController {
 
   public castTimer = 0;
   public hitStaggerTimer = 0;
+  public potionDrinkTimer = 0;
+  public swordSwapTimer = 0;
+  public swordSwapDuration = 0.45;
 
   private animTime = 0;
+  private prevRotationY = 0;
+  private turnAngularVelocity = 0;
+
+  public triggerDrinkAnimation(): void {
+    this.potionDrinkTimer = 0.95;
+  }
+
+  public switchSword(swordType: ActiveSwordType): boolean {
+    if (this.actionState === 'dead') return false;
+    const current = this.stats.activeSword ?? 'steel';
+    if (current === swordType && this.swordSwapTimer <= 0) {
+      return false;
+    }
+    this.stats.activeSword = swordType;
+    this.swordSwapTimer = this.swordSwapDuration;
+    this.stats.swordSwapTimer = this.swordSwapDuration;
+    return true;
+  }
 
   constructor(rig: CharacterRig, scene: THREE.Scene) {
     this.rig = rig;
@@ -74,6 +95,8 @@ export class PlayerController {
       baseDefense: 8,
       signIntensity: 100,
       activeSign: 'flame',
+      activeSword: 'steel',
+      swordSwapTimer: 0,
       barrierShield: 0,
       potionCooldown: 0,
       x: startX,
@@ -97,6 +120,9 @@ export class PlayerController {
       unlockedWaystones: ['ws_village'],
       viewedAshEchoIds: [],
       vesperFate: 'none',
+      reputation: 0,
+      activeCompanionId: null,
+      unlockedCompanions: ['lyra', 'thorvald'],
     };
 
     this.rig.root.position.set(startX, startY, startZ);
@@ -246,9 +272,15 @@ export class PlayerController {
   public update(
     dt: number,
     cameraYaw: number,
-    obstacles: CollisionCylinder[]
+    obstacles: CollisionCylinder[],
+    collisionBoxes: CollisionBox[] = []
   ): { isSprinting: boolean } {
     this.animTime += dt;
+
+    if (this.swordSwapTimer > 0) {
+      this.swordSwapTimer = Math.max(0, this.swordSwapTimer - dt);
+      this.stats.swordSwapTimer = this.swordSwapTimer;
+    }
 
     if (this.stats.potionCooldown > 0) {
       this.stats.potionCooldown = Math.max(0, this.stats.potionCooldown - dt);
@@ -313,7 +345,8 @@ export class PlayerController {
       this.moveWithCollision(
         this.dodgeDirX * dodgeSpeed * dt,
         this.dodgeDirZ * dodgeSpeed * dt,
-        obstacles
+        obstacles,
+        collisionBoxes
       );
       this.animateRig(dt);
       return { isSprinting: false };
@@ -328,7 +361,8 @@ export class PlayerController {
         this.moveWithCollision(
           Math.sin(this.stats.rotationY) * lungeSpeed * dt,
           Math.cos(this.stats.rotationY) * lungeSpeed * dt,
-          obstacles
+          obstacles,
+          collisionBoxes
         );
       }
       this.animateRig(dt);
@@ -377,7 +411,8 @@ export class PlayerController {
       this.moveWithCollision(
         inputDir.x * moveSpeed * dt,
         inputDir.z * moveSpeed * dt,
-        obstacles
+        obstacles,
+        collisionBoxes
       );
 
       // Smoothly orient character toward movement direction
@@ -388,6 +423,18 @@ export class PlayerController {
       this.stats.rotationY += diff * Math.min(1, dt * 13);
     }
 
+    // Compute angular turning speed for procedural banking / lean
+    let deltaRot = this.stats.rotationY - this.prevRotationY;
+    while (deltaRot > Math.PI) deltaRot -= Math.PI * 2;
+    while (deltaRot < -Math.PI) deltaRot += Math.PI * 2;
+    this.turnAngularVelocity = THREE.MathUtils.damp(
+      this.turnAngularVelocity,
+      deltaRot / Math.max(0.001, dt),
+      8,
+      dt
+    );
+    this.prevRotationY = this.stats.rotationY;
+
     this.animateRig(dt);
     return { isSprinting: Boolean(wantsSprint) };
   }
@@ -395,7 +442,8 @@ export class PlayerController {
   private moveWithCollision(
     dx: number,
     dz: number,
-    obstacles: CollisionCylinder[]
+    obstacles: CollisionCylinder[],
+    collisionBoxes: CollisionBox[] = []
   ): void {
     let nextX = this.stats.x + dx;
     let nextZ = this.stats.z + dz;
@@ -405,9 +453,9 @@ export class PlayerController {
       nextX = Math.max(89, Math.min(121, nextX));
       nextZ = Math.max(89, Math.min(121, nextZ));
     } else if (nextZ < -95) {
-      // Northern March expansion bounds (z down to -542, x in [-105, 105])
-      nextX = Math.max(-105, Math.min(105, nextX));
-      nextZ = Math.max(-542, nextZ);
+      // Massively expanded Northern March bounds (z down to -545, x in [-145, 145])
+      nextX = Math.max(-145, Math.min(145, nextX));
+      nextZ = Math.max(-545, nextZ);
     } else {
       const distFromOrigin = Math.hypot(nextX, nextZ);
       if (distFromOrigin > 108) {
@@ -423,29 +471,26 @@ export class PlayerController {
     }
 
     const playerRadius = 0.48;
-    for (let i = 0; i < obstacles.length; i++) {
-      const obs = obstacles[i];
-      const ox = nextX - obs.x;
-      const oz = nextZ - obs.z;
-      const dist = Math.hypot(ox, oz);
-      const minDist = playerRadius + obs.radius;
-      if (dist < minDist && dist > 0.0001) {
-        const push = (minDist - dist) / dist;
-        nextX += ox * push;
-        nextZ += oz * push;
-      }
-    }
+    const resolved = resolveSlidingCollision(
+      this.stats.x,
+      this.stats.z,
+      nextX,
+      nextZ,
+      playerRadius,
+      obstacles,
+      collisionBoxes
+    );
 
-    this.stats.x = nextX;
-    this.stats.z = nextZ;
-    this.stats.y = getGroundHeight(nextX, nextZ);
+    this.stats.x = resolved.x;
+    this.stats.z = resolved.z;
+    this.stats.y = resolved.y;
 
     this.rig.root.position.set(this.stats.x, this.stats.y, this.stats.z);
     this.rig.root.rotation.y = this.stats.rotationY;
   }
 
   private animateRig(dt: number): void {
-    const { body, head, leftArm, rightArm, leftLeg, rightLeg, cloak } = this.rig;
+    const { body, head, leftArm, rightArm, leftLeg, rightLeg, cloak, cloakLower } = this.rig;
 
     if (this.actionState === 'dead') {
       this.rig.root.rotation.x = THREE.MathUtils.damp(
@@ -459,21 +504,54 @@ export class PlayerController {
       this.rig.root.rotation.x = THREE.MathUtils.damp(this.rig.root.rotation.x, 0, 12, dt);
     }
 
+    // Health-dependent limp state (wounded when HP < 20%)
+    const hpRatio = this.stats.hp / Math.max(1, this.stats.maxHp);
+    const isWoundedLimp = hpRatio < 0.2 && this.actionState !== 'dodge';
+
     if (this.actionState === 'walk' || this.actionState === 'run') {
-      const freq = this.actionState === 'run' ? 11.5 : 7.8;
-      const amp = this.actionState === 'run' ? 0.68 : 0.44;
+      const isRun = this.actionState === 'run' && !isWoundedLimp;
+      const freq = isWoundedLimp ? 6.2 : isRun ? 11.5 : 7.8;
+      const amp = isWoundedLimp ? 0.38 : isRun ? 0.68 : 0.44;
       const s = Math.sin(this.animTime * freq);
 
-      leftLeg.rotation.x = s * amp;
-      rightLeg.rotation.x = -s * amp;
+      if (isWoundedLimp) {
+        // Asymmetric wounded limp gait: right foot favored, left dragging, hunched torso
+        leftLeg.rotation.x = s * amp * 0.45;
+        rightLeg.rotation.x = -s * amp * 1.25;
+        body.rotation.z = THREE.MathUtils.damp(body.rotation.z, -0.16, 8, dt);
+        body.rotation.x = THREE.MathUtils.damp(body.rotation.x, 0.24, 8, dt);
+        body.position.y = 0.81 + Math.abs(Math.cos(this.animTime * freq)) * 0.04;
+      } else {
+        leftLeg.rotation.x = s * amp;
+        rightLeg.rotation.x = -s * amp;
+        body.position.y = 0.85 + Math.abs(Math.cos(this.animTime * freq)) * 0.055;
+        body.rotation.x = isRun ? 0.16 : 0.06;
+
+        // Lean banking into turns like in The Witcher 3
+        const bank = THREE.MathUtils.clamp(this.turnAngularVelocity * 0.09, -0.25, 0.25);
+        body.rotation.z = THREE.MathUtils.damp(body.rotation.z, -bank, 8, dt);
+      }
+
       leftArm.rotation.x = -s * amp * 0.7;
       rightArm.rotation.x = s * amp * 0.5;
       rightArm.rotation.z = 0;
-      body.position.y = 0.85 + Math.abs(Math.cos(this.animTime * freq)) * 0.055;
-      body.rotation.x = this.actionState === 'run' ? 0.16 : 0.06;
       body.rotation.y = THREE.MathUtils.damp(body.rotation.y, 0, 10, dt);
       head.rotation.y = THREE.MathUtils.damp(head.rotation.y, 0, 10, dt);
-      if (cloak) cloak.rotation.x = 0.28 + Math.abs(s) * 0.2;
+
+      // Flowing dynamic cloak trailing
+      if (cloak) {
+        const cloakSway = 0.28 + Math.abs(s) * (isRun ? 0.35 : 0.18);
+        cloak.rotation.x = THREE.MathUtils.damp(cloak.rotation.x, cloakSway, 10, dt);
+        cloak.rotation.z = THREE.MathUtils.damp(cloak.rotation.z, -body.rotation.z * 1.3, 8, dt);
+        if (cloakLower) {
+          cloakLower.rotation.x = THREE.MathUtils.damp(
+            cloakLower.rotation.x,
+            cloakSway * 1.4 + (isRun ? 0.3 : 0.1),
+            12,
+            dt
+          );
+        }
+      }
     } else if (
       this.actionState === 'attack_light' ||
       this.actionState === 'attack_heavy'
@@ -482,7 +560,7 @@ export class PlayerController {
       const phase = this.getAttackPhase();
 
       if (this.isHeavyAttack) {
-        // 3-phase Heavy Cleave: Windup overhead -> Active downward slash -> Recovery
+        // 3-phase Heavy Cleave: Windup overhead -> Active downward slash -> Recovery with follow-through
         if (phase === 'windup') {
           const w = progress / 0.3;
           rightArm.rotation.x = THREE.MathUtils.lerp(-0.4, -2.55, w);
@@ -496,6 +574,7 @@ export class PlayerController {
           body.rotation.x = THREE.MathUtils.lerp(-0.22, 0.32, a);
           body.rotation.y = THREE.MathUtils.lerp(-0.45, 0.5, a);
         } else {
+          // Recovery with blade inertia follow-through
           const r = (progress - 0.72) / 0.28;
           rightArm.rotation.x = THREE.MathUtils.lerp(0.75, -0.2, r);
           body.rotation.x = THREE.MathUtils.lerp(0.32, 0, r);
@@ -527,33 +606,45 @@ export class PlayerController {
         }
       }
       leftArm.rotation.x = -0.45;
-      if (cloak) cloak.rotation.x = 0.38;
+      if (cloak) {
+        cloak.rotation.x = 0.38;
+        if (cloakLower) cloakLower.rotation.x = 0.55;
+      }
     } else if (this.actionState === 'block') {
       rightArm.rotation.x = THREE.MathUtils.damp(rightArm.rotation.x, -1.25, 14, dt);
       rightArm.rotation.z = THREE.MathUtils.damp(rightArm.rotation.z, -0.75, 14, dt);
       leftArm.rotation.x = THREE.MathUtils.damp(leftArm.rotation.x, -0.85, 14, dt);
       body.rotation.y = THREE.MathUtils.damp(body.rotation.y, -0.25, 14, dt);
       body.rotation.x = THREE.MathUtils.damp(body.rotation.x, 0.08, 14, dt);
+      body.rotation.z = THREE.MathUtils.damp(body.rotation.z, 0, 14, dt);
     } else if (this.actionState === 'dodge') {
       // Dynamic forward combat roll / somersault tuck
       const rollProgress = 1 - this.dodgeTimer / Math.max(0.01, this.dodgeDuration);
       body.rotation.x = rollProgress * Math.PI * 2;
       body.position.y = 0.65 + Math.sin(rollProgress * Math.PI) * 0.25;
+      body.rotation.z = THREE.MathUtils.damp(body.rotation.z, 0, 14, dt);
       leftLeg.rotation.x = -0.75;
       rightLeg.rotation.x = -0.75;
       leftArm.rotation.x = -1.1;
       rightArm.rotation.x = -1.1;
-      if (cloak) cloak.rotation.x = 0.65;
+      if (cloak) {
+        cloak.rotation.x = 0.65;
+        if (cloakLower) cloakLower.rotation.x = 0.85;
+      }
     } else if (this.actionState === 'cast_sign') {
       leftArm.rotation.x = -1.6;
       rightArm.rotation.x = -0.3;
       body.rotation.y = 0.28;
+      body.rotation.z = THREE.MathUtils.damp(body.rotation.z, 0, 14, dt);
     } else if (this.actionState === 'hit') {
       body.rotation.x = -0.28;
       head.rotation.x = -0.25;
+      body.rotation.z = THREE.MathUtils.damp(body.rotation.z, 0, 14, dt);
     } else {
-      // Idle breathing
-      const breath = Math.sin(this.animTime * 2.4) * 0.025;
+      // Idle breathing: subtle chest expansion and head nodding cycle
+      const breath = Math.sin(this.animTime * 2.2) * 0.028;
+      body.scale.set(1 + breath * 0.35, 1 + breath * 0.7, 1 + breath * 0.35);
+
       leftLeg.rotation.x = THREE.MathUtils.damp(leftLeg.rotation.x, 0, 10, dt);
       rightLeg.rotation.x = THREE.MathUtils.damp(rightLeg.rotation.x, 0, 10, dt);
       leftArm.rotation.x = THREE.MathUtils.damp(leftArm.rotation.x, breath, 10, dt);
@@ -561,9 +652,43 @@ export class PlayerController {
       rightArm.rotation.z = THREE.MathUtils.damp(rightArm.rotation.z, 0, 10, dt);
       body.rotation.y = THREE.MathUtils.damp(body.rotation.y, 0, 10, dt);
       body.rotation.x = THREE.MathUtils.damp(body.rotation.x, 0, 10, dt);
-      head.rotation.x = THREE.MathUtils.damp(head.rotation.x, 0, 10, dt);
+      body.rotation.z = THREE.MathUtils.damp(body.rotation.z, 0, 10, dt);
+      head.rotation.x = THREE.MathUtils.damp(head.rotation.x, breath * 0.5, 8, dt);
       body.position.y = 0.85 + breath;
-      if (cloak) cloak.rotation.x = 0.08 + Math.abs(breath) * 2;
+
+      if (cloak) {
+        cloak.rotation.x = THREE.MathUtils.damp(cloak.rotation.x, 0.08 + Math.abs(breath) * 1.5, 6, dt);
+        if (cloakLower) {
+          cloakLower.rotation.x = THREE.MathUtils.damp(cloakLower.rotation.x, 0.12 + Math.abs(breath) * 2, 6, dt);
+        }
+      }
+    }
+
+    // Potion Drinking Overlay Animation (raising vial with left hand while moving)
+    if (this.potionDrinkTimer > 0) {
+      this.potionDrinkTimer -= dt;
+      const drinkPhase = Math.sin((1 - this.potionDrinkTimer / 0.95) * Math.PI);
+      leftArm.rotation.x = THREE.MathUtils.lerp(leftArm.rotation.x, -2.15, drinkPhase);
+      leftArm.rotation.z = THREE.MathUtils.lerp(leftArm.rotation.z, 0.42, drinkPhase);
+      head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, -0.28, drinkPhase * 0.8);
+    }
+
+    // Sword Draw / Swap Animation (reaching behind shoulder to scabbards and drawing active blade)
+    if (this.swordSwapTimer > 0 && this.attackTimer <= 0) {
+      const progress = 1 - this.swordSwapTimer / Math.max(0.01, this.swordSwapDuration);
+      if (progress < 0.48) {
+        // Phase 1: Reach up behind right shoulder to back scabbards
+        const t = progress / 0.48;
+        rightArm.rotation.x = THREE.MathUtils.lerp(rightArm.rotation.x, -2.55, t);
+        rightArm.rotation.z = THREE.MathUtils.lerp(rightArm.rotation.z, 0.48, t);
+        body.rotation.y = THREE.MathUtils.lerp(body.rotation.y, -0.24, t);
+      } else {
+        // Phase 2: Sweep newly drawn sword out in a crisp arc
+        const t = (progress - 0.48) / 0.52;
+        rightArm.rotation.x = THREE.MathUtils.lerp(-2.55, -0.15, t);
+        rightArm.rotation.z = THREE.MathUtils.lerp(0.48, -0.35 * (1 - t), t);
+        body.rotation.y = THREE.MathUtils.lerp(-0.24, 0, t);
+      }
     }
   }
 }

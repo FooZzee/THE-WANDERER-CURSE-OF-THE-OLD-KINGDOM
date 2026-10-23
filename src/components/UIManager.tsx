@@ -32,12 +32,17 @@ import {
 import type { Game } from '../game/Game';
 import {
   ALCHEMY_RECIPES,
+  calculateMerchantPrice,
+  COMPANION_PROFILES,
   computeEffectivePlayerStats,
+  getCompanionCommandLabel,
+  getItemEquipSlot,
+  getSwordEffectiveness,
   getUpgradeCost,
   MAGIC_SIGNS,
 } from '../game/rules';
 import { SaveSystem } from '../game/SaveSystem';
-import type { HUDState, SignType } from '../game/types';
+import type { CompanionId, HUDState, SignType } from '../game/types';
 
 interface UIManagerProps {
   hud: HUDState;
@@ -109,6 +114,8 @@ export const UIManager: React.FC<UIManagerProps> = ({
     dicePoker,
     roadEvent,
     bestiary,
+    activeCompanion,
+    reputationInfo,
   } = hud;
   const discoveredLoreIds = player.discoveredLoreIds ?? [];
   const totalLoreNotes = worldLoreNotes?.length ?? 22;
@@ -141,7 +148,19 @@ export const UIManager: React.FC<UIManagerProps> = ({
   const blackOreCount =
     inventory.find((i) => i.id === 'black_ore')?.quantity ?? 0;
 
-  const equippedTrophy = inventory.find((i) => i.category === 'trophy' && i.equipped);
+  const equippedSteelSword = inventory.find(
+    (i) => getItemEquipSlot(i) === 'steelSword' && i.equipped
+  );
+  const equippedSilverSword = inventory.find(
+    (i) => getItemEquipSlot(i) === 'silverSword' && i.equipped
+  );
+  const equippedArmorItem = inventory.find(
+    (i) => getItemEquipSlot(i) === 'armor' && i.equipped
+  );
+  const equippedTrophy = inventory.find(
+    (i) => getItemEquipSlot(i) === 'trophy' && i.equipped
+  );
+  const activeSword = player.activeSword ?? 'steel';
   const availableRunes = inventory.filter((i) => i.category === 'rune' && i.quantity > 0);
 
   const getSetDisplayName = (setId?: string | null) => {
@@ -332,6 +351,87 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 />
               </div>
             </div>
+
+            {/* Reputation & Morality Scale */}
+            {reputationInfo && (
+              <div className="pt-1">
+                <div className="flex items-center justify-between text-[10px] font-mono-tabular mb-0.5">
+                  <span
+                    className={`font-semibold ${
+                      reputationInfo.value >= 20
+                        ? 'text-emerald-400'
+                        : reputationInfo.value <= -20
+                        ? 'text-red-400'
+                        : 'text-amber-300'
+                    }`}
+                  >
+                    ⚖️ {reputationInfo.title} ({reputationInfo.value > 0 ? `+${reputationInfo.value}` : reputationInfo.value})
+                  </span>
+                  <span className="text-stone-400">
+                    Цены: {Math.round(reputationInfo.priceMultiplier * 100)}%
+                  </span>
+                </div>
+                <div className="relative w-full h-1.5 bg-stone-900 rounded overflow-hidden border border-stone-800">
+                  <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-stone-500 z-10" />
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      reputationInfo.value >= 0 ? 'bg-emerald-500' : 'bg-red-600'
+                    }`}
+                    style={{
+                      marginLeft:
+                        reputationInfo.value >= 0
+                          ? '50%'
+                          : `${Math.max(0, 50 + reputationInfo.value / 2)}%`,
+                      width: `${Math.min(50, Math.abs(reputationInfo.value) / 2)}%`,
+                    }}
+                  />
+                </div>
+                {reputationInfo.bountyHuntersActive && (
+                  <div className="mt-1 text-[10px] text-red-400 font-semibold">
+                    ⚠️ На трактах за вами охотятся Наёмные Каратели!
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Active Combat Companion HUD Card */}
+            {activeCompanion && (
+              <div className="mt-2 p-2 rounded-lg bg-stone-900/95 border border-sky-700/60 space-y-1">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-display font-bold text-sky-300 truncate">
+                      🛡️ {activeCompanion.name}
+                    </div>
+                    <div className="text-[10px] text-stone-400 truncate">
+                      {activeCompanion.title}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => game.cycleCompanionCommand()}
+                    className="px-2 py-0.5 rounded bg-sky-950 hover:bg-sky-900 border border-sky-500/70 text-sky-200 text-[10px] font-mono-tabular whitespace-nowrap shrink-0"
+                    title="Сменить боевой приказ напарнику [Клавиша G]"
+                  >
+                    [G] {getCompanionCommandLabel(activeCompanion.command)}
+                  </button>
+                </div>
+                <div className="w-full h-1.5 bg-stone-950 rounded overflow-hidden border border-stone-800">
+                  <div
+                    className="h-full bg-sky-400 transition-all duration-150"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (activeCompanion.hp / activeCompanion.maxHp) * 100)
+                      )}%`,
+                    }}
+                  />
+                </div>
+                {activeCompanion.lastBark && activeCompanion.lastBarkTimer > 0 && (
+                  <div className="text-[10px] text-amber-200/90 italic leading-snug line-clamp-2">
+                    «{activeCompanion.lastBark}»
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Active Oils, Elixirs, Decoctions, Trophy & Set Bonus Badges */}
@@ -375,8 +475,52 @@ export const UIManager: React.FC<UIManagerProps> = ({
             </div>
           )}
 
+          {/* Active Sword Switcher: [1] Steel Sword vs [2] Silver Sword */}
+          <div className="mt-2.5 pt-2 border-t border-stone-800/80">
+            <div className="flex items-center justify-between text-[10px] text-stone-400 mb-1 font-mono-tabular">
+              <span>ОРУЖИЕ В РУКЕ [1 / 2]</span>
+              <span className={activeSword === 'silver' ? 'text-sky-300 font-semibold' : 'text-stone-200 font-semibold'}>
+                {activeSword === 'silver' ? '🗡️ Серебро (Чудовища)' : '⚔️ Сталь (Люди/Звери)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={() => game.switchPlayerSword('steel')}
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                  activeSword === 'steel'
+                    ? 'bg-stone-800 border-amber-500/90 text-stone-100 shadow-md'
+                    : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-stone-200'
+                }`}
+                title="Выхватить Стальной меч [Клавиша 1] — 100% урона по людям, зверям и наёмникам"
+              >
+                <span className="text-[11px] font-medium truncate">
+                  [1] ⚔️ Сталь
+                </span>
+                <span className="text-[11px] font-mono-tabular font-bold text-amber-300">
+                  {effStats.steelAttack}
+                </span>
+              </button>
+              <button
+                onClick={() => game.switchPlayerSword('silver')}
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                  activeSword === 'silver'
+                    ? 'bg-sky-950/90 border-sky-400 text-sky-100 shadow-md'
+                    : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-stone-200'
+                }`}
+                title="Выхватить Серебряный меч [Клавиша 2] — 100% урона по монстрам, призракам и боссам"
+              >
+                <span className="text-[11px] font-medium truncate">
+                  [2] 🗡️ Серебро
+                </span>
+                <span className="text-[11px] font-mono-tabular font-bold text-sky-300">
+                  {effStats.silverAttack}
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Active Sign & Quick Potion Row */}
-          <div className="mt-2.5 pt-2.5 border-t border-stone-800/80 space-y-2">
+          <div className="mt-2 pt-2 border-t border-stone-800/80 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <button
                 onClick={() => game.triggerMagicSign()}
@@ -467,9 +611,24 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   {typeof bossEnemy.crystalsRemaining === 'number' &&
                     bossEnemy.crystalsRemaining > 0 && (
                       <span className="px-1.5 py-0.5 text-[10px] rounded bg-sky-950 border border-sky-400 text-sky-200">
-                        💎 Кристаллы: {bossEnemy.crystalsRemaining}/3 (Импульс [3])
+                        💎 Кристаллы: {bossEnemy.crystalsRemaining}/3 (Импульс [5])
                       </span>
                     )}
+                  <span
+                    className={`px-1.5 py-0.5 text-[10px] rounded border font-mono-tabular ${
+                      !getSwordEffectiveness(activeSword, bossEnemy.isSilverVulnerable).isOptimal
+                        ? 'bg-red-950 border-red-400 text-red-200 animate-pulse'
+                        : 'bg-sky-950/80 border-sky-500/60 text-sky-200'
+                    }`}
+                  >
+                    {bossEnemy.isSilverVulnerable
+                      ? activeSword === 'silver'
+                        ? '🗡️ Уязвим к СЕРЕБРУ (100%)'
+                        : '⚠️ Нужен СЕРЕБРЯНЫЙ меч [2] (сейчас 35%)'
+                      : activeSword === 'steel'
+                      ? '⚔️ Уязвим к СТАЛИ (100%)'
+                      : '⚠️ Нужен СТАЛЬНОЙ меч [1] (сейчас 35%)'}
+                  </span>
                 </span>
                 <span className="font-mono-tabular">
                   {Math.ceil(bossEnemy.hp)} / {bossEnemy.maxHp}
@@ -493,7 +652,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </div>
             </div>
           ) : lockedEnemy && lockedEnemy.state !== 'DEAD' ? (
-            <div className="w-72 bg-stone-950/90 border border-stone-800 rounded-lg px-3.5 py-2 shadow-lg">
+            <div className="w-80 bg-stone-950/90 border border-stone-800 rounded-lg px-3.5 py-2 shadow-lg">
               <div className="flex justify-between items-center text-xs text-stone-200 mb-1">
                 <span className="font-medium truncate">
                   {lockedEnemy.name} (Ур.{lockedEnemy.level})
@@ -502,13 +661,36 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   {Math.ceil(lockedEnemy.hp)}/{lockedEnemy.maxHp}
                 </span>
               </div>
-              <div className="w-full h-2 bg-stone-900 rounded overflow-hidden">
+              <div className="w-full h-2 bg-stone-900 rounded overflow-hidden mb-1">
                 <div
                   className="h-full bg-red-500 transition-all duration-150"
                   style={{
                     width: `${Math.max(0, Math.min(100, (lockedEnemy.hp / lockedEnemy.maxHp) * 100))}%`,
                   }}
                 />
+              </div>
+              <div className="flex items-center justify-between text-[10px] font-mono-tabular">
+                <span
+                  className={
+                    lockedEnemy.isSilverVulnerable ? 'text-sky-300' : 'text-amber-300'
+                  }
+                >
+                  {lockedEnemy.isSilverVulnerable
+                    ? '🗡️ Уязвимость: СЕРЕБРО [2]'
+                    : '⚔️ Уязвимость: СТАЛЬ [1]'}
+                </span>
+                {!getSwordEffectiveness(activeSword, lockedEnemy.isSilverVulnerable).isOptimal && (
+                  <button
+                    onClick={() =>
+                      game.switchPlayerSword(
+                        lockedEnemy.isSilverVulnerable ? 'silver' : 'steel'
+                      )
+                    }
+                    className="px-1.5 py-0.5 rounded bg-red-950 border border-red-500 text-red-200 animate-pulse"
+                  >
+                    ⚠️ Сменить меч [{lockedEnemy.isSilverVulnerable ? '2' : '1'}] (35% урона)
+                  </button>
+                )}
               </div>
             </div>
           ) : null}
@@ -710,7 +892,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
               {/* 5 Magic Signs Selector */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[11px] text-stone-400 mr-1 hidden sm:inline">
-                  Знаки [Q / 1-5 / R]:
+                  Знаки [Q / 3-7 / R]:
                 </span>
                 {SIGN_LIST.map((signId, idx) => {
                   const s = MAGIC_SIGNS[signId];
@@ -731,7 +913,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                       title={`${s.name}: ${s.description} (${s.staminaCost} Вын., КД ${s.cooldown}с)`}
                     >
                       <span className="text-[10px] font-mono-tabular text-stone-500">
-                        {idx + 1}
+                        {idx + 3}
                       </span>
                       {renderSignIcon(signId, 'w-3.5 h-3.5 shrink-0', s.color)}
                       <span>{s.name.split(' (')[0]}</span>
@@ -844,19 +1026,27 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
       {/* 1. DIALOGUE MODAL */}
       {activeModal === 'dialogue' && activeDialogueNode && (
-        <div className="fixed inset-0 bg-black/70 pointer-events-auto flex items-end justify-center p-4 md:p-10 z-30">
-          <div className="w-full max-w-2xl bg-stone-950 border border-amber-700/60 rounded-xl p-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-[2px] pointer-events-auto flex items-end justify-center p-4 md:p-8 z-30 transition-all duration-300">
+          <div className="w-full max-w-2xl bg-stone-950/95 border-2 border-stone-700/80 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.9)] ring-1 ring-amber-600/30">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
-              <div>
-                <h2 className="text-lg font-display font-bold text-amber-400">
-                  {activeDialogueNode.speaker}
-                </h2>
-                <div className="text-xs text-stone-400">
-                  {activeDialogueNode.role}
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-stone-900 border border-amber-600/60 flex items-center justify-center text-amber-400 font-serif font-bold text-sm shadow-inner">
+                  {activeDialogueNode.speaker.charAt(0)}
+                </div>
+                <div>
+                  <h2 className="text-lg font-display font-bold text-amber-400 tracking-wide">
+                    {activeDialogueNode.speaker}
+                  </h2>
+                  <div className="text-xs text-stone-400 font-serif italic">
+                    {activeDialogueNode.role}
+                  </div>
                 </div>
               </div>
+              <div className="text-[11px] uppercase tracking-wider font-mono text-stone-500 border border-stone-800 px-2.5 py-0.5 rounded-full bg-stone-900/60">
+                Диалог
+              </div>
             </div>
-            <p className="text-stone-200 text-sm md:text-base leading-relaxed mb-6">
+            <p className="text-stone-200 text-sm md:text-base leading-relaxed mb-6 font-serif italic bg-stone-900/50 p-4 rounded-xl border border-stone-800/80 shadow-inner">
               «{activeDialogueNode.text}»
             </p>
             <div className="flex flex-col gap-2">
@@ -864,12 +1054,12 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 <button
                   key={opt.id}
                   onClick={() => game.selectDialogueOption(opt)}
-                  className="w-full text-left px-4 py-3 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-amber-600/60 text-sm text-stone-100 transition-colors flex items-center gap-3"
+                  className="w-full text-left px-4 py-3 rounded-xl bg-stone-900/90 hover:bg-stone-800/95 border border-stone-700/70 hover:border-amber-500/80 text-sm text-stone-100 transition-all duration-150 flex items-center gap-3 group shadow-md"
                 >
-                  <span className="text-amber-500 font-mono-tabular font-bold">
-                    {idx + 1}.
+                  <span className="w-6 h-6 rounded bg-amber-950/80 border border-amber-600/60 text-amber-400 font-mono-tabular font-bold text-xs flex items-center justify-center group-hover:bg-amber-600 group-hover:text-stone-950 transition-colors">
+                    {idx + 1}
                   </span>
-                  <span>{opt.text}</span>
+                  <span className="group-hover:text-amber-200 transition-colors">{opt.text}</span>
                 </button>
               ))}
             </div>
@@ -956,6 +1146,62 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* 4 Exclusive Equipment Slots Overview */}
+            {invTab === 'items' && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-amber-700/50">
+                  <div className="text-[10px] uppercase tracking-wider text-amber-400 font-display font-bold">
+                    Слот 1 · Стальной меч [1]
+                  </div>
+                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                    {equippedSteelSword
+                      ? `${equippedSteelSword.name}${
+                          equippedSteelSword.upgradeLevel
+                            ? ` +${equippedSteelSword.upgradeLevel}`
+                            : ''
+                        }`
+                      : 'Не экипировано'}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-sky-700/50">
+                  <div className="text-[10px] uppercase tracking-wider text-sky-400 font-display font-bold">
+                    Слот 2 · Серебряный меч [2]
+                  </div>
+                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                    {equippedSilverSword
+                      ? `${equippedSilverSword.name}${
+                          equippedSilverSword.upgradeLevel
+                            ? ` +${equippedSilverSword.upgradeLevel}`
+                            : ''
+                        }`
+                      : 'Не экипировано'}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-emerald-700/50">
+                  <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-display font-bold">
+                    Слот 3 · Доспех
+                  </div>
+                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                    {equippedArmorItem
+                      ? `${equippedArmorItem.name}${
+                          equippedArmorItem.upgradeLevel
+                            ? ` +${equippedArmorItem.upgradeLevel}`
+                            : ''
+                        }`
+                      : 'Не экипировано'}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-purple-700/50">
+                  <div className="text-[10px] uppercase tracking-wider text-purple-400 font-display font-bold">
+                    Слот 4 · Охотничий Трофей
+                  </div>
+                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                    {equippedTrophy ? equippedTrophy.name : 'Не экипировано'}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {invTab === 'items' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto pr-1">
@@ -1112,6 +1358,48 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </div>
             </div>
 
+            {/* РАЗДЕЛ: ПОСЛЕДСТВИЯ ВЫБОРА (ХРОНИКА РЕШЕНИЙ КОРВУСА) */}
+            <div className="mb-4 p-4 rounded-xl bg-stone-900/90 border border-amber-700/60">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-sm font-display font-bold text-amber-300 flex items-center gap-2">
+                  <ScrollText className="w-4 h-4 text-amber-400" />
+                  Раздел Журнала: «Последствия выбора» (Влияние решений на мир Вальдмарка)
+                </div>
+                <span className="text-[11px] font-mono-tabular text-stone-400">
+                  Принято судьбоносных решений: {(player.questConsequences ?? []).length} / 4
+                </span>
+              </div>
+              {(player.questConsequences ?? []).length === 0 ? (
+                <p className="text-xs text-stone-400 leading-relaxed">
+                  Здесь фиксируются моральные вердикты Корвуса в 4 нелинейных расследованиях («Кровь на колокольне», «Пир Воронов», «Клятва в Мёртвых Шахтах», «Последний Экзамен Зольника») и то, как они изменили судьбы жителей и локаций.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 mt-2">
+                  {(player.questConsequences ?? []).map((cons) => (
+                    <div
+                      key={cons.questId}
+                      className="p-3 rounded-lg bg-stone-950/90 border border-amber-600/50 space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-display font-bold text-amber-300">
+                          ⚖️ {cons.choiceTitle}
+                        </span>
+                        <span className="text-[10px] font-mono-tabular text-stone-400">
+                          {cons.questTitle}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-300 leading-snug">
+                        {cons.summary}
+                      </p>
+                      <div className="text-[11px] text-emerald-300/90 font-medium pt-1 border-t border-stone-800/80">
+                        🌍 Отражение в мире: {cons.worldEffectDescription}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-4 overflow-y-auto pr-1">
               {allQuests.map((q) => {
                 const isTracked = activeQuest?.id === q.id;
@@ -1121,15 +1409,22 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     className={`p-4 rounded-xl border ${
                       isTracked
                         ? 'bg-stone-900 border-amber-600/70'
+                        : q.isInvestigationQuest
+                        ? 'bg-stone-900/75 border-amber-800/50'
                         : 'bg-stone-900/50 border-stone-800'
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <div>
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-base font-display font-bold text-stone-100">
                           {q.title}
                         </span>
-                        <span className="text-xs text-stone-400 ml-2">
+                        {q.isInvestigationQuest && (
+                          <span className="px-2 py-0.5 rounded bg-amber-950/90 border border-amber-600/60 text-amber-300 text-[10px] font-semibold">
+                            🔍 Нелинейное расследование
+                          </span>
+                        )}
+                        <span className="text-xs text-stone-400">
                           · {q.biome} · Реком. ур. {q.recommendedLevel}
                         </span>
                       </div>
@@ -1147,7 +1442,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                             ? 'Выполнено'
                             : q.status === 'active'
                             ? 'Активно'
-                            : 'На доске объявлений'}
+                            : 'Доступно для расследования'}
                         </span>
                         {q.status !== 'completed' && (
                           <button
@@ -1188,6 +1483,22 @@ export const UIManager: React.FC<UIManagerProps> = ({
                         </div>
                       ))}
                     </div>
+
+                    {q.consequenceTitle && (
+                      <div className="mt-3 p-3 rounded-lg bg-stone-950 border border-amber-600/60 space-y-1">
+                        <div className="text-xs font-display font-bold text-amber-400">
+                          📜 Последствия выбора: {q.consequenceTitle}
+                        </div>
+                        <p className="text-xs text-stone-300 leading-relaxed">
+                          {q.consequenceSummary}
+                        </p>
+                        {q.consequenceWorldEffect && (
+                          <div className="text-[11px] text-emerald-300 font-medium">
+                            🌍 Изменение в мире: {q.consequenceWorldEffect}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1494,14 +1805,30 @@ export const UIManager: React.FC<UIManagerProps> = ({
             <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
               <div>
                 <h2 className="text-xl font-display font-bold text-amber-400">
-                  Лавка купца Велеслава
+                  {game.isFenceShop
+                    ? 'Тайник Скупщика «Хоря» (Чёрный рынок Перевала)'
+                    : 'Лавка купца и каравана'}
                 </h2>
-                <div className="text-xs text-stone-300 font-mono-tabular">
-                  Ваше золото: {player.gold} крон
+                <div className="text-xs text-stone-300 font-mono-tabular flex flex-wrap items-center gap-3 mt-0.5">
+                  <span>Ваше золото: {player.gold} крон</span>
+                  {hud.reputationInfo && (
+                    <span className="text-amber-300/90">
+                      · Репутация «{hud.reputationInfo.title}» (модификатор цен:{' '}
+                      {Math.round(
+                        (game.isFenceShop
+                          ? 0.9
+                          : hud.reputationInfo.priceMultiplier) * 100
+                      )}
+                      %)
+                    </span>
+                  )}
                 </div>
               </div>
               <button
-                onClick={() => game.openModal('none')}
+                onClick={() => {
+                  game.isFenceShop = false;
+                  game.openModal('none');
+                }}
                 className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs rounded-lg border border-stone-700"
               >
                 Закрыть
@@ -1515,34 +1842,42 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   Товары торговца (Купить)
                 </h3>
                 <div className="space-y-2.5">
-                  {game.inventorySystem.shopCatalog.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="text-xs font-semibold text-stone-100">
-                          {item.name}
-                        </div>
-                        <div className="text-[11px] text-stone-400">
-                          {item.description}
-                        </div>
-                      </div>
-                      <button
-                        disabled={player.gold < item.value}
-                        onClick={() => {
-                          game.inventorySystem.buyShopItem(
-                            item.id,
-                            game.player.stats
-                          );
-                          game.syncHUD();
-                        }}
-                        className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs whitespace-nowrap"
+                  {game.inventorySystem.shopCatalog.map((item) => {
+                    const effectivePrice = calculateMerchantPrice(
+                      item.value,
+                      player.reputation ?? 0,
+                      game.isFenceShop
+                    );
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-between gap-3"
                       >
-                        Купить ({item.value} зол.)
-                      </button>
-                    </div>
-                  ))}
+                        <div>
+                          <div className="text-xs font-semibold text-stone-100">
+                            {item.name}
+                          </div>
+                          <div className="text-[11px] text-stone-400">
+                            {item.description}
+                          </div>
+                        </div>
+                        <button
+                          disabled={player.gold < effectivePrice}
+                          onClick={() => {
+                            game.inventorySystem.buyShopItem(
+                              item.id,
+                              game.player.stats,
+                              game.isFenceShop
+                            );
+                            game.syncHUD();
+                          }}
+                          className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs whitespace-nowrap"
+                        >
+                          Купить ({effectivePrice} зол.)
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1802,6 +2137,57 @@ export const UIManager: React.FC<UIManagerProps> = ({
               >
                 Закрыть [Esc]
               </button>
+            </div>
+
+            {/* Companion Campfire Bond & Recruitment Bar */}
+            <div className="mb-3 p-3 rounded-lg bg-stone-900/95 border border-emerald-800/60 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-emerald-300">
+                    Привал у костра: Боевой Напарник
+                  </div>
+                  <div className="text-[11px] text-stone-400">
+                    {hud.activeCompanion
+                      ? `${hud.activeCompanion.name} (${hud.activeCompanion.title}) отдыхает у огня`
+                      : 'Позовите спутника в поход или поговорите с ним у костра'}
+                  </div>
+                </div>
+                {hud.activeCompanion && (
+                  <button
+                    onClick={() => game.triggerCompanionCampfireTalk()}
+                    className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-stone-950 font-bold text-xs"
+                  >
+                    🔥 Личная беседа у костра (+Опыт)
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-stone-800">
+                {(player.unlockedCompanions ?? ['lyra', 'thorvald']).map(
+                  (compId: CompanionId) => {
+                    const prof = COMPANION_PROFILES[compId];
+                    const isCurrent = hud.activeCompanion?.id === compId;
+                    return (
+                      <button
+                        key={compId}
+                        onClick={() =>
+                          isCurrent
+                            ? game.dismissCompanion()
+                            : game.recruitCompanion(compId)
+                        }
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                          isCurrent
+                            ? 'bg-emerald-600 text-stone-950 border-emerald-400'
+                            : 'bg-stone-950 text-stone-300 border-stone-700 hover:border-emerald-500'
+                        }`}
+                      >
+                        {isCurrent
+                          ? `✓ В отряде: ${prof.name} (Отпустить)`
+                          : `+ Позвать: ${prof.name} (${prof.weaponDesc})`}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
             </div>
 
             {/* Quick Apply Blade Oils Bar */}

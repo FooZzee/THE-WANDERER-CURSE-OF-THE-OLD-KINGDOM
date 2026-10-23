@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import type { AssetManager } from './AssetManager';
 import { ASH_ECHOES, WORLD_LORE_NOTES } from './loreData';
-import { getGroundHeight, WAYSTONES } from './rules';
-import type { WorldInteractable } from './types';
+import { computeNpcSchedule, getGroundHeight, WAYSTONES } from './rules';
+import type { CompanionId, EnemyInstance, WeatherType, WorldInteractable } from './types';
 
 export class WorldSystem {
   public interactables: WorldInteractable[] = [];
   private meshes: Map<string, THREE.Object3D> = new Map();
   private scene: THREE.Scene;
   private assetManager: AssetManager;
+  private lastAnvilStrikeTime = 0;
+  private guardAttackCooldowns: Map<string, number> = new Map();
 
   constructor(scene: THREE.Scene, assetManager: AssetManager) {
     this.scene = scene;
@@ -36,6 +38,9 @@ export class WorldSystem {
       interacted: false,
       repeatable: true,
       dialogueRootId: 'elder_root',
+      npcScheduleRole: 'elder',
+      homeX: 5,
+      homeZ: -3,
     });
 
     add({
@@ -50,6 +55,10 @@ export class WorldSystem {
       interacted: false,
       repeatable: true,
       dialogueRootId: 'blacksmith_root',
+      npcScheduleRole: 'blacksmith',
+      homeX: 10,
+      homeZ: 6.5,
+      isArmedDefender: true,
     });
 
     add({
@@ -64,6 +73,9 @@ export class WorldSystem {
       interacted: false,
       repeatable: true,
       dialogueRootId: 'merchant_root',
+      npcScheduleRole: 'merchant',
+      homeX: -7,
+      homeZ: -2,
     });
 
     add({
@@ -78,6 +90,386 @@ export class WorldSystem {
       interacted: false,
       repeatable: true,
       dialogueRootId: 'herbalist_root',
+      npcScheduleRole: 'herbalist',
+      homeX: 7,
+      homeZ: 14,
+    });
+
+    // =========================================================================
+    // ЖИВОЙ МИР: КРЕСТЬЯНЕ, СТРАЖНИКИ С ФАКЕЛАМИ, БАРД, КАРАВАНЩИК, СКУПЩИК И НАПАРНИКИ
+    // =========================================================================
+    add({
+      id: 'npc_peasant_farmer',
+      type: 'npc',
+      name: 'Крестьянин Мирон',
+      roleOrSubtitle: 'Житель Вороньей Пади · Земледелец',
+      promptText: 'Поговорить с Крестьянином Мироном',
+      x: -14,
+      z: 18,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_root',
+      npcScheduleRole: 'farmer',
+      homeX: -14,
+      homeZ: 18,
+    });
+
+    add({
+      id: 'npc_peasant_woodcutter',
+      type: 'npc',
+      name: 'Лесоруб Степан',
+      roleOrSubtitle: 'Житель Вороньей Пади · Дровосек',
+      promptText: 'Поговорить с Лесорубом Степаном',
+      x: 17,
+      z: -12,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_root',
+      npcScheduleRole: 'woodcutter',
+      homeX: 17,
+      homeZ: -12,
+    });
+
+    add({
+      id: 'npc_water_carrier',
+      type: 'npc',
+      name: 'Водонос Дарья',
+      roleOrSubtitle: 'Жительница Вороньей Пади',
+      promptText: 'Поговорить с Дарьей',
+      x: -12,
+      z: -9,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_root',
+      npcScheduleRole: 'water_carrier',
+      homeX: -12,
+      homeZ: -9,
+    });
+
+    add({
+      id: 'npc_guard_1',
+      type: 'npc',
+      name: 'Стражник Гуннар',
+      roleOrSubtitle: 'Дружина Вороньей Пади · Северный дозор',
+      promptText: 'Поговорить со Стражником Гуннаром',
+      x: -4,
+      z: -16,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_root',
+      npcScheduleRole: 'guard',
+      homeX: -4,
+      homeZ: -16,
+      isArmedDefender: true,
+    });
+
+    add({
+      id: 'npc_guard_2',
+      type: 'npc',
+      name: 'Стражник Рольф',
+      roleOrSubtitle: 'Дружина Вороньей Пади · Южный дозор',
+      promptText: 'Поговорить со Стражником Рольфом',
+      x: 9,
+      z: 16,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_root',
+      npcScheduleRole: 'guard',
+      homeX: 9,
+      homeZ: 16,
+      isArmedDefender: true,
+    });
+
+    add({
+      id: 'npc_bard',
+      type: 'npc',
+      name: 'Бард Корвин Песнопевец',
+      roleOrSubtitle: 'Менестрель Вороньей Пади · Баллады о подвигах',
+      promptText: 'Поговорить с Бардом Корвином (Заказать балладу)',
+      x: -5.2,
+      z: 3.2,
+      radius: 3.4,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'bard_root',
+      npcScheduleRole: 'bard',
+      homeX: -5.2,
+      homeZ: 3.2,
+    });
+
+    add({
+      id: 'npc_caravan_merchant',
+      type: 'npc',
+      name: 'Караванщик Радован',
+      roleOrSubtitle: 'Странствующий торговец с караваном',
+      promptText: 'Поговорить с Караванщиком Радованом (Торговля в пути)',
+      x: 2,
+      z: -42,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'caravan_root',
+      npcScheduleRole: 'caravan',
+      homeX: 2,
+      homeZ: -42,
+    });
+
+    add({
+      id: 'npc_fence_pass',
+      type: 'npc',
+      name: 'Скупщик редкостей «Хорь»',
+      roleOrSubtitle: 'Контрабандист и торговец реликвиями на Перевале',
+      promptText: 'Поговорить со Скупщиком «Хорём» (Чёрный рынок)',
+      x: -9,
+      z: -248,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'fence_root',
+      npcScheduleRole: 'fence',
+      homeX: -9,
+      homeZ: -248,
+    });
+
+    // Боевые Напарники (доступны для найма в поход)
+    add({
+      id: 'npc_companion_lyra',
+      type: 'npc',
+      name: 'Лира из Вольной Роты',
+      roleOrSubtitle: 'Боевой Напарник · Лучница и следопыт',
+      promptText: 'Поговорить с Лирой (Взять в напарники)',
+      x: -2.2,
+      z: 4.8,
+      radius: 3.4,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'lyra_root',
+    });
+
+    add({
+      id: 'npc_companion_thorvald',
+      type: 'npc',
+      name: 'Брат Торвальд',
+      roleOrSubtitle: 'Боевой Напарник · Паладин-Отступник',
+      promptText: 'Поговорить с Братом Торвальдом (Взять в напарники)',
+      x: 4.8,
+      z: 4.5,
+      radius: 3.4,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'thorvald_root',
+    });
+
+    add({
+      id: 'npc_companion_vesper',
+      type: 'npc',
+      name: 'Мастер Веспер',
+      roleOrSubtitle: 'Боевой Напарник · Грандмастер Братства Пепла',
+      promptText: 'Поговорить с Веспером (Взять в напарники)',
+      x: -2.5,
+      z: -355,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'vesper_companion_root',
+    });
+
+    // =========================================================================
+    // 4 НЕЛИНЕЙНЫХ КВЕСТА-РАССЛЕДОВАНИЯ: NPC И УЛИКИ ЧУТЬЯ ОХОТНИКА [V]
+    // =========================================================================
+    // 1. «Кровь на колокольне» (Воронья Падь)
+    add({
+      id: 'clue_belltower_corpse',
+      type: 'clue',
+      name: 'Жертва у старой колокольни',
+      roleOrSubtitle: 'Расследование «Кровь на колокольне» · Улика [V]',
+      promptText: 'Осмотреть раны жертвы с Чутьём Охотника',
+      x: -9,
+      z: -9,
+      radius: 4.0,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_blood_belltower',
+      questStageId: 'q_bell_corpse',
+      loreText:
+        'Горло разорвано в полночь, но следы зубов слишком узкие для волка. На одежде жертвы — чёрная кузнечная окалина и угольная пыль.',
+    });
+
+    add({
+      id: 'clue_belltower_roof',
+      type: 'clue',
+      name: 'Следы когтей и обрывок передника у колокольни',
+      roleOrSubtitle: 'Расследование «Кровь на колокольне» · Улика [V]',
+      promptText: 'Изучить обрывок кузнечного передника и следы',
+      x: -12,
+      z: -13,
+      radius: 4.0,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_blood_belltower',
+      questStageId: 'q_bell_roof_tracks',
+      loreText:
+        'На балке застрял лоскут прожжённой кожи с клеймом кузни Мастера Торна. Кровавый след ведёт прямо к дому кузнеца и его жены Хельги!',
+    });
+
+    add({
+      id: 'npc_belltower_helga',
+      type: 'npc',
+      name: 'Хельга (Жена кузнеца Торна)',
+      roleOrSubtitle: 'Квест «Кровь на колокольне» · Тайна Ночного Голода',
+      promptText: 'Допросить Хельгу и вынести вердикт',
+      x: 11.5,
+      z: 8.2,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'belltower_helga_root',
+    });
+
+    // 2. «Пир Воронов» (Заброшенное поместье в Топях)
+    add({
+      id: 'npc_lord_vane',
+      type: 'npc',
+      name: 'Лорд Эдгар Вейн',
+      roleOrSubtitle: 'Квест «Пир Воронов» · Хозяин поместья в Топях',
+      promptText: 'Поговорить с лордом Эдгаром Вейном',
+      x: 25,
+      z: -160,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'lord_vane_root',
+    });
+
+    add({
+      id: 'clue_feast_table',
+      type: 'clue',
+      name: 'Пиршественный стол Дома Вейнов',
+      roleOrSubtitle: 'Расследование «Пир Воронов» · Улика Чутья [V]',
+      promptText: 'Разоблачить иллюзию пира Чутьём Охотника',
+      x: 30,
+      z: -166,
+      radius: 4.2,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_feast_of_ravens',
+      questStageId: 'q_feast_inspect_table',
+      loreText:
+        'Сквозь пелену иллюзии видно страшное зрелище: за столом сидят истлевшие скелеты в кружевах, а на серебряных блюдах гниёт болотная падаль.',
+    });
+
+    add({
+      id: 'clue_feast_cellar',
+      type: 'clue',
+      name: 'Кровавый люк в погреб поместья',
+      roleOrSubtitle: 'Расследование «Пир Воронов» · Улика Чутья [V]',
+      promptText: 'Осмотреть люк подвала и алтарь иллюзий',
+      x: 33,
+      z: -171,
+      radius: 4.2,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_feast_of_ravens',
+      questStageId: 'q_feast_inspect_cellar',
+      loreText:
+        'Внизу в погребе ворочается откормленная тварь Бездны. Лорд Вейн заманивал путников с тракта и скармливал их монстру, чтобы питать Зеркало Иллюзий своей погибшей семьи!',
+    });
+
+    // 3. «Клятва в Мёртвых Шахтах» (Среброзубый Перевал)
+    add({
+      id: 'npc_order_captain_mines',
+      type: 'npc',
+      name: 'Капитан Ордена Валлен',
+      roleOrSubtitle: 'Квест «Клятва в Мёртвых Шахтах» · Карательный отряд',
+      promptText: 'Поговорить с капитаном Ордена Валленом',
+      x: -18,
+      z: -268,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'mines_captain_root',
+    });
+
+    add({
+      id: 'clue_mines_barricade',
+      type: 'clue',
+      name: 'Баррикада заблокированного штрека',
+      roleOrSubtitle: 'Расследование «Клятва в Мёртвых Шахтах» · Улика [V]',
+      promptText: 'Прослушать штрек с Чутьём Охотника [V]',
+      x: -22,
+      z: -275,
+      radius: 4.2,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_dead_mines_oath',
+      questStageId: 'q_mines_inspect_barricade',
+      loreText:
+        'За каменной насыпью нет следов человеческой крови — напротив, горняки вырезали на крепи охранные молитвы и поют колыбельную своему ребёнку-мутанту.',
+    });
+
+    add({
+      id: 'npc_sentient_ghoul_elder',
+      type: 'npc',
+      name: 'Старейшина горняков Торос',
+      roleOrSubtitle: 'Квест «Клятва в Мёртвых Шахтах» · Разумный рудокоп-мутант',
+      promptText: 'Поговорить со старейшиной Торосом и выбрать сторону',
+      x: -26,
+      z: -281,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'mines_ghoul_elder_root',
+    });
+
+    // 4. «Последний Экзамен Зольника» (Чёрный Бастион)
+    add({
+      id: 'npc_apprentice_erian',
+      type: 'npc',
+      name: 'Младший адепт Эриан',
+      roleOrSubtitle: 'Квест «Последний Экзамен Зольника» · Послушник Школы Ворона',
+      promptText: 'Поговорить с адептом Эрианом о ритуале Тлеющей Крови',
+      x: -16,
+      z: -365,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'ash_exam_erian_root',
+    });
+
+    add({
+      id: 'clue_bastion_mutagens',
+      type: 'clue',
+      name: 'Реликвариум мутагенов Школы Ворона',
+      roleOrSubtitle: 'Квест «Последний Экзамен Зольника» · Улика [V]',
+      promptText: 'Собрать уцелевшие фиалы «Тлеющей Крови»',
+      x: -21,
+      z: -372,
+      radius: 4.2,
+      interacted: false,
+      repeatable: true,
+      questId: 'quest_last_ash_exam',
+      questStageId: 'q_exam_collect_mutagens',
+      loreText:
+        'Среди битого стекла сохранились три запечатанных сосуда с вытяжкой Чёрной Росы и записи Веспера: «Точная доза — 3 капли с Ласточкой, стабилизация — Барьер и малый Игнис».',
+    });
+
+    add({
+      id: 'clue_bastion_ritual_table',
+      type: 'shrine',
+      name: 'Алтарь Испытания Тлеющей Кровью',
+      roleOrSubtitle: 'Квест «Последний Экзамен Зольника» · Мини-ивент Ритуала',
+      promptText: 'Провести ритуал мутации над Эрианом',
+      x: -18,
+      z: -378,
+      radius: 4.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'ash_exam_ritual_step1',
     });
 
     add({
@@ -702,6 +1094,77 @@ export class WorldSystem {
         { itemId: 'bp_frost_sword', count: 1 },
       ],
     });
+    add({
+      id: 'poi_swamp_stilt_stash',
+      type: 'chest',
+      name: 'Тайник рыбаков в свайной деревне',
+      roleOrSubtitle: 'Точка интереса · Западные мостки Топей',
+      promptText: 'Открыть рыбацкий кованый сундук',
+      x: -52,
+      z: -152,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 145,
+      lootItems: [
+        { itemId: 'potion_swallow', count: 2 },
+        { itemId: 'cursed_essence', count: 2 },
+      ],
+    });
+    add({
+      id: 'poi_swamp_nest_west',
+      type: 'monster_nest',
+      name: 'Гнездо чудовищ: Омут болотных утопленников',
+      roleOrSubtitle: 'Точка интереса (Гнездо монстров)',
+      promptText: 'Выжечь гнездо утопленников знаком «Пламя»',
+      x: -32,
+      z: -162,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 115,
+      lootItems: [
+        { itemId: 'ghoul_blood', count: 3 },
+        { itemId: 'cursed_essence', count: 1 },
+      ],
+    });
+    add({
+      id: 'poi_swamp_power_east',
+      type: 'place_of_power',
+      name: 'Место Силы: Камень Туманов в Топях',
+      roleOrSubtitle: 'Древний рунический обелиск',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: 24,
+      z: -138,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'poi_swamp_refugee_chest',
+      type: 'chest',
+      name: 'Брошенный сундук обоза у клеток висельников',
+      roleOrSubtitle: 'Точка интереса · Тракт Висельников',
+      promptText: 'Обыскать окованный сундук обоза',
+      x: -22,
+      z: -128,
+      radius: 3.4,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 130,
+      lootItems: [
+        { itemId: 'oil_necrophage', count: 1 },
+        { itemId: 'iron_ore', count: 3 },
+      ],
+    });
 
     // Биом 2: Среброзубый Перевал и Мёртвые Шахты (z: -215..-325)
     add({
@@ -779,6 +1242,77 @@ export class WorldSystem {
         { itemId: 'black_ore', count: 2 },
       ],
     });
+    add({
+      id: 'poi_pass_chasm_chest',
+      type: 'chest',
+      name: 'Схрон контрабандистов за висячим мостом',
+      roleOrSubtitle: 'Точка интереса · Западный уступ Перевала',
+      promptText: 'Открыть кованый сундук контрабандистов',
+      x: -52,
+      z: -255,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 210,
+      lootItems: [
+        { itemId: 'black_ore', count: 3 },
+        { itemId: 'ice_lotus', count: 2 },
+      ],
+    });
+    add({
+      id: 'poi_pass_power_peak',
+      type: 'place_of_power',
+      name: 'Место Силы: Обелиск Ледяной Бури на серпантине',
+      roleOrSubtitle: 'Древний рунический обелиск',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: 24,
+      z: -242,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'poi_pass_mine_stash_east',
+      type: 'chest',
+      name: 'Сейф старшего штейгера в Восточной штольне',
+      roleOrSubtitle: 'Точка интереса · Сеть Мёртвых Шахт',
+      promptText: 'Открыть сундук в дальнем штреке',
+      x: 46,
+      z: -275,
+      radius: 3.5,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 195,
+      lootItems: [
+        { itemId: 'black_ore', count: 3 },
+        { itemId: 'potion_thunderbolt', count: 1 },
+      ],
+    });
+    add({
+      id: 'poi_pass_nest_trog',
+      type: 'monster_nest',
+      name: 'Гнездо чудовищ: Кладбище троглодитов в Западном забое',
+      roleOrSubtitle: 'Точка интереса (Гнездо монстров)',
+      promptText: 'Обрушить логово троглодитов знаком «Пламя»',
+      x: -34,
+      z: -275,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 155,
+      lootItems: [
+        { itemId: 'black_ore', count: 2 },
+        { itemId: 'monster_claw', count: 3 },
+      ],
+    });
 
     // Биом 3: Чёрный Бастион Братства Пепла (z: -325..-435)
     add({
@@ -842,6 +1376,59 @@ export class WorldSystem {
         { itemId: 'mythic_sun_eater', count: 1 },
       ],
     });
+    add({
+      id: 'poi_bastion_barracks_chest',
+      type: 'chest',
+      name: 'Оружейный сундук сожжённых казарм Зольников',
+      roleOrSubtitle: 'Точка интереса · Западный тренировочный плац',
+      promptText: 'Открыть сундук мастера фехтования',
+      x: -36,
+      z: -376,
+      radius: 3.5,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 260,
+      lootItems: [
+        { itemId: 'black_ore', count: 3 },
+        { itemId: 'void_dust', count: 2 },
+      ],
+    });
+    add({
+      id: 'poi_bastion_alchemy_stash',
+      type: 'chest',
+      name: 'Алхимический ларец мутагенов Братства',
+      roleOrSubtitle: 'Точка интереса · Восточная лаборатория Бастиона',
+      promptText: 'Открыть ларец алхимической лаборатории',
+      x: 37,
+      z: -375,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 280,
+      lootItems: [
+        { itemId: 'cursed_essence', count: 3 },
+        { itemId: 'void_dust', count: 2 },
+        { itemId: 'potion_blizzard', count: 1 },
+      ],
+    });
+    add({
+      id: 'poi_bastion_power_courtyard',
+      type: 'place_of_power',
+      name: 'Место Силы: Обелиск Тлеющей Крови у рухнувшей башни',
+      roleOrSubtitle: 'Древний рунический обелиск',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: -26,
+      z: -352,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
 
     // Биом 4: Кратер Затмения и Зал Трона Пустоты (z: -435..-550)
     add({
@@ -864,6 +1451,58 @@ export class WorldSystem {
         { itemId: 'mythic_void_voice', count: 1 },
         { itemId: 'rune_void_sup', count: 1 },
         { itemId: 'void_dust', count: 3 },
+      ],
+    });
+    add({
+      id: 'poi_crater_west_island_chest',
+      type: 'chest',
+      name: 'Ковчег Затмения на Западном обсидиановом острове',
+      roleOrSubtitle: 'Точка интереса · Мост Чистой Энергии',
+      promptText: 'Открыть древний ковчег на парящем острове',
+      x: -42,
+      z: -478,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 360,
+      lootItems: [
+        { itemId: 'void_dust', count: 4 },
+        { itemId: 'black_ore', count: 3 },
+      ],
+    });
+    add({
+      id: 'poi_crater_east_island_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Монолит Пустоты на Восточном острове',
+      roleOrSubtitle: 'Древний рунический обелиск',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: 42,
+      z: -478,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'poi_crater_nest_void',
+      type: 'monster_nest',
+      name: 'Гнездо чудовищ: Разлом Гончих Пустоты у реки лавы',
+      roleOrSubtitle: 'Точка интереса (Гнездо монстров)',
+      promptText: 'Запечатать разлом знаком «Пламя»',
+      x: -18,
+      z: -462,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 290,
+      lootItems: [
+        { itemId: 'void_dust', count: 3 },
+        { itemId: 'cursed_essence', count: 2 },
       ],
     });
     add({
@@ -928,16 +1567,34 @@ export class WorldSystem {
         ? 'elder'
         : item.id.includes('blacksmith')
         ? 'blacksmith'
+        : item.id.includes('caravan')
+        ? 'caravan'
         : item.id.includes('merchant')
         ? 'merchant'
-        : item.id.includes('inquisitor')
+        : item.id.includes('inquisitor') || item.id.includes('order_captain')
         ? 'inquisitor'
-        : item.id.includes('charon')
+        : item.id.includes('charon') || item.id.includes('ghoul_elder')
         ? 'charon'
         : item.id.includes('brom')
         ? 'brom'
-        : item.id.includes('kael')
+        : item.id.includes('kael') || item.id.includes('erian')
         ? 'kael'
+        : item.id.includes('vane')
+        ? 'elder'
+        : item.id.includes('guard')
+        ? 'guard'
+        : item.id.includes('bard')
+        ? 'bard'
+        : item.id.includes('fence')
+        ? 'fence'
+        : item.id.includes('lyra')
+        ? 'lyra'
+        : item.id.includes('thorvald')
+        ? 'thorvald'
+        : item.id.includes('vesper')
+        ? 'vesper'
+        : item.id.includes('peasant') || item.id.includes('water_carrier')
+        ? 'peasant'
         : 'herbalist';
       const npcMesh = this.assetManager.createNPCModel(role);
       npcMesh.position.set(item.x, item.y, item.z);
@@ -1138,14 +1795,10 @@ export class WorldSystem {
       this.scene.add(pillarGroup);
       this.meshes.set(item.id, pillarGroup);
     } else if (item.type === 'chest') {
-      const chest = new THREE.Mesh(
-        new THREE.BoxGeometry(0.95, 0.65, 0.6),
-        this.assetManager.getMaterial('wood')
-      );
-      chest.position.set(item.x, item.y + 0.32, item.z);
-      chest.castShadow = true;
-      this.scene.add(chest);
-      this.meshes.set(item.id, chest);
+      const chestGroup = this.assetManager.createDetailedChestModel(item.interacted);
+      chestGroup.position.set(item.x, item.y, item.z);
+      this.scene.add(chestGroup);
+      this.meshes.set(item.id, chestGroup);
     } else if (item.type === 'clue' || item.type === 'signpost') {
       const marker = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.32, 0),
@@ -1390,6 +2043,149 @@ export class WorldSystem {
     return [p0, p1, p2];
   }
 
+  /**
+   * Visually alters the 3D world and NPC states based on the player's choices
+   * in the 4 non-linear investigation quests.
+   */
+  public applyWorldQuestConsequence(choiceId: string): void {
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const woodMat = this.assetManager.getMaterial('wood');
+
+    if (choiceId === 'belltower_kill_wife') {
+      const helga = this.interactables.find((i) => i.id === 'npc_belltower_helga');
+      if (helga) {
+        helga.interacted = true;
+        helga.repeatable = false;
+      }
+      const helgaMesh = this.meshes.get('npc_belltower_helga');
+      if (helgaMesh) helgaMesh.visible = false;
+
+      // Spawn grave cross with memorial candle next to the forge
+      const graveGroup = new THREE.Group();
+      const postV = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.45, 0.16), woodMat);
+      postV.position.y = 0.72;
+      const postH = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.14, 0.14), woodMat);
+      postH.position.y = 1.05;
+      const candle = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xf97316 })
+      );
+      candle.position.set(0, 0.22, 0.25);
+      graveGroup.add(postV, postH, candle);
+      const gy = getGroundHeight(11.5, 8.2);
+      graveGroup.position.set(11.5, gy, 8.2);
+      this.scene.add(graveGroup);
+    } else if (choiceId === 'belltower_cleanse_ritual') {
+      const helga = this.interactables.find((i) => i.id === 'npc_belltower_helga');
+      if (helga) {
+        helga.name = 'Хельга (Исцелена от Ночного Голода)';
+        helga.roleOrSubtitle = 'Спасена ритуалом Тлеющей Крови';
+        helga.promptText = 'Поговорить со спасённой Хельгой';
+      }
+    } else if (choiceId === 'belltower_blame_outsider') {
+      const helga = this.interactables.find((i) => i.id === 'npc_belltower_helga');
+      if (helga) {
+        helga.roleOrSubtitle = 'Тайна скрыта за золото кузнеца';
+      }
+      // Spawn warning pillar at village gate
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 2.2, 8), woodMat);
+      post.position.set(0, getGroundHeight(0, 14) + 1.1, 14);
+      this.scene.add(post);
+    } else if (choiceId === 'feast_burn_manor') {
+      const vane = this.interactables.find((i) => i.id === 'npc_lord_vane');
+      if (vane) {
+        vane.interacted = true;
+        vane.repeatable = false;
+      }
+      const vaneMesh = this.meshes.get('npc_lord_vane');
+      if (vaneMesh) vaneMesh.visible = false;
+
+      // Spawn cleansing fire pillars at the manor table
+      for (let i = -1; i <= 1; i++) {
+        const pyre = new THREE.Mesh(
+          new THREE.ConeGeometry(0.65, 2.1, 8),
+          new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.82 })
+        );
+        const px = 30 + i * 2.2;
+        const pz = -166;
+        pyre.position.set(px, getGroundHeight(px, pz) + 1.05, pz);
+        this.scene.add(pyre);
+      }
+    } else if (choiceId === 'feast_spare_illusions') {
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(4.2, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xa855f7,
+          transparent: true,
+          opacity: 0.22,
+          wireframe: true,
+        })
+      );
+      dome.position.set(30, getGroundHeight(30, -166) + 1.8, -166);
+      this.scene.add(dome);
+    } else if (choiceId === 'mines_protect_ghouls') {
+      const capt = this.interactables.find((i) => i.id === 'npc_order_captain_mines');
+      if (capt) {
+        capt.interacted = true;
+        capt.repeatable = false;
+      }
+      const captMesh = this.meshes.get('npc_order_captain_mines');
+      if (captMesh) captMesh.visible = false;
+
+      const ghoul = this.interactables.find((i) => i.id === 'npc_sentient_ghoul_elder');
+      if (ghoul) {
+        ghoul.roleOrSubtitle = 'Штрек под защитой свободных горняков';
+      }
+    } else if (choiceId === 'mines_purge_for_order') {
+      const ghoul = this.interactables.find((i) => i.id === 'npc_sentient_ghoul_elder');
+      if (ghoul) {
+        ghoul.interacted = true;
+        ghoul.repeatable = false;
+      }
+      const ghoulMesh = this.meshes.get('npc_sentient_ghoul_elder');
+      if (ghoulMesh) ghoulMesh.visible = false;
+
+      const banner = new THREE.Mesh(
+        new THREE.BoxGeometry(0.6, 2.8, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 0.9 })
+      );
+      banner.position.set(-22, getGroundHeight(-22, -275) + 1.4, -275);
+      this.scene.add(banner);
+    } else if (choiceId === 'exam_revive_brotherhood') {
+      const erian = this.interactables.find((i) => i.id === 'npc_apprentice_erian');
+      if (erian) {
+        erian.name = 'Зольник Эриан (Мастер-Ученик)';
+        erian.roleOrSubtitle = 'Возрождённое Братство Пепла · Янтарные Глаза';
+      }
+      const vat = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.9, 1.0, 1.6, 12),
+        new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          emissive: 0xd97706,
+          emissiveIntensity: 1.8,
+        })
+      );
+      vat.position.set(-18, getGroundHeight(-18, -378) + 0.8, -378);
+      this.scene.add(vat);
+    } else if (choiceId === 'exam_bury_secrets') {
+      const erian = this.interactables.find((i) => i.id === 'npc_apprentice_erian');
+      const erianMesh = this.meshes.get('npc_apprentice_erian');
+      if (erian) {
+        erian.name = 'Летописец Эриан (Спасён от мутации)';
+        erian.roleOrSubtitle = 'Хранитель памяти Братства в Вороньей Пади';
+        erian.x = 3.5;
+        erian.z = -4.5;
+        erian.y = getGroundHeight(3.5, -4.5);
+        if (erianMesh) {
+          erianMesh.position.set(erian.x, erian.y, erian.z);
+        }
+      }
+      const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0), stoneMat);
+      rubble.position.set(-18, getGroundHeight(-18, -378) + 0.5, -378);
+      this.scene.add(rubble);
+    }
+  }
+
   public getNearestInteractable(
     playerX: number,
     playerZ: number
@@ -1399,6 +2195,8 @@ export class WorldSystem {
 
     for (const item of this.interactables) {
       if (item.interacted && !item.repeatable) continue;
+      const mesh = this.meshes.get(item.id);
+      if (mesh && !mesh.visible) continue;
 
       const dist = Math.hypot(playerX - item.x, playerZ - item.z);
       if (dist <= item.radius && dist < minDist) {
@@ -1415,8 +2213,20 @@ export class WorldSystem {
     playerX: number,
     playerZ: number,
     onPOIDiscovered?: (item: WorldInteractable) => void,
-    witcherSenseActive = false
+    witcherSenseActive = false,
+    livingWorldOpts?: {
+      dt: number;
+      timeOfDay: number;
+      weather: WeatherType;
+      enemies: EnemyInstance[];
+      activeCompanionId: CompanionId | null;
+      vesperSpared: boolean;
+      onAnvilStrike?: (distanceRatio: number) => void;
+      onGuardAttackEnemy?: (guardName: string, enemy: EnemyInstance, damage: number) => void;
+    }
   ): WorldInteractable | null {
+    const dt = livingWorldOpts?.dt ?? 0.016;
+
     for (const item of this.interactables) {
       if (item.isPOI && !item.discovered) {
         const d = Math.hypot(playerX - item.x, playerZ - item.z);
@@ -1426,9 +2236,226 @@ export class WorldSystem {
         }
       }
 
+      const mesh = this.meshes.get(item.id);
+
+      // Animate detailed 3D Chest lid opening & inner gold glow (even after chest is interacted)
+      if (item.type === 'chest' && mesh) {
+        const lidPivot = mesh.getObjectByName('chestLidPivot');
+        const targetAngle = item.interacted ? -1.92 : (mesh.userData.targetLidAngle ?? 0);
+        if (lidPivot) {
+          lidPivot.rotation.x = THREE.MathUtils.damp(
+            lidPivot.rotation.x,
+            targetAngle,
+            7.5,
+            dt
+          );
+        }
+        const treasure = mesh.getObjectByName('chestTreasureGlow');
+        if (treasure) {
+          treasure.visible = item.interacted || (lidPivot ? lidPivot.rotation.x < -0.25 : false);
+        }
+        const aura = mesh.getObjectByName('chestInnerAura') as THREE.Mesh | undefined;
+        if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
+          aura.material.opacity = 0.28 + Math.sin(elapsed * 3.5) * 0.1;
+        }
+      }
+
       if (item.interacted && !item.repeatable) continue;
 
-      const mesh = this.meshes.get(item.id);
+      // Hide NPC stand-ins for the currently recruited companion
+      if (livingWorldOpts && item.type === 'npc') {
+        if (item.id === 'npc_companion_lyra' && mesh) {
+          mesh.visible = livingWorldOpts.activeCompanionId !== 'lyra';
+        } else if (item.id === 'npc_companion_thorvald' && mesh) {
+          mesh.visible = livingWorldOpts.activeCompanionId !== 'thorvald';
+        } else if (item.id === 'npc_companion_vesper' && mesh) {
+          mesh.visible = livingWorldOpts.activeCompanionId !== 'vesper';
+          if (livingWorldOpts.vesperSpared && item.z < -100) {
+            item.x = 5.2;
+            item.z = 1.8;
+            item.y = getGroundHeight(item.x, item.z);
+            mesh.position.set(item.x, item.y, item.z);
+          }
+        }
+      }
+
+      // Update AI Daily Schedules, Weather Sheltering, Combat Defense & Panic Fleeing
+      if (livingWorldOpts && item.type === 'npc' && item.npcScheduleRole && mesh) {
+        let nearestEnemy: EnemyInstance | null = null;
+        let nearestEnemyDist = Infinity;
+        for (const e of livingWorldOpts.enemies) {
+          if (e.isDead || e.state === 'DEAD') continue;
+          const ed = Math.hypot(e.x - item.x, e.z - item.z);
+          if (ed < nearestEnemyDist) {
+            nearestEnemyDist = ed;
+            nearestEnemy = e;
+          }
+        }
+
+        const schedule = computeNpcSchedule(
+          item.npcScheduleRole,
+          livingWorldOpts.timeOfDay,
+          livingWorldOpts.weather,
+          nearestEnemyDist <= 22,
+          Boolean(item.isArmedDefender),
+          item.homeX ?? item.x,
+          item.homeZ ?? item.z,
+          elapsed
+        );
+
+        item.currentActivity = schedule.state;
+        item.currentActivityState = schedule.state;
+        const shortName = item.name.split(' (')[0];
+        item.promptText = `Поговорить с ${shortName} [${schedule.activityLabel}]`;
+
+        const targetX =
+          schedule.state === 'COMBAT_DEFEND' && nearestEnemy
+            ? nearestEnemy.x
+            : schedule.targetX;
+        const targetZ =
+          schedule.state === 'COMBAT_DEFEND' && nearestEnemy
+            ? nearestEnemy.z
+            : schedule.targetZ;
+
+        const dx = targetX - item.x;
+        const dz = targetZ - item.z;
+        const distToTarget = Math.hypot(dx, dz);
+        const moveSpeed =
+          schedule.state === 'PANIC_FLEE' || schedule.state === 'COMBAT_DEFEND'
+            ? 5.6
+            : item.npcScheduleRole === 'caravan'
+            ? 2.8
+            : 2.3;
+
+        const leftLeg = mesh.getObjectByName('npcLeftLeg');
+        const rightLeg = mesh.getObjectByName('npcRightLeg');
+        const leftArm = mesh.getObjectByName('npcLeftArm');
+        const rightArm = mesh.getObjectByName('npcRightArm');
+        const head = mesh.getObjectByName('npcHead');
+
+        if (distToTarget > 0.18) {
+          const step = Math.min(distToTarget, moveSpeed * livingWorldOpts.dt);
+          item.x += (dx / distToTarget) * step;
+          item.z += (dz / distToTarget) * step;
+          item.y = getGroundHeight(item.x, item.z);
+          mesh.position.set(item.x, item.y, item.z);
+          mesh.rotation.y = Math.atan2(dx, dz);
+          const stride = Math.sin(elapsed * 8.5);
+          const torso = mesh.getObjectByName('npcTorso');
+          if (torso) {
+            torso.position.y = 1.15 + Math.abs(Math.cos(elapsed * 8.5)) * 0.045;
+            torso.rotation.z = stride * 0.05;
+          }
+          if (leftLeg) leftLeg.rotation.x = stride * 0.48;
+          if (rightLeg) rightLeg.rotation.x = -stride * 0.48;
+          if (leftArm) leftArm.rotation.x = -stride * 0.36;
+          if (rightArm) rightArm.rotation.x = stride * 0.36;
+          if (head) head.rotation.y = THREE.MathUtils.damp(head.rotation.y, 0, 8, dt);
+        } else {
+          const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
+          if (dPlayer < 6.0) {
+            mesh.lookAt(playerX, item.y, playerZ);
+            if (head) {
+              head.rotation.y = Math.sin(elapsed * 1.5) * 0.08;
+            }
+          }
+          const torso = mesh.getObjectByName('npcTorso');
+          if (torso) {
+            torso.position.y = 1.15 + Math.sin(elapsed * 2.2) * 0.015;
+            torso.rotation.z = schedule.state === 'SLEEP_INDOORS' ? 0.18 : 0;
+          }
+          if (leftLeg) leftLeg.rotation.x = THREE.MathUtils.damp(leftLeg.rotation.x, 0, 8, dt);
+          if (rightLeg) rightLeg.rotation.x = THREE.MathUtils.damp(rightLeg.rotation.x, 0, 8, dt);
+          if (leftArm) {
+            leftArm.rotation.x = THREE.MathUtils.damp(
+              leftArm.rotation.x,
+              Math.sin(elapsed * 2.0) * 0.04,
+              8,
+              dt
+            );
+          }
+          if (rightArm) {
+            rightArm.rotation.x = THREE.MathUtils.damp(
+              rightArm.rotation.x,
+              -Math.sin(elapsed * 2.0) * 0.04,
+              8,
+              dt
+            );
+          }
+        }
+
+        // Guard torch visibility
+        const torch = mesh.getObjectByName('npcTorch');
+        if (torch) {
+          torch.visible = schedule.torchLit;
+          const flame = mesh.getObjectByName('npcTorchFlame');
+          if (flame) {
+            const s = 0.9 + Math.sin(elapsed * 14) * 0.15;
+            flame.scale.set(s, s * 1.15, s);
+          }
+        }
+
+        // Blacksmith anvil hammering animation + metallic clang audio
+        if (item.npcScheduleRole === 'blacksmith') {
+          const hammer = mesh.getObjectByName('smithHammer');
+          if (hammer) {
+            if (schedule.state === 'ANVIL_FORGE' || schedule.state === 'WORK') {
+              const swing = Math.sin(elapsed * 6.8);
+              hammer.position.y = -0.32 + swing * 0.14;
+              hammer.rotation.x = swing * 0.75;
+              if (rightArm) {
+                rightArm.rotation.x = -0.65 + swing * 0.55;
+              }
+              if (swing < -0.92 && elapsed - this.lastAnvilStrikeTime > 0.85) {
+                this.lastAnvilStrikeTime = elapsed;
+                const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
+                if (dPlayer < 32) {
+                  livingWorldOpts.onAnvilStrike?.(1 - dPlayer / 32);
+                }
+              }
+            } else {
+              hammer.position.y = -0.32;
+              hammer.rotation.x = 0;
+            }
+          }
+        }
+
+        // Armed defenders (Guards & Blacksmith) strike monsters lured into the village
+        if (
+          schedule.state === 'COMBAT_DEFEND' &&
+          item.isArmedDefender &&
+          nearestEnemy &&
+          nearestEnemyDist <= 3.6
+        ) {
+          const weapon = mesh.getObjectByName('npcWeapon') ?? mesh.getObjectByName('smithHammer');
+          if (weapon) {
+            weapon.rotation.x = Math.sin(elapsed * 14) * 0.85;
+          }
+          if (rightArm) {
+            rightArm.rotation.x = -0.8 + Math.sin(elapsed * 14) * 0.65;
+          }
+          const lastHit = this.guardAttackCooldowns.get(item.id) ?? 0;
+          if (elapsed - lastHit > 1.15) {
+            this.guardAttackCooldowns.set(item.id, elapsed);
+            livingWorldOpts.onGuardAttackEnemy?.(shortName, nearestEnemy, 24);
+          }
+        }
+      } else if (item.type === 'npc' && mesh) {
+        // Static quest/camp NPCs: idle breathing, subtle arm sway, and turning toward player when nearby
+        const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
+        if (dPlayer < 6.5) {
+          mesh.lookAt(playerX, item.y, playerZ);
+        }
+        const torso = mesh.getObjectByName('npcTorso');
+        if (torso) {
+          torso.position.y = 1.15 + Math.sin(elapsed * 2.1 + item.x) * 0.016;
+        }
+        const leftArm = mesh.getObjectByName('npcLeftArm');
+        const rightArm = mesh.getObjectByName('npcRightArm');
+        if (leftArm) leftArm.rotation.x = Math.sin(elapsed * 1.8 + item.z) * 0.04;
+        if (rightArm) rightArm.rotation.x = -Math.sin(elapsed * 1.8 + item.z) * 0.04;
+      }
+
       if (mesh && (item.type === 'clue' || item.type === 'signpost')) {
         mesh.rotation.y = elapsed * 1.6;
         mesh.position.y = item.y + 1.1 + Math.sin(elapsed * 2.5) * 0.12;
@@ -1481,8 +2508,14 @@ export class WorldSystem {
     if (!item) return;
     item.interacted = true;
     if (item.isPOI) item.discovered = true;
+    const mesh = this.meshes.get(id);
+    if (item.type === 'chest' && mesh) {
+      mesh.userData.targetLidAngle = -1.92;
+      const treasure = mesh.getObjectByName('chestTreasureGlow');
+      if (treasure) treasure.visible = true;
+      return;
+    }
     if (!item.repeatable) {
-      const mesh = this.meshes.get(id);
       if (
         mesh &&
         (item.type === 'herb' ||

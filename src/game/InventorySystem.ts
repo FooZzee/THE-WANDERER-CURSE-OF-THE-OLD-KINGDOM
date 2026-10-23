@@ -1,5 +1,10 @@
-import { getUpgradeCost } from './rules';
-import type { GameItem, PlayerStats, SkillNode } from './types';
+import {
+  calculateMerchantPrice,
+  enforceExclusiveEquipment,
+  getItemEquipSlot,
+  getUpgradeCost,
+} from './rules';
+import type { EquipmentSlot, GameItem, PlayerStats, SkillNode } from './types';
 
 export class InventorySystem {
   public items: GameItem[] = [];
@@ -19,6 +24,7 @@ export class InventorySystem {
         name: 'Стальной меч Школы Странника',
         description: 'Надёжный клинок из кованой стали для боя с людьми и дикими зверями.',
         category: 'weapon',
+        equipSlot: 'steelSword',
         rarity: 'uncommon',
         value: 90,
         quantity: 1,
@@ -31,6 +37,7 @@ export class InventorySystem {
         name: 'Рунный серебряный меч',
         description: 'Серебряный клинок с гравировкой древних рун, смертоносный для чудовищ.',
         category: 'weapon',
+        equipSlot: 'silverSword',
         rarity: 'rare',
         value: 140,
         quantity: 1,
@@ -43,6 +50,7 @@ export class InventorySystem {
         name: 'Потёртая кожаная куртка охотника',
         description: 'Дорожная броня с кольчужными наплечниками, не сковывающая движений.',
         category: 'armor',
+        equipSlot: 'armor',
         rarity: 'common',
         value: 80,
         quantity: 1,
@@ -973,10 +981,13 @@ export class InventorySystem {
     };
   }
 
-  public addItemById(itemId: string, count = 1): GameItem {
+  public addItemById(itemId: string, count = 1, autoEquip = false): GameItem {
     const existing = this.items.find((i) => i.id === itemId);
     if (existing) {
       existing.quantity += count;
+      if (autoEquip) {
+        this.equipItem(existing.id);
+      }
       return existing;
     }
 
@@ -990,9 +1001,50 @@ export class InventorySystem {
       value: 15,
     };
 
-    const newItem: GameItem = { ...def, quantity: count };
+    const slot = getItemEquipSlot({ ...def, quantity: count });
+    const newItem: GameItem = {
+      ...def,
+      equipSlot: slot ?? undefined,
+      quantity: count,
+      equipped: false,
+    };
     this.items.push(newItem);
+
+    // If autoEquip is requested, or if no item is currently equipped in that slot, equip it cleanly
+    if (slot) {
+      const currentlyInSlot = this.getEquippedBySlot(slot);
+      if (autoEquip || !currentlyInSlot) {
+        this.equipItem(newItem.id);
+      }
+    }
+
     return newItem;
+  }
+
+  public getEquippedBySlot(slot: EquipmentSlot): GameItem | undefined {
+    return this.items.find((i) => i.equipped && getItemEquipSlot(i) === slot);
+  }
+
+  public sanitizeEquipment(): void {
+    this.items = enforceExclusiveEquipment(this.items);
+  }
+
+  public equipItem(itemId: string): { replacedItem?: GameItem } {
+    const item = this.items.find((i) => i.id === itemId);
+    if (!item) return {};
+    const slot = getItemEquipSlot(item);
+    if (!slot) return {};
+
+    let replacedItem: GameItem | undefined;
+    for (const other of this.items) {
+      if (other.id !== item.id && other.equipped && getItemEquipSlot(other) === slot) {
+        other.equipped = false;
+        replacedItem = other;
+      }
+    }
+    item.equipSlot = slot;
+    item.equipped = true;
+    return { replacedItem };
   }
 
   public useQuickPotion(
@@ -1119,11 +1171,10 @@ export class InventorySystem {
 
     player.gold -= goldCost;
     ore.quantity -= 1;
-    const crafted = this.addItemById(bp.craftsItemId, 1);
-    crafted.equipped = true;
+    const crafted = this.addItemById(bp.craftsItemId, 1, true);
     return {
       ok: true,
-      message: `Выковано по чертежу: ${crafted.name}!`,
+      message: `Выковано и экипировано по чертежу: ${crafted.name}!`,
     };
   }
 
@@ -1161,16 +1212,22 @@ export class InventorySystem {
     };
   }
 
-  public toggleEquip(itemId: string): void {
+  public toggleEquip(itemId: string): { replacedItem?: GameItem } {
     const item = this.items.find((i) => i.id === itemId);
-    if (!item) return;
+    if (!item) return {};
     if (
       item.category === 'weapon' ||
       item.category === 'armor' ||
       item.category === 'trophy'
     ) {
-      item.equipped = !item.equipped;
+      if (item.equipped) {
+        item.equipped = false;
+        return {};
+      } else {
+        return this.equipItem(itemId);
+      }
     }
+    return {};
   }
 
   public upgradeItem(
@@ -1205,26 +1262,43 @@ export class InventorySystem {
 
   public buyShopItem(
     shopItemId: string,
-    player: PlayerStats
+    player: PlayerStats,
+    isFence = false
   ): { ok: boolean; message: string } {
     const shopItem = this.shopCatalog.find((i) => i.id === shopItemId);
     if (!shopItem) return { ok: false, message: 'Товар не найден' };
-    if (player.gold < shopItem.value) {
-      return { ok: false, message: 'Недостаточно золота' };
+    const effectivePrice = calculateMerchantPrice(
+      shopItem.value,
+      player.reputation ?? 0,
+      isFence
+    );
+    if (player.gold < effectivePrice) {
+      return { ok: false, message: `Недостаточно золота (нужно ${effectivePrice} крон)` };
     }
 
-    player.gold -= shopItem.value;
+    player.gold -= effectivePrice;
     const existing = this.items.find((i) => i.id === shopItem.id);
     if (existing) {
       existing.quantity += 1;
+      if (shopItem.category === 'weapon' || shopItem.category === 'armor') {
+        this.equipItem(existing.id);
+      }
     } else {
+      const slot = getItemEquipSlot(shopItem);
       this.items.push({
         ...shopItem,
+        equipSlot: slot ?? undefined,
         quantity: 1,
-        equipped: shopItem.category === 'weapon' || shopItem.category === 'armor',
+        equipped: false,
       });
+      if (shopItem.category === 'weapon' || shopItem.category === 'armor') {
+        this.equipItem(shopItem.id);
+      }
     }
-    return { ok: true, message: `Куплено: ${shopItem.name}` };
+    return {
+      ok: true,
+      message: `Куплено: ${shopItem.name} (${effectivePrice} крон)`,
+    };
   }
 
   public sellInventoryItem(

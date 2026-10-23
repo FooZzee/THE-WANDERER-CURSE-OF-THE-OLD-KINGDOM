@@ -16,17 +16,26 @@ import { QuestSystem } from './QuestSystem';
 import {
   applyExperienceGain,
   BESTIARY_DATA,
+  calculateMerchantPrice,
+  clampReputation,
+  COMPANION_PROFILES,
   computeEffectivePlayerStats,
   createInitialDicePokerState,
   discoverLoreEntry,
   evaluateDiceHand,
   getBiomeAt,
+  getCompanionCommandLabel,
   getGroundHeight,
+  getItemEquipSlot,
+  getNextCompanionCommand,
   getNextWeatherState,
+  getReputationInfo,
   MAGIC_SIGNS,
   pickNpcRerollIndices,
   resolveDicePokerOutcome,
+  resolveInvestigationQuestChoice,
   rollDiceArray,
+  validateAshExamRitual,
   WAYSTONES,
   WEATHER_PRESETS,
 } from './rules';
@@ -34,9 +43,12 @@ import { SaveSystem } from './SaveSystem';
 import { SceneManager } from './SceneManager';
 import { ThirdPersonCamera } from './ThirdPersonCamera';
 import type {
+  ActiveSwordType,
   AshEchoData,
   BladeOilType,
   CodexArticle,
+  CompanionId,
+  CompanionState,
   DicePokerState,
   DialogueNode,
   DialogueOption,
@@ -52,11 +64,11 @@ import type {
 import { WorldSystem } from './WorldSystem';
 
 const SIGN_KEYS: Record<string, SignType> = {
-  Digit1: 'flame',
-  Digit2: 'barrier',
-  Digit3: 'impulse',
-  Digit4: 'illusion',
-  Digit5: 'frost',
+  Digit3: 'flame',
+  Digit4: 'barrier',
+  Digit5: 'impulse',
+  Digit6: 'illusion',
+  Digit7: 'frost',
 };
 
 export class Game {
@@ -86,6 +98,12 @@ export class Game {
   public floatingDamages: FloatingDamage[] = [];
   public hunterVisionActive = false;
   public catacombsGateUnlocked = false;
+  public activeCompanion: CompanionState | null = null;
+  private companionMesh: THREE.Group | null = null;
+  private companionAttackTimer = 0;
+  private companionSupportTimer = 0;
+  private bountyHunterTimer = 22;
+  public isFenceShop = false;
   private catacombsTrapTimer = 0;
   private roadEventTimer = 42;
   private weatherCycleTimer = 45;
@@ -171,18 +189,41 @@ export class Game {
   }
 
   public syncHeroVisuals(): void {
+    const activeSword: ActiveSwordType = this.player.stats.activeSword ?? 'steel';
     const equippedArmor = this.inventory.items.find(
-      (i) => i.category === 'armor' && i.equipped
+      (i) => getItemEquipSlot(i) === 'armor' && i.equipped
     );
-    const equippedWeapon = this.inventory.items.find(
-      (i) => i.category === 'weapon' && i.equipped
-    );
+    const targetSlot = activeSword === 'silver' ? 'silverSword' : 'steelSword';
+    const equippedActiveWeapon =
+      this.inventory.items.find(
+        (i) => getItemEquipSlot(i) === targetSlot && i.equipped
+      ) ??
+      this.inventory.items.find((i) => i.category === 'weapon' && i.equipped);
 
     this.sceneManager.getAssetManager().updateHeroEquipmentVisuals(
       this.player.rig,
       equippedArmor?.setId ?? null,
-      equippedWeapon?.stats?.runeEffect ?? null
+      equippedActiveWeapon?.stats?.runeEffect ?? null,
+      activeSword
     );
+  }
+
+  public switchPlayerSword(swordType: ActiveSwordType): void {
+    const switched = this.player.switchSword(swordType);
+    this.syncHeroVisuals();
+    if (switched) {
+      this.audio.playSwordDraw(swordType);
+      const targetSlot = swordType === 'silver' ? 'silverSword' : 'steelSword';
+      const swordItem = this.inventory.items.find(
+        (i) => getItemEquipSlot(i) === targetSlot && i.equipped
+      );
+      const swordLabel =
+        swordType === 'silver'
+          ? `🗡️ Выхвачен Серебряный меч [2]${swordItem ? `: ${swordItem.name}` : ''} (100% урона по чудовищам и призракам)`
+          : `⚔️ Выхвачен Стальной меч [1]${swordItem ? `: ${swordItem.name}` : ''} (100% урона по людям и зверям)`;
+      this.addLog(swordLabel, 'info');
+    }
+    this.emitHUD();
   }
 
   public addFloatingDamage(
@@ -341,6 +382,10 @@ export class Game {
         this.hunterVisionActive = true;
         this.emitHUD();
       }
+    } else if (e.code === 'Digit1') {
+      this.switchPlayerSword('steel');
+    } else if (e.code === 'Digit2') {
+      this.switchPlayerSword('silver');
     } else if (e.code === 'KeyQ') {
       const nextSign = this.player.cycleActiveSign();
       this.addLog(`Выбран Знак: ${MAGIC_SIGNS[nextSign].name}`, 'info');
@@ -357,11 +402,181 @@ export class Game {
     } else if (e.code === 'KeyF' || e.code === 'KeyH') {
       this.drinkQuickPotion();
     } else if (e.code === 'KeyG') {
-      this.drinkSecondaryElixir();
+      if (this.activeCompanion && !e.shiftKey) {
+        this.cycleCompanionCommand();
+      } else {
+        this.drinkSecondaryElixir();
+      }
     } else if (e.code === 'KeyT') {
       this.cycleWeather();
     }
   };
+
+  public adjustReputation(delta: number, reason: string): void {
+    const prev = this.player.stats.reputation ?? 0;
+    const next = clampReputation(prev + delta);
+    this.player.stats.reputation = next;
+    const info = getReputationInfo(next);
+    const signStr = delta >= 0 ? `+${delta}` : `${delta}`;
+    this.addLog(
+      `Репутация ${signStr} (${reason}) · Статус: «${info.title}» (${next})`,
+      delta >= 0 ? 'quest' : 'damage'
+    );
+    if (info.bountyHuntersActive && prev > -20) {
+      this.showBanner(
+        'Дурная слава: «Пепельный Мясник»',
+        'На дорогах Вальдмарка за вашей головой начали охоту Наёмные Каратели!'
+      );
+    }
+    this.emitHUD();
+  }
+
+  public recruitCompanion(companionId: CompanionId): void {
+    if (companionId === 'vesper' && this.player.stats.vesperFate === 'executed') {
+      this.addLog('Веспер пал от вашей руки в Чёрном Бастионе и не может стать напарником.', 'info');
+      return;
+    }
+
+    const profile = COMPANION_PROFILES[companionId];
+    if (!profile) return;
+
+    if (this.companionMesh) {
+      this.sceneManager.scene.remove(this.companionMesh);
+      this.companionMesh = null;
+    }
+
+    const unlocked = new Set<CompanionId>(
+      (this.player.stats.unlockedCompanions as CompanionId[]) ?? ['lyra', 'thorvald']
+    );
+    unlocked.add(companionId);
+    this.player.stats.unlockedCompanions = Array.from(unlocked);
+    this.player.stats.activeCompanionId = companionId;
+
+    const spawnX = this.player.stats.x - 2.2;
+    const spawnZ = this.player.stats.z + 1.8;
+    const spawnY = getGroundHeight(spawnX, spawnZ);
+
+    const mesh = this.sceneManager.getAssetManager().createNPCModel(companionId);
+    mesh.position.set(spawnX, spawnY, spawnZ);
+    this.sceneManager.scene.add(mesh);
+    this.companionMesh = mesh;
+
+    const biome = getBiomeAt(this.player.stats.x, this.player.stats.z);
+    const initialBark =
+      profile.biomeBarks[biome.id] ??
+      profile.biomeBarks.village ??
+      'Моё оружие с тобой, Зольник.';
+
+    this.activeCompanion = {
+      id: companionId,
+      name: profile.name,
+      title: profile.title,
+      role: profile.role,
+      roleDescription: profile.roleDescription,
+      weaponLabel: profile.weaponLabel,
+      abilityLabel: profile.abilityLabel,
+      hp: profile.maxHp,
+      maxHp: profile.maxHp,
+      damage: profile.baseDamage,
+      command: 'follow_close',
+      x: spawnX,
+      y: spawnY,
+      z: spawnZ,
+      rotationY: 0,
+      unlocked: true,
+      bondUnlocked: false,
+      lastBark: initialBark,
+      lastBarkTimer: 7,
+      cooldownTimer: 0,
+    };
+
+    this.audio.playCompanionHorn();
+    this.addLog(
+      `Напарник присоединился к походу: ${profile.name} (${profile.title}). Приказы: клавиша [G]`,
+      'quest'
+    );
+    this.showBanner(
+      `Напарник в строю: ${profile.name}`,
+      `${profile.roleDescription} · Команды по клавише [G]`
+    );
+    this.emitHUD();
+  }
+
+  public dismissCompanion(): void {
+    if (!this.activeCompanion) return;
+    const prevName = this.activeCompanion.name;
+    if (this.companionMesh) {
+      this.sceneManager.scene.remove(this.companionMesh);
+      this.companionMesh = null;
+    }
+    this.activeCompanion = null;
+    this.player.stats.activeCompanionId = null;
+    this.addLog(`${prevName} возвращается в лагерь.`, 'info');
+    this.emitHUD();
+  }
+
+  public cycleCompanionCommand(): void {
+    if (!this.activeCompanion) return;
+    const nextCmd = getNextCompanionCommand(this.activeCompanion.command);
+    this.activeCompanion.command = nextCmd;
+    const label = getCompanionCommandLabel(nextCmd);
+    const barks: Record<typeof nextCmd, string> = {
+      follow: 'Принято, Корвус! Держусь за твоим плечом.',
+      follow_close: 'Принято, Корвус! Держусь за твоим плечом.',
+      attack_target: 'В атаку! Бью по твоей цели!',
+      hold_position: 'Остаюсь на позиции и прикрываю тыл.',
+    };
+    this.activeCompanion.lastBark = barks[nextCmd];
+    this.activeCompanion.lastBarkTimer = 5.5;
+    this.audio.playCompanionHorn();
+    this.addLog(
+      `Приказ напарнику (${this.activeCompanion.name}): «${label}»`,
+      'info'
+    );
+    this.addFloatingDamage(
+      new THREE.Vector3(
+        this.activeCompanion.x,
+        this.activeCompanion.y,
+        this.activeCompanion.z
+      ),
+      0,
+      false,
+      '#38bdf8',
+      label.toUpperCase()
+    );
+    this.emitHUD();
+  }
+
+  public triggerCompanionCampfireTalk(): void {
+    if (!this.activeCompanion) return;
+    const profile = COMPANION_PROFILES[this.activeCompanion.id];
+    this.activeCompanion.hp = this.activeCompanion.maxHp;
+    this.activeCompanion.lastBark = profile.campfireDialogue.text;
+    this.activeCompanion.lastBarkTimer = 10;
+    this.audio.playQuestChime();
+    this.activeDialogueNode = {
+      id: `campfire_bond_${this.activeCompanion.id}`,
+      speaker: profile.name,
+      role: `${profile.title} · Разговор у костра`,
+      text: profile.campfireDialogue.text,
+      options: [
+        {
+          id: 'campfire_bond_close',
+          text: `${profile.campfireDialogue.corvusReply} (${profile.campfireDialogue.bondBonusText})`,
+          action: 'close',
+        },
+      ],
+    };
+    this.player.stats.thunderElixirTimer = Math.max(
+      this.player.stats.thunderElixirTimer ?? 0,
+      90
+    );
+    this.addLog(
+      `Беседа у костра с ${profile.name}: боевой дух укреплён (+35% к атаке на 90 сек)!`,
+      'quest'
+    );
+    this.setModal('dialogue');
+  }
 
   private onKeyUp = (e: KeyboardEvent): void => {
     this.player.keys[e.code] = false;
@@ -535,6 +750,7 @@ export class Game {
     const res = this.inventory.useQuickPotion(this.player.stats, eff.maxHp);
     if (res.used) {
       this.audio.playPotionDrink();
+      this.player.triggerDrinkAnimation();
       this.addLog(res.message, 'loot');
       this.addFloatingDamage(
         new THREE.Vector3(this.player.stats.x, this.player.stats.y, this.player.stats.z),
@@ -572,6 +788,7 @@ export class Game {
     );
     if (res.used) {
       this.audio.playPotionDrink();
+      this.player.triggerDrinkAnimation();
       this.addLog(res.message, 'loot');
       this.emitHUD();
     } else {
@@ -593,10 +810,18 @@ export class Game {
       item.category === 'armor' ||
       item.category === 'trophy'
     ) {
+      const slot = getItemEquipSlot(item);
       this.inventory.toggleEquip(itemId);
+      if (item.equipped && slot === 'silverSword') {
+        this.player.switchSword('silver');
+        this.audio.playSwordDraw('silver');
+      } else if (item.equipped && slot === 'steelSword') {
+        this.player.switchSword('steel');
+        this.audio.playSwordDraw('steel');
+      }
       this.syncHeroVisuals();
       this.addLog(
-        `${item.name}: ${item.equipped ? 'экипировано' : 'снято'}`,
+        `${item.name}: ${item.equipped ? 'экипировано в активный слот' : 'снято'}`,
         'info'
       );
       this.emitHUD();
@@ -1138,10 +1363,16 @@ export class Game {
         const node = this.dialogue.getDialogueNode(
           nearest.dialogueRootId,
           this.quests.quests,
-          canTriggerSecretEnding
+          canTriggerSecretEnding,
+          this.player.stats.reputation ?? 0,
+          this.player.stats.questChoices ?? {},
+          this.player.stats.blacksmithClosedTimer ?? 0
         );
         if (node) {
           this.activeDialogueNode = node;
+          this.cameraController.setDialogueTarget(
+            new THREE.Vector3(nearest.x, (nearest.y ?? 0) + 1.2, nearest.z)
+          );
           this.setModal('dialogue');
         }
       }
@@ -1158,10 +1389,15 @@ export class Game {
       this.player.stats.hp = eff.maxHp;
       this.player.stats.stamina = this.player.stats.maxStamina;
       this.player.stats.toxicity = 0;
+      if (this.activeCompanion) {
+        this.activeCompanion.hp = this.activeCompanion.maxHp;
+      }
       this.sceneManager.setTimeOfDay((this.sceneManager.getTimeOfDay() + 6) % 24);
       this.showBanner(
         'Медитация и Алхимия у костра',
-        'Здоровье восстановлено · Токсичность сброшена'
+        this.activeCompanion
+          ? `Здоровье восстановлено · Напарник (${this.activeCompanion.name}) готов к беседе у костра`
+          : 'Здоровье восстановлено · Токсичность сброшена'
       );
       this.addLog('Вы помедитировали у костра. Открыта панель Алхимии и Масел.', 'info');
       this.saveProgress();
@@ -1193,6 +1429,7 @@ export class Game {
       this.audio.playQuestChime();
       this.player.stats.gold += nearest.goldAmount ?? 75;
       this.player.stats = applyExperienceGain(this.player.stats, 90).updated;
+      this.adjustReputation(8, 'Уничтожено гнездо чудовищ');
       if (nearest.lootItems) {
         for (const li of nearest.lootItems) {
           this.inventory.addItemById(li.itemId, li.count);
@@ -1200,7 +1437,7 @@ export class Game {
       }
       this.showBanner(
         `Гнездо уничтожено: ${nearest.name}`,
-        '+90 Опыта · +75 Золота · Редкие трофеи'
+        '+90 Опыта · +75 Золота · +8 Репутации'
       );
       this.addLog(
         `Вы сожгли ${nearest.name}! Получено +90 Опыта и ценные реагенты.`,
@@ -1240,7 +1477,9 @@ export class Game {
     // Standard Chest / Clue / Loot Pouch / Herb
     this.world.markInteracted(nearest.id);
 
-    if (nearest.goldAmount || nearest.lootItems) {
+    if (nearest.type === 'chest') {
+      this.audio.playChestOpen();
+    } else if (nearest.goldAmount || nearest.lootItems) {
       this.audio.playQuestChime();
     }
     if (nearest.goldAmount) {
@@ -1277,11 +1516,16 @@ export class Game {
   }
 
   public selectDialogueOption(option: DialogueOption): void {
+    if (typeof option.reputationDelta === 'number' && option.reputationDelta !== 0) {
+      this.adjustReputation(option.reputationDelta, 'Решение в диалоге');
+    }
+
     if (option.action === 'accept_quest_1') {
       this.quests.activateQuest('quest_missing_hunters');
       this.advanceQuestAndReward('quest_missing_hunters', 'q1_talk_elder');
     } else if (option.action === 'complete_quest_1') {
       this.advanceQuestAndReward('quest_missing_hunters', 'q1_return_elder');
+      this.adjustReputation(15, 'Спасение Вороньей Пади');
     } else if (option.action === 'start_quest_2') {
       this.quests.activateQuest('quest_swamp_whisper');
       this.showBanner('Новое задание', 'Шёпот болота');
@@ -1335,19 +1579,29 @@ export class Game {
       return;
     } else if (option.action === 'spare_vesper') {
       this.player.stats.vesperFate = 'spared';
+      const unlocked = new Set<CompanionId>(
+        (this.player.stats.unlockedCompanions as CompanionId[]) ?? ['lyra', 'thorvald']
+      );
+      unlocked.add('vesper');
+      this.player.stats.unlockedCompanions = Array.from(unlocked);
+      this.adjustReputation(25, 'Пощажён Мастер Веспер');
       this.inventory.addItemById('trophy_vesper', 1);
       this.inventory.addItemById('bp_armor_grandmaster', 1);
       this.inventory.addItemById('mythic_dusk_fangs', 1);
       this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
       this.quests.activateQuest('quest_dawn_valdmark');
       this.showBanner(
-        'Милосердие Зольника: Веспер пощажён',
+        'Милосердие Зольника: Веспер пощажён и доступен как Напарник!',
         'Получены «Клыки Сумерек» и Чертёж Доспеха Великого Магистра · Врата Кратера открыты!'
       );
       this.setModal('none');
       return;
     } else if (option.action === 'execute_vesper') {
       this.player.stats.vesperFate = 'executed';
+      if (this.activeCompanion?.id === 'vesper') {
+        this.dismissCompanion();
+      }
+      this.adjustReputation(-22, 'Казнь Мастера Веспера');
       this.inventory.addItemById('trophy_vesper', 1);
       this.inventory.addItemById('bp_armor_obsidian', 1);
       this.inventory.addItemById('mythic_sun_eater', 1);
@@ -1358,6 +1612,79 @@ export class Game {
         'Получен двуручник «Пожиратель Солнца» и Чертёж Обсидианового Доспеха · Врата Кратера открыты!'
       );
       this.setModal('none');
+      return;
+    } else if (option.action === 'recruit_lyra') {
+      this.recruitCompanion('lyra');
+      this.setModal('none');
+      return;
+    } else if (option.action === 'recruit_thorvald') {
+      this.recruitCompanion('thorvald');
+      this.setModal('none');
+      return;
+    } else if (option.action === 'recruit_vesper') {
+      this.recruitCompanion('vesper');
+      this.setModal('none');
+      return;
+    } else if (option.action === 'dismiss_companion') {
+      this.dismissCompanion();
+      this.setModal('none');
+      return;
+    } else if (
+      option.action === 'bard_ballad_hero' ||
+      option.action === 'bard_ballad_eclipse' ||
+      option.action === 'bard_ballad_vesper'
+    ) {
+      if (this.player.stats.gold < 15) {
+        this.addLog('Нужно 15 крон, чтобы заказать балладу у Барда Корвина.', 'info');
+      } else {
+        this.player.stats.gold -= 15;
+        this.audio.playBardBallad();
+        const balladTitles: Record<string, string> = {
+          bard_ballad_hero: '«Баллада о Белом Волке Вальдмарка»',
+          bard_ballad_eclipse: '«Песнь о Ночи Пепельного Затмения»',
+          bard_ballad_vesper: '«Плач по Чёрному Бастиону и клинкам Веспера»',
+        };
+        const title = balladTitles[option.action] ?? 'Баллада о Корвусе';
+        this.adjustReputation(12, `Исполнена ${title}`);
+        this.player.stats = applyExperienceGain(this.player.stats, 35).updated;
+        this.showBanner(
+          `Бард Корвин исполняет: ${title}`,
+          '+12 к Репутации · +35 Опыта · Жители трактира рукоплещут подвигам Зольника!'
+        );
+      }
+      if (!option.nextNodeId) {
+        this.setModal('none');
+        return;
+      }
+    } else if (option.action === 'donate_refugees') {
+      if (this.player.stats.gold >= 25) {
+        this.player.stats.gold -= 25;
+        this.adjustReputation(18, 'Помощь беженцам Вороньей Пади');
+        this.player.stats = applyExperienceGain(this.player.stats, 30).updated;
+        this.showBanner(
+          'Милосердие Спасителя Вальдмарка',
+          '+18 к Репутации · +30 Опыта · Крестьяне благословляют ваше имя'
+        );
+      } else {
+        this.addLog('Недостаточно золота (нужно 25 крон).', 'info');
+      }
+      this.setModal('none');
+      return;
+    } else if (option.action === 'extort_villager') {
+      this.player.stats.gold += 35;
+      this.adjustReputation(-25, 'Вымогательство у крестьян');
+      this.showBanner(
+        'Жестокость Пепельного Мясника',
+        '+35 крон · -25 к Репутации · Жители в ужасе шепчутся за вашей спиной'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'open_fence_shop') {
+      this.isFenceShop = true;
+      this.setModal('shop');
+      return;
+    } else if (option.action === 'companion_campfire_bond') {
+      this.triggerCompanionCampfireTalk();
       return;
     } else if (option.action === 'ending_seal_sacrifice') {
       this.audio.playQuestChime();
@@ -1397,21 +1724,23 @@ export class Game {
       return;
     } else if (option.action === 'destroy_artifact') {
       this.inventory.addItemById('amulet_abyss', 1);
+      this.adjustReputation(18, 'Уничтожен Проклятый Артефакт');
       this.advanceQuestAndReward('quest_swamp_whisper', 'q2_artifact_choice');
       this.sceneManager.setWeather('clear');
       this.showBanner(
         'Проклятие разрушено!',
-        'Вы раскололи кристалл и получили Рунный оберег'
+        'Вы раскололи кристалл и получили Рунный оберег (+18 Репутации)'
       );
       this.setModal('none');
       return;
     } else if (option.action === 'cleanse_artifact') {
       this.inventory.addItemById('amulet_abyss', 1);
       this.player.stats.gold += 150;
+      this.adjustReputation(-15, 'Поглощена тёмная мощь Алтаря');
       this.advanceQuestAndReward('quest_swamp_whisper', 'q2_artifact_choice');
       this.showBanner(
         'Сила проклятия поглощена!',
-        'Вы получили Рунный оберег Проклятого Алтаря (+25% к Знакам)'
+        'Вы получили Рунный оберег Проклятого Алтаря (+25% к Знакам, -15 Репутации)'
       );
       this.setModal('none');
       return;
@@ -1425,6 +1754,7 @@ export class Game {
       this.player.stats.toxicity = 0;
       this.addLog('Травница Марфа исцелила ваши раны и очистила кровь от токсинов.', 'info');
     } else if (option.action === 'open_shop') {
+      this.isFenceShop = false;
       this.setModal('shop');
       return;
     } else if (option.action === 'open_blacksmith') {
@@ -1442,6 +1772,7 @@ export class Game {
       return;
     } else if (option.action === 'side_order') {
       this.player.stats.factionChoice = 'order';
+      this.adjustReputation(-12, 'Союз с Инквизицией Ордена');
       this.inventory.addItemById('sword_crimson_order', 1);
       this.syncHeroVisuals();
       this.quests.activateQuest('quest_act2_malakor');
@@ -1454,6 +1785,7 @@ export class Game {
       return;
     } else if (option.action === 'side_village') {
       this.player.stats.factionChoice = 'village';
+      this.adjustReputation(20, 'Защита жителей Вороньей Пади от Инквизиции');
       this.inventory.addItemById('sword_coven_protector', 1);
       this.syncHeroVisuals();
       this.quests.activateQuest('quest_act2_malakor');
@@ -1483,6 +1815,115 @@ export class Game {
     } else if (option.action === 'open_codex') {
       this.setModal('codex');
       return;
+    } else if (option.action === 'start_quest_belltower') {
+      this.quests.activateQuest('quest_blood_belltower');
+      this.showBanner(
+        'Расследование: «Кровь на колокольне»',
+        'Осмотрите тело жертвы и балки у колокольни с Чутьём Охотника [V]'
+      );
+    } else if (option.action === 'interrogate_belltower_suspects') {
+      this.quests.activateQuest('quest_blood_belltower');
+      this.advanceQuestAndReward('quest_blood_belltower', 'q_bell_interrogate');
+      this.showBanner(
+        'Улика допроса: Тайна Хельги',
+        'Все следы ведут к жене кузнеца Торна — поговорите с Хельгой у кузницы!'
+      );
+      if (!option.nextNodeId) {
+        this.setModal('none');
+        return;
+      }
+    } else if (
+      option.action === 'belltower_kill_wife' ||
+      option.action === 'belltower_cleanse_ritual' ||
+      option.action === 'belltower_blame_outsider'
+    ) {
+      if (option.action === 'belltower_cleanse_ritual') {
+        this.player.stats.hp = Math.max(15, this.player.stats.hp - 40);
+      }
+      this.executeInvestigationChoice(option.action);
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_feast_ravens') {
+      this.quests.activateQuest('quest_feast_of_ravens');
+      this.advanceQuestAndReward('quest_feast_of_ravens', 'q_feast_talk_vane');
+      this.showBanner(
+        'Расследование: «Пир Воронов»',
+        'Осмотрите пиршественный стол и люк подвала поместья Вейнов с Чутьём [V]'
+      );
+    } else if (
+      option.action === 'feast_burn_manor' ||
+      option.action === 'feast_spare_illusions'
+    ) {
+      this.executeInvestigationChoice(option.action);
+      if (option.action === 'feast_burn_manor') {
+        this.enemyAI.spawnBountyHunterSquad(this.player.stats.x, this.player.stats.z);
+        this.addLog(
+          'Одержимый лорд Вейн и его стражи иллюзий бросаются на вас в пламени поместья!',
+          'damage'
+        );
+      }
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_dead_mines') {
+      this.quests.activateQuest('quest_dead_mines_oath');
+      this.advanceQuestAndReward('quest_dead_mines_oath', 'q_mines_talk_captain');
+      this.showBanner(
+        'Расследование: «Клятва в Мёртвых Шахтах»',
+        'Изучите баррикаду горняков с Чутьём [V] и поговорите со старейшиной Торосом'
+      );
+      this.setModal('none');
+      return;
+    } else if (
+      option.action === 'mines_protect_ghouls' ||
+      option.action === 'mines_purge_for_order'
+    ) {
+      this.executeInvestigationChoice(option.action);
+      if (option.action === 'mines_protect_ghouls') {
+        this.enemyAI.spawnBountyHunterSquad(this.player.stats.x, this.player.stats.z);
+        this.addLog(
+          'Карательный отряд Инквизиции атакует вас у входа в Мёртвые Шахты!',
+          'damage'
+        );
+      }
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_ash_exam') {
+      this.quests.activateQuest('quest_last_ash_exam');
+      this.advanceQuestAndReward('quest_last_ash_exam', 'q_exam_talk_erian');
+      this.showBanner(
+        'Расследование: «Последний Экзамен Зольника»',
+        'Найдите мутагены Тлеющей Крови в реликвариуме Бастиона с Чутьём [V]'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'exam_step1_correct') {
+      this.player.stats.examRitualPrecision = 50;
+      this.addLog(
+        'Ритуал Тлеющей Крови (Фаза 1): Точная доза введена — пульс Эриана ровный!',
+        'quest'
+      );
+    } else if (option.action === 'exam_step1_wrong') {
+      this.player.stats.examRitualPrecision = 0;
+      this.addLog(
+        'Ритуал Тлеющей Крови (Фаза 1): Передозировка Чёрной Росы! Пульс адепта зашкаливает!',
+        'damage'
+      );
+    } else if (option.action === 'exam_step2_correct' || option.action === 'exam_step2_wrong') {
+      const s1Ok = (this.player.stats.examRitualPrecision ?? 0) >= 50;
+      const s2Ok = option.action === 'exam_step2_correct';
+      const ritualRes = validateAshExamRitual(s1Ok, s2Ok);
+      this.player.stats = applyExperienceGain(this.player.stats, ritualRes.bonusXp).updated;
+      this.addLog(
+        `Итог мини-ивента ритуала: ${ritualRes.statusLabel} (+${ritualRes.bonusXp} XP)`,
+        'quest'
+      );
+    } else if (
+      option.action === 'exam_revive_brotherhood' ||
+      option.action === 'exam_bury_secrets'
+    ) {
+      this.executeInvestigationChoice(option.action);
+      this.setModal('none');
+      return;
     } else if (option.action === 'close') {
       this.setModal('none');
       return;
@@ -1496,7 +1937,10 @@ export class Game {
       const next = this.dialogue.getDialogueNode(
         option.nextNodeId,
         this.quests.quests,
-        canTriggerSecretEnding
+        canTriggerSecretEnding,
+        this.player.stats.reputation ?? 0,
+        this.player.stats.questChoices ?? {},
+        this.player.stats.blacksmithClosedTimer ?? 0
       );
       if (next) {
         this.activeDialogueNode = next;
@@ -1508,6 +1952,40 @@ export class Game {
     this.setModal('none');
   }
 
+  private executeInvestigationChoice(choiceId: string): void {
+    this.audio.playQuestChime();
+    const hour = Math.floor(this.sceneManager.getTimeOfDay());
+    const res = resolveInvestigationQuestChoice(
+      this.player.stats,
+      choiceId,
+      `${String(hour).padStart(2, '0')}:00`
+    );
+    this.player.stats = res.updatedStats;
+    if (res.definition?.itemReward) {
+      this.inventory.addItemById(res.definition.itemReward, 1);
+    }
+    if (res.consequence) {
+      this.quests.applyChoiceConsequenceToQuest(
+        res.consequence.questId,
+        res.consequence.choiceId,
+        res.consequence.choiceTitle,
+        res.consequence.summary,
+        res.consequence.worldEffectDescription
+      );
+      this.world.applyWorldQuestConsequence(choiceId);
+      this.addLog(
+        `[Последствие выбора · ${res.consequence.questTitle}] ${res.consequence.choiceTitle}: ${res.consequence.worldEffectDescription}`,
+        'quest'
+      );
+      this.showBanner(
+        res.consequence.choiceTitle,
+        `${res.consequence.worldEffectDescription} (Записано в Журнал [J])`
+      );
+    }
+    this.saveProgress();
+    this.emitHUD();
+  }
+
   private advanceQuestAndReward(questId: string, stageId: string): void {
     const res = this.quests.completeStage(questId, stageId);
     if (!res.stageCompleted || !res.quest) return;
@@ -1517,12 +1995,13 @@ export class Game {
       this.player.stats.gold += res.quest.goldReward;
       const xpRes = applyExperienceGain(this.player.stats, res.quest.xpReward);
       this.player.stats = xpRes.updated;
+      this.adjustReputation(12, `Завершено задание «${res.quest.title}»`);
       if (res.quest.itemReward) {
         this.inventory.addItemById(res.quest.itemReward, 1);
       }
       this.showBanner(
         `Задание выполнено: ${res.quest.title}`,
-        `+${res.quest.xpReward} Опыта · +${res.quest.goldReward} Золота`
+        `+${res.quest.xpReward} Опыта · +${res.quest.goldReward} Золота · +12 Репутации`
       );
       this.addLog(
         `Завершено задание «${res.quest.title}» (+${res.quest.xpReward} Опыта, +${res.quest.goldReward} крон)`,
@@ -1719,6 +2198,9 @@ export class Game {
       );
       if (choiceNode) {
         this.activeDialogueNode = choiceNode;
+        this.cameraController.setDialogueTarget(
+          new THREE.Vector3(enemy.x, (enemy.y ?? 0) + 1.2, enemy.z)
+        );
         this.setModal('dialogue');
       }
     }
@@ -1753,6 +2235,9 @@ export class Game {
   }
 
   public setModal(modal: HUDState['activeModal']): void {
+    if (this.activeModal === 'dialogue' && modal !== 'dialogue') {
+      this.cameraController.clearDialogueTarget();
+    }
     this.activeModal = modal;
     if (modal !== 'none') {
       this.cameraController.unlockPointer();
@@ -1836,6 +2321,7 @@ export class Game {
     this.quests.quests = saved.quests;
     this.quests.activeQuestId = saved.activeQuestId;
     this.inventory.items = saved.inventory;
+    this.inventory.sanitizeEquipment();
     this.inventory.skills = saved.skills;
     this.syncHeroVisuals();
 
@@ -1860,6 +2346,9 @@ export class Game {
     }
     if (saved.settings) {
       this.updateSettings(saved.settings);
+    }
+    if (this.player.stats.activeCompanionId) {
+      this.recruitCompanion(this.player.stats.activeCompanionId);
     }
 
     this.activeModal = 'none';
@@ -1897,6 +2386,12 @@ export class Game {
     this.player.stats.z = z;
     this.player.stats.y = y;
     this.player.rig.root.position.set(x, y, z);
+    if (this.activeCompanion && this.companionMesh) {
+      this.activeCompanion.x = x - 2.2;
+      this.activeCompanion.z = z + 1.8;
+      this.activeCompanion.y = y;
+      this.companionMesh.position.set(this.activeCompanion.x, y, this.activeCompanion.z);
+    }
     this.activeModal = 'none';
     this.showBanner(label, 'Быстрое перемещение по Дорожному Путевому Камню');
     this.emitHUD();
@@ -1973,6 +2468,172 @@ export class Game {
     }));
   }
 
+  private updateCompanion(dt: number, elapsed: number, maxPlayerHp: number): void {
+    if (!this.activeCompanion || !this.companionMesh) return;
+    const comp = this.activeCompanion;
+
+    if (comp.lastBarkTimer > 0) {
+      comp.lastBarkTimer = Math.max(0, comp.lastBarkTimer - dt);
+    }
+    comp.hp = Math.min(comp.maxHp, comp.hp + 3.5 * dt);
+
+    const px = this.player.stats.x;
+    const pz = this.player.stats.z;
+    const distToPlayer = Math.hypot(px - comp.x, pz - comp.z);
+
+    // Teleport close if far away
+    if (distToPlayer > 32 && comp.command !== 'hold_position') {
+      comp.x = px - 2.2;
+      comp.z = pz + 1.8;
+      comp.y = getGroundHeight(comp.x, comp.z);
+      this.companionMesh.position.set(comp.x, comp.y, comp.z);
+    }
+
+    // Find closest enemy
+    let targetEnemy = null as (typeof this.enemyAI.enemies)[number] | null;
+    let bestEnemyDist = comp.command === 'attack_target' ? 24 : 15;
+    for (const e of this.enemyAI.enemies) {
+      if (e.data.state === 'DEAD' || e.data.isDead) continue;
+      const d = Math.hypot(e.data.x - px, e.data.z - pz);
+      if (d < bestEnemyDist) {
+        bestEnemyDist = d;
+        targetEnemy = e;
+      }
+    }
+
+    let desiredX = comp.x;
+    let desiredZ = comp.z;
+
+    if (comp.command === 'hold_position') {
+      desiredX = comp.x;
+      desiredZ = comp.z;
+    } else if (targetEnemy) {
+      if (comp.id === 'lyra') {
+        // Archer keeps 7.5m distance from target enemy
+        const dx = comp.x - targetEnemy.data.x;
+        const dz = comp.z - targetEnemy.data.z;
+        const d = Math.max(0.1, Math.hypot(dx, dz));
+        desiredX = targetEnemy.data.x + (dx / d) * 7.5;
+        desiredZ = targetEnemy.data.z + (dz / d) * 7.5;
+      } else {
+        // Melee companions charge to 2.1m from enemy
+        const dx = comp.x - targetEnemy.data.x;
+        const dz = comp.z - targetEnemy.data.z;
+        const d = Math.max(0.1, Math.hypot(dx, dz));
+        desiredX = targetEnemy.data.x + (dx / d) * 2.1;
+        desiredZ = targetEnemy.data.z + (dz / d) * 2.1;
+      }
+    } else {
+      // Follow beside player
+      desiredX = px - Math.cos(this.player.stats.rotationY) * 2.4;
+      desiredZ = pz + Math.sin(this.player.stats.rotationY) * 2.4;
+    }
+
+    const moveDx = desiredX - comp.x;
+    const moveDz = desiredZ - comp.z;
+    const moveDist = Math.hypot(moveDx, moveDz);
+    if (moveDist > 0.25 && comp.command !== 'hold_position') {
+      const step = Math.min(moveDist, 6.2 * dt);
+      comp.x += (moveDx / moveDist) * step;
+      comp.z += (moveDz / moveDist) * step;
+      comp.y = px > 75 && pz > 75 ? 0 : getGroundHeight(comp.x, comp.z);
+      this.companionMesh.position.set(comp.x, comp.y, comp.z);
+      comp.rotationY = Math.atan2(moveDx, moveDz);
+      this.companionMesh.rotation.y = comp.rotationY;
+      const torso = this.companionMesh.getObjectByName('npcTorso');
+      if (torso) {
+        torso.position.y = 1.15 + Math.abs(Math.sin(elapsed * 9.5)) * 0.05;
+      }
+    } else if (targetEnemy) {
+      this.companionMesh.lookAt(targetEnemy.data.x, comp.y, targetEnemy.data.z);
+    }
+
+    // Companion Combat Attacks
+    this.companionAttackTimer = Math.max(0, this.companionAttackTimer - dt);
+    if (targetEnemy && this.companionAttackTimer <= 0) {
+      const distToEnemy = Math.hypot(
+        targetEnemy.data.x - comp.x,
+        targetEnemy.data.z - comp.z
+      );
+      const maxAttackDist = comp.id === 'lyra' ? 14.5 : 3.6;
+      if (distToEnemy <= maxAttackDist) {
+        this.companionAttackTimer = comp.id === 'vesper' ? 1.15 : 1.55;
+        const dmg = comp.id === 'vesper' ? 34 : comp.id === 'thorvald' ? 28 : 25;
+        targetEnemy.data.hp = Math.max(0, targetEnemy.data.hp - dmg);
+        targetEnemy.hitFlashTimer = 0.18;
+        this.audio.playSwordSwing(comp.id === 'thorvald');
+        const label =
+          comp.id === 'lyra'
+            ? 'СТРЕЛА ЛИРЫ'
+            : comp.id === 'thorvald'
+            ? 'МОЛОТ ТОРВАЛЬДА'
+            : 'КЛИНКИ ВЕСПЕРА';
+        this.addFloatingDamage(
+          new THREE.Vector3(targetEnemy.data.x, targetEnemy.data.y, targetEnemy.data.z),
+          dmg,
+          comp.id === 'vesper',
+          '#38bdf8',
+          label
+        );
+        if (targetEnemy.data.hp <= 0 && targetEnemy.data.state !== 'DEAD') {
+          targetEnemy.data.state = 'DEAD';
+          targetEnemy.data.isDead = true;
+          this.addLog(`${comp.name} повергает врага: ${targetEnemy.data.name}!`, 'damage');
+          this.handleEnemyKilled(targetEnemy.data);
+        }
+      }
+    }
+
+    // Companion Unique Support Ability (Lyra trap/POI sense, Thorvald Shield/Heal, Vesper Sign burst)
+    this.companionSupportTimer += dt;
+    if (this.companionSupportTimer >= 11) {
+      this.companionSupportTimer = 0;
+      if (comp.id === 'thorvald' && (this.player.stats.hp < maxPlayerHp || this.player.stats.barrierShield <= 0)) {
+        const heal = 24;
+        this.player.stats.hp = Math.min(maxPlayerHp, this.player.stats.hp + heal);
+        this.player.stats.barrierShield = Math.max(this.player.stats.barrierShield, 40);
+        comp.lastBark = '«Свет укрепит твой щит, брат Зольник!» (+24 ОЗ и Щит)';
+        comp.lastBarkTimer = 5;
+        this.addFloatingDamage(
+          new THREE.Vector3(px, this.player.stats.y, pz),
+          heal,
+          false,
+          '#4ade80',
+          'ЩИТ ТОРВАЛЬДА'
+        );
+        this.addLog('Брат Торвальд накладывает на вас благословение щита и исцеляет +24 ОЗ!', 'info');
+      } else if (comp.id === 'lyra') {
+        const nearbyPOI = this.world.interactables.find(
+          (i) =>
+            (i.isPOI && !i.discovered && Math.hypot(i.x - px, i.z - pz) < 34) ||
+            (i.type === 'chest' && !i.interacted && Math.hypot(i.x - px, i.z - pz) < 26)
+        );
+        if (nearbyPOI) {
+          comp.lastBark = `«Корвус, гляди внимательнее! Поблизости ${nearbyPOI.name}.»`;
+          comp.lastBarkTimer = 5.5;
+        }
+      } else if (comp.id === 'vesper' && targetEnemy) {
+        const signDmg = 38;
+        targetEnemy.data.hp = Math.max(0, targetEnemy.data.hp - signDmg);
+        targetEnemy.data.freezeTimer = 3.0;
+        comp.lastBark = '«Печать Стужи сковала тварь — руби сплеча, Корвус!»';
+        comp.lastBarkTimer = 5;
+        this.addFloatingDamage(
+          new THREE.Vector3(targetEnemy.data.x, targetEnemy.data.y, targetEnemy.data.z),
+          signDmg,
+          true,
+          '#38bdf8',
+          'ЗНАК ВЕСПЕРА'
+        );
+        if (targetEnemy.data.hp <= 0 && targetEnemy.data.state !== 'DEAD') {
+          targetEnemy.data.state = 'DEAD';
+          targetEnemy.data.isDead = true;
+          this.handleEnemyKilled(targetEnemy.data);
+        }
+      }
+    }
+  }
+
   private loop = (): void => {
     if (!this.isRunning) return;
     this.rafId = requestAnimationFrame(this.loop);
@@ -2032,6 +2693,12 @@ export class Game {
       this.prologueLookAt.lerp(targetLook, Math.min(1, dt * 2.2));
       this.cameraController.camera.lookAt(this.prologueLookAt);
     } else if (!this.isPaused && this.activeModal === 'none') {
+      if ((this.player.stats.blacksmithClosedTimer ?? 0) > 0) {
+        this.player.stats.blacksmithClosedTimer = Math.max(
+          0,
+          (this.player.stats.blacksmithClosedTimer ?? 0) - dt
+        );
+      }
       // Dynamic Weather System cycle in the game loop (toggles clear -> fog -> rain)
       this.weatherCycleTimer -= dt;
       if (this.weatherCycleTimer <= 0) {
@@ -2052,7 +2719,8 @@ export class Game {
       const { isSprinting } = this.player.update(
         dt,
         this.cameraController.yaw,
-        this.sceneManager.obstacles
+        this.sceneManager.obstacles,
+        this.sceneManager.collisionBoxes
       );
 
       this.cameraController.update(
@@ -2065,7 +2733,7 @@ export class Game {
         this.sceneManager.colliderMeshes
       );
 
-      // Seamless Biome Transition Detection & Cinematic Location Banner
+      // Seamless Biome Transition Detection & Cinematic Location Banner + Companion Bark
       const isCatacombsNow = this.player.stats.x > 75 && this.player.stats.z > 75;
       const curBiome = isCatacombsNow
         ? { id: 'catacombs' as const, name: 'Подземные Катакомбы Древних Королей' }
@@ -2073,6 +2741,15 @@ export class Game {
       if (curBiome.id !== this.lastBiomeId) {
         this.lastBiomeId = curBiome.id;
         this.audio.setBiomeAtmosphere(curBiome.id);
+        if (this.activeCompanion) {
+          const profile = COMPANION_PROFILES[this.activeCompanion.id];
+          const bark = profile?.biomeBarks[curBiome.id];
+          if (bark) {
+            this.activeCompanion.lastBark = bark;
+            this.activeCompanion.lastBarkTimer = 8;
+            this.addLog(`${this.activeCompanion.name}: «${bark}»`, 'info');
+          }
+        }
         const biomeSubtitles: Record<string, string> = {
           gallows_swamp:
             'Северный Поход · Биом I: Ядовитые гати, полузатопленные деревни и логово Болотной Гидры',
@@ -2089,6 +2766,30 @@ export class Game {
           this.addLog(`Вы вступили в новый регион: ${curBiome.name}`, 'quest');
         }
       }
+
+      // Low Reputation Bounty Hunter Squad Ambush on roads outside the village
+      if ((this.player.stats.reputation ?? 0) <= -20) {
+        const distFromVillage = Math.hypot(this.player.stats.x, this.player.stats.z);
+        if (distFromVillage > 22) {
+          this.bountyHunterTimer -= dt;
+          if (this.bountyHunterTimer <= 0) {
+            this.bountyHunterTimer = 65;
+            this.enemyAI.spawnBountyHunterSquad(this.player.stats.x, this.player.stats.z);
+            this.audio.playCompanionHorn();
+            this.showBanner(
+              'Засада Охотников за головами!',
+              'Из-за вашей дурной славы («Пепельный Мясник») наемники вышли по вашу душу!'
+            );
+            this.addLog(
+              'Наёмные Охотники за головами окружили вас на тракте из-за низкой репутации!',
+              'damage'
+            );
+          }
+        }
+      }
+
+      // Update Active Companion AI
+      this.updateCompanion(dt, elapsed, effStats.maxHp);
 
       // Auto-unlock Waystones & Discover hidden ? Points of Interest when player approaches within 16m
       for (const poi of this.world.interactables) {
@@ -2163,7 +2864,39 @@ export class Game {
         this.player.stats.x,
         this.player.stats.z,
         undefined,
-        this.hunterVisionActive
+        this.hunterVisionActive,
+        {
+          dt,
+          timeOfDay: this.sceneManager.getTimeOfDay(),
+          weather: this.sceneManager.getWeather(),
+          enemies: this.enemyAI.enemies.map((e) => e.data),
+          activeCompanionId: this.player.stats.activeCompanionId ?? null,
+          vesperSpared: this.player.stats.vesperFate === 'spared',
+          onAnvilStrike: (distRatio) => {
+            this.audio.playAnvilStrike(distRatio);
+          },
+          onGuardAttackEnemy: (guardName, enemyData, dmg) => {
+            const activeTarget = this.enemyAI.enemies.find((e) => e.data.id === enemyData.id);
+            if (activeTarget && activeTarget.data.state !== 'DEAD') {
+              activeTarget.data.hp = Math.max(0, activeTarget.data.hp - dmg);
+              activeTarget.hitFlashTimer = 0.16;
+              this.audio.playSwordSwing(false);
+              this.addFloatingDamage(
+                new THREE.Vector3(activeTarget.data.x, activeTarget.data.y, activeTarget.data.z),
+                dmg,
+                false,
+                '#fbbf24',
+                guardName.toUpperCase()
+              );
+              if (activeTarget.data.hp <= 0) {
+                activeTarget.data.state = 'DEAD';
+                activeTarget.data.isDead = true;
+                this.addLog(`${guardName} защищает деревню и добивает: ${activeTarget.data.name}!`, 'info');
+                this.handleEnemyKilled(activeTarget.data);
+              }
+            }
+          },
+        }
       );
       this.magic.update(dt, this.enemyAI, this.combat);
 
@@ -2232,20 +2965,23 @@ export class Game {
         this.magic.activeDecoy
           ? { x: this.magic.activeDecoy.x, z: this.magic.activeDecoy.z }
           : null,
-        this.addLog
+        this.addLog,
+        this.sceneManager.collisionBoxes
       );
     }
 
     this.sceneManager.update(dt, elapsed, this.player.stats.x, this.player.stats.z);
 
     if (this.sceneManager.isHeadless) {
-      this.headlessRenderTimer += dt;
-      if (this.headlessRenderTimer >= 0.066) {
-        this.headlessRenderTimer = 0;
-        this.sceneManager.renderer.render(
-          this.sceneManager.scene,
-          this.cameraController.camera
-        );
+      if (!this.isPaused) {
+        this.headlessRenderTimer += dt;
+        if (this.headlessRenderTimer >= 0.25) {
+          this.headlessRenderTimer = 0;
+          this.sceneManager.renderer.render(
+            this.sceneManager.scene,
+            this.cameraController.camera
+          );
+        }
       }
     } else {
       this.sceneManager.renderer.render(
@@ -2309,6 +3045,8 @@ export class Game {
       }
     }
 
+    const repInfo = getReputationInfo(this.player.stats.reputation ?? 0);
+
     this.onHUDUpdate({
       player: { ...this.player.stats },
       activeQuest: this.quests.getActiveQuest(),
@@ -2357,6 +3095,14 @@ export class Game {
       dicePoker: this.dicePokerState ? { ...this.dicePokerState } : null,
       roadEvent: this.roadEventPopup ? { ...this.roadEventPopup } : null,
       bestiary: BESTIARY_DATA,
+      activeCompanion: this.activeCompanion ? { ...this.activeCompanion } : null,
+      reputationInfo: {
+        value: this.player.stats.reputation ?? 0,
+        tier: repInfo.tier,
+        title: repInfo.title,
+        priceMultiplier: repInfo.priceMultiplier,
+        bountyHuntersActive: repInfo.bountyHuntersActive,
+      },
     });
   }
 

@@ -247,6 +247,132 @@ export class AudioManager {
     osc.stop(now + 0.26);
   }
 
+  public playAnvilStrike(distanceRatio = 1): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const vol = Math.max(0.02, this.masterVolume * 0.18 * distanceRatio);
+
+    // High metallic ring
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1180, now);
+    osc.frequency.exponentialRampToValueAtTime(640, now + 0.22);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  public playBardBallad(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Medieval lute arpeggio (D Dorian: D4, F4, A4, C5, D5, A4)
+    const notes = [293.66, 349.23, 440.0, 523.25, 587.33, 440.0];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const t = now + idx * 0.16;
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(this.masterVolume * 0.22, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.58);
+    });
+  }
+
+  public playCompanionHorn(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(330, now + 0.25);
+    gain.gain.setValueAtTime(this.masterVolume * 0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.32);
+  }
+
+  public playSwordDraw(swordType: 'steel' | 'silver'): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = swordType === 'silver' ? 'sine' : 'triangle';
+    const startFreq = swordType === 'silver' ? 620 : 440;
+    const endFreq = swordType === 'silver' ? 1480 : 980;
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.24);
+    gain.gain.setValueAtTime(this.masterVolume * 0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.34);
+
+    if (swordType === 'silver') {
+      const runeOsc = ctx.createOscillator();
+      const runeGain = ctx.createGain();
+      runeOsc.type = 'triangle';
+      runeOsc.frequency.setValueAtTime(1174.66, now + 0.06);
+      runeOsc.frequency.exponentialRampToValueAtTime(1760, now + 0.36);
+      runeGain.gain.setValueAtTime(this.masterVolume * 0.18, now + 0.06);
+      runeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      runeOsc.connect(runeGain);
+      runeGain.connect(ctx.destination);
+      runeOsc.start(now + 0.06);
+      runeOsc.stop(now + 0.4);
+    }
+  }
+
+  public playChestOpen(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const creak = ctx.createOscillator();
+    const creakGain = ctx.createGain();
+    creak.type = 'sawtooth';
+    creak.frequency.setValueAtTime(145, now);
+    creak.frequency.linearRampToValueAtTime(92, now + 0.18);
+    creak.frequency.linearRampToValueAtTime(168, now + 0.34);
+    creakGain.gain.setValueAtTime(this.masterVolume * 0.16, now);
+    creakGain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    creak.connect(creakGain);
+    creakGain.connect(ctx.destination);
+    creak.start(now);
+    creak.stop(now + 0.4);
+
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const t = now + 0.15 + idx * 0.07;
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(this.masterVolume * 0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.45);
+    });
+  }
+
   public dispose(): void {
     if (this.ambientOsc) {
       try {

@@ -1,5 +1,20 @@
 export type SignType = 'flame' | 'barrier' | 'impulse' | 'illusion' | 'frost';
 
+export type ActiveSwordType = 'steel' | 'silver';
+
+export type EquipmentSlot = 'steelSword' | 'silverSword' | 'armor' | 'trophy';
+
+export interface CollisionBox {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  minY?: number;
+  maxY?: number;
+  isWalkableFloor?: boolean;
+  floorY?: number;
+}
+
 export interface MagicSignInfo {
   id: SignType;
   name: string;
@@ -43,6 +58,7 @@ export interface GameItem {
   name: string;
   description: string;
   category: ItemCategory;
+  equipSlot?: EquipmentSlot;
   rarity: 'common' | 'uncommon' | 'rare' | 'relic';
   value: number;
   quantity: number;
@@ -99,7 +115,60 @@ export type EnemyType =
   | 'boss_hydra'
   | 'boss_colossus'
   | 'boss_vesper'
-  | 'boss_avatar';
+  | 'boss_avatar'
+  | 'bounty_hunter';
+
+export type CompanionId = 'lyra' | 'thorvald' | 'vesper';
+
+export type CompanionCommand =
+  | 'attack_target'
+  | 'follow_close'
+  | 'hold_position'
+  | 'follow';
+
+export interface CompanionState {
+  id: CompanionId;
+  name: string;
+  title?: string;
+  role?: string;
+  roleDescription?: string;
+  weaponLabel?: string;
+  abilityLabel?: string;
+  hp: number;
+  maxHp: number;
+  damage?: number;
+  command: CompanionCommand;
+  x: number;
+  y: number;
+  z: number;
+  rotationY?: number;
+  unlocked?: boolean;
+  bondUnlocked?: boolean;
+  lastBark?: string;
+  lastBarkTimer: number;
+  cooldownTimer?: number;
+}
+
+export type EnemyInstance = EnemyData;
+
+export type NpcActivityState =
+  | 'WORK'
+  | 'ANVIL_FORGE'
+  | 'GATHER_TAVERN'
+  | 'SLEEP_INDOORS'
+  | 'SHELTER_RAIN'
+  | 'PATROL_TORCH'
+  | 'COMBAT_DEFEND'
+  | 'PANIC_FLEE'
+  | 'CARAVAN_MARCH'
+  | 'PERFORM_BARD'
+  | 'working'
+  | 'tavern'
+  | 'sleeping'
+  | 'sheltering'
+  | 'patrolling'
+  | 'combat'
+  | 'fleeing';
 
 export type AIState =
   | 'IDLE'
@@ -150,6 +219,8 @@ export interface EnemyData {
   crystalsRemaining?: number;
   isSummonedShadow?: boolean;
   vesperHealed?: boolean;
+  isDead?: boolean;
+  freezeTimer?: number;
 }
 
 export interface HunterContract {
@@ -228,6 +299,16 @@ export interface QuestStage {
   radius: number;
 }
 
+export interface QuestConsequenceRecord {
+  questId: string;
+  questTitle: string;
+  choiceId: string;
+  choiceTitle: string;
+  summary: string;
+  worldEffectDescription: string;
+  timestampLabel: string;
+}
+
 export interface Quest {
   id: string;
   title: string;
@@ -242,6 +323,10 @@ export interface Quest {
   goldReward: number;
   itemReward?: string;
   choiceTaken?: string;
+  consequenceTitle?: string;
+  consequenceSummary?: string;
+  consequenceWorldEffect?: string;
+  isInvestigationQuest?: boolean;
 }
 
 export interface PrologueSlide {
@@ -350,11 +435,41 @@ export interface DialogueOption {
     | 'ending_destroy_heart'
     | 'ending_absorb_power'
     | 'ending_faction_transfer'
+    | 'recruit_lyra'
+    | 'recruit_thorvald'
+    | 'recruit_vesper'
+    | 'dismiss_companion'
+    | 'bard_ballad_hero'
+    | 'bard_ballad_eclipse'
+    | 'bard_ballad_vesper'
+    | 'open_fence_shop'
+    | 'companion_campfire_bond'
+    | 'donate_refugees'
+    | 'extort_villager'
+    | 'start_quest_belltower'
+    | 'interrogate_belltower_suspects'
+    | 'belltower_kill_wife'
+    | 'belltower_cleanse_ritual'
+    | 'belltower_blame_outsider'
+    | 'start_quest_feast_ravens'
+    | 'feast_burn_manor'
+    | 'feast_spare_illusions'
+    | 'start_quest_dead_mines'
+    | 'mines_protect_ghouls'
+    | 'mines_purge_for_order'
+    | 'start_quest_ash_exam'
+    | 'exam_step1_correct'
+    | 'exam_step1_wrong'
+    | 'exam_step2_correct'
+    | 'exam_step2_wrong'
+    | 'exam_revive_brotherhood'
+    | 'exam_bury_secrets'
     | 'close';
   conditionQuestId?: string;
   conditionStatus?: 'available' | 'active' | 'completed';
   conditionStageIndex?: number;
   requiresLoreMaster?: boolean;
+  reputationDelta?: number;
 }
 
 export interface DialogueNode {
@@ -411,6 +526,26 @@ export interface WorldInteractable {
   discovered?: boolean;
   pillarIndex?: number;
   pillarState?: number;
+  npcScheduleRole?:
+    | 'farmer'
+    | 'woodcutter'
+    | 'water_carrier'
+    | 'blacksmith'
+    | 'merchant'
+    | 'herbalist'
+    | 'elder'
+    | 'torch_guard'
+    | 'guard'
+    | 'bard'
+    | 'caravan'
+    | 'fence'
+    | 'companion_npc';
+  currentActivity?: NpcActivityState;
+  currentActivityState?: NpcActivityState;
+  currentActivityLabel?: string;
+  isArmedDefender?: boolean;
+  homeX?: number;
+  homeZ?: number;
 }
 
 export type BiomeId =
@@ -455,6 +590,8 @@ export interface PlayerStats {
   baseDefense: number;
   signIntensity: number;
   activeSign: SignType;
+  activeSword?: ActiveSwordType;
+  swordSwapTimer?: number;
   barrierShield: number;
   potionCooldown: number;
   x: number;
@@ -482,6 +619,16 @@ export interface PlayerStats {
   finalEndingChoice?: 'none' | 'destroy_heart' | 'absorb_power' | 'faction_transfer';
   eclipseEndingChoice?: 'sacrifice' | 'purge' | 'lord' | string;
   poisonTimer?: number;
+  reputation?: number; // -100 (Пепельный Мясник) .. +100 (Спаситель Вальдмарка)
+  activeCompanionId?: CompanionId | null;
+  unlockedCompanions?: CompanionId[];
+  companionCommand?: CompanionCommand;
+  companionBondIds?: CompanionId[];
+  bardBuffTimer?: number;
+  questChoices?: Record<string, string>;
+  questConsequences?: QuestConsequenceRecord[];
+  blacksmithClosedTimer?: number;
+  examRitualPrecision?: number;
 }
 
 export type ActiveModalType =
@@ -554,6 +701,21 @@ export interface HUDState {
   worldLoreNotes?: LoreNoteData[];
   prologueSlideIndex: number;
   prologueSlides?: PrologueSlide[];
+  activeCompanion?: CompanionState | null;
+  companionsList?: CompanionState[];
+  reputationInfo?: {
+    score?: number;
+    value: number;
+    title: string;
+    tier?: 'savior' | 'defender' | 'neutral' | 'mercenary' | 'butcher';
+    priceMultiplier: number;
+    greetingPrefix?: string;
+    triggersBountyHunters?: boolean;
+    bountyHuntersActive: boolean;
+  };
+  reputationTitle?: string;
+  merchantPriceMultiplier?: number;
+  isFenceShopOpen?: boolean;
 }
 
 

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { AssetManager, CharacterRig } from './AssetManager';
-import { getGroundHeight } from './rules';
+import { getGroundHeight, resolveSlidingCollision } from './rules';
 import type { CollisionCylinder } from './SceneManager';
-import type { EnemyData, EnemyType } from './types';
+import type { CollisionBox, EnemyData, EnemyType } from './types';
 
 export interface ActiveEnemy {
   data: EnemyData;
@@ -443,6 +443,22 @@ export class EnemyAI {
       questTag: 'q5_swamp_monsters',
     });
     this.createEnemy({
+      id: 'drowned_swamp_stilt',
+      type: 'drowned',
+      name: 'Вожак Утопленников Свайного Посёлка',
+      level: 5,
+      hp: 235,
+      damage: 29,
+      speed: 5.2,
+      detectRadius: 20,
+      attackRadius: 2.5,
+      spawnX: -48,
+      spawnZ: -152,
+      xpReward: 110,
+      goldReward: 65,
+      lootTable: ['ghoul_blood', 'cursed_essence'],
+    });
+    this.createEnemy({
       id: 'boss_hydra',
       type: 'boss_hydra',
       name: 'Матерь Трясины (Многоголовая Гидра)',
@@ -515,6 +531,38 @@ export class EnemyAI {
       questTag: 'q6_mine_monsters',
     });
     this.createEnemy({
+      id: 'trog_pass_east_adit',
+      type: 'troglodyte',
+      name: 'Матёрый Троглодит Восточной Штольни',
+      level: 8,
+      hp: 350,
+      damage: 39,
+      speed: 4.4,
+      detectRadius: 20,
+      attackRadius: 3.3,
+      spawnX: 40,
+      spawnZ: -275,
+      xpReward: 175,
+      goldReward: 105,
+      lootTable: ['black_ore', 'ice_lotus'],
+    });
+    this.createEnemy({
+      id: 'wraith_pass_chasm',
+      type: 'frost_wraith',
+      name: 'Страж Висячего Моста (Ледяной Дух)',
+      level: 7,
+      hp: 295,
+      damage: 35,
+      speed: 4.9,
+      detectRadius: 22,
+      attackRadius: 10.5,
+      spawnX: -46,
+      spawnZ: -255,
+      xpReward: 165,
+      goldReward: 95,
+      lootTable: ['ice_lotus', 'cursed_essence'],
+    });
+    this.createEnemy({
       id: 'boss_colossus',
       type: 'boss_colossus',
       name: 'Кристальный Колосс Чёрной Горы',
@@ -569,6 +617,22 @@ export class EnemyAI {
       goldReward: 120,
       lootTable: ['cursed_essence', 'void_dust'],
       questTag: 'q7_fallen_ash',
+    });
+    this.createEnemy({
+      id: 'fallen_ash_barracks',
+      type: 'fallen_ash',
+      name: 'Инструктор Фехтования Сожжённых Казарм',
+      level: 9,
+      hp: 405,
+      damage: 44,
+      speed: 5.6,
+      detectRadius: 20,
+      attackRadius: 2.9,
+      spawnX: -32,
+      spawnZ: -376,
+      xpReward: 220,
+      goldReward: 130,
+      lootTable: ['black_ore', 'void_dust'],
     });
     this.createEnemy({
       id: 'boss_vesper',
@@ -626,6 +690,22 @@ export class EnemyAI {
       questTag: 'q8_void_knights',
     });
     this.createEnemy({
+      id: 'void_knight_island_west',
+      type: 'void_knight',
+      name: 'Хранитель Западного Острова Затмения',
+      level: 10,
+      hp: 485,
+      damage: 51,
+      speed: 4.9,
+      detectRadius: 22,
+      attackRadius: 3.6,
+      spawnX: -38,
+      spawnZ: -478,
+      xpReward: 280,
+      goldReward: 175,
+      lootTable: ['void_dust', 'black_ore'],
+    });
+    this.createEnemy({
       id: 'boss_avatar',
       type: 'boss_avatar',
       name: 'Аватара Сердца Пустоты (Первородный Архибосс)',
@@ -654,6 +734,54 @@ export class EnemyAI {
       crystalMesh.visible = false;
     }
     return remaining;
+  }
+
+  public spawnBountyHunterSquad(playerX: number, playerZ: number): EnemyData[] {
+    const aliveHunters = this.enemies.filter(
+      (e) => e.data.type === 'bounty_hunter' && e.data.state !== 'DEAD' && !e.data.isDead
+    );
+    if (aliveHunters.length > 0) {
+      return aliveHunters.map((h) => h.data);
+    }
+
+    const stamp = Date.now();
+    const h1 = this.createEnemy({
+      id: `bounty_hunter_1_${stamp}`,
+      type: 'bounty_hunter',
+      name: 'Волкодав «Чёрной Петли» (Охотник за головами)',
+      level: 4,
+      hp: 195,
+      damage: 25,
+      speed: 5.5,
+      detectRadius: 28,
+      attackRadius: 3.3,
+      spawnX: playerX + 11,
+      spawnZ: playerZ - 9,
+      xpReward: 120,
+      goldReward: 85,
+      lootTable: ['iron_ore', 'potion_swallow'],
+      packId: `pack_bounty_${stamp}`,
+    });
+
+    const h2 = this.createEnemy({
+      id: `bounty_hunter_2_${stamp}`,
+      type: 'bounty_hunter',
+      name: 'Наёмный Каратель Вальдмарка',
+      level: 4,
+      hp: 180,
+      damage: 23,
+      speed: 5.6,
+      detectRadius: 28,
+      attackRadius: 3.3,
+      spawnX: playerX - 11,
+      spawnZ: playerZ - 10,
+      xpReward: 115,
+      goldReward: 75,
+      lootTable: ['iron_ore', 'oil_cursed'],
+      packId: `pack_bounty_${stamp}`,
+    });
+
+    return [h1, h2];
   }
 
   public spawnContractBoss(contractId: string): EnemyData | null {
@@ -855,7 +983,11 @@ export class EnemyAI {
       id: cfg.id,
       type: cfg.type,
       name: cfg.name,
-      isSilverVulnerable: cfg.type !== 'wolf' && cfg.type !== 'fallen_ash' && cfg.type !== 'boss_vesper',
+      isSilverVulnerable:
+        cfg.type !== 'wolf' &&
+        cfg.type !== 'fallen_ash' &&
+        cfg.type !== 'boss_vesper' &&
+        cfg.type !== 'bounty_hunter',
       level: cfg.level,
       hp: cfg.hp,
       maxHp: cfg.hp,
@@ -1675,11 +1807,12 @@ export class EnemyAI {
     enemy: ActiveEnemy,
     dx: number,
     dz: number,
-    obstacles: CollisionCylinder[]
+    obstacles: CollisionCylinder[],
+    collisionBoxes: CollisionBox[] = []
   ): void {
     const d = enemy.data;
-    let nextX = d.x + dx;
-    let nextZ = d.z + dz;
+    const nextX = d.x + dx;
+    const nextZ = d.z + dz;
 
     const r =
       d.type === 'boss' ||
@@ -1694,22 +1827,20 @@ export class EnemyAI {
       d.type === 'void_knight'
         ? 0.72
         : 0.45;
-    for (let i = 0; i < obstacles.length; i++) {
-      const obs = obstacles[i];
-      const ox = nextX - obs.x;
-      const oz = nextZ - obs.z;
-      const dist = Math.hypot(ox, oz);
-      const minDist = r + obs.radius;
-      if (dist < minDist && dist > 0.0001) {
-        const push = (minDist - dist) / dist;
-        nextX += ox * push;
-        nextZ += oz * push;
-      }
-    }
 
-    d.x = nextX;
-    d.z = nextZ;
-    d.y = getGroundHeight(nextX, nextZ);
+    const resolved = resolveSlidingCollision(
+      d.x,
+      d.z,
+      nextX,
+      nextZ,
+      r,
+      obstacles,
+      collisionBoxes
+    );
+
+    d.x = resolved.x;
+    d.z = resolved.z;
+    d.y = resolved.y;
     enemy.rig.root.position.set(d.x, d.y, d.z);
     enemy.rig.root.rotation.y = d.rotationY;
   }

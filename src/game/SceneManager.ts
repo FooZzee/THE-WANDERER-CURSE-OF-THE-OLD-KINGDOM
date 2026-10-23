@@ -7,7 +7,7 @@ import {
   interpolateWeatherMetrics,
   WEATHER_PRESETS,
 } from './rules';
-import type { GraphicsSettings, WeatherType } from './types';
+import type { CollisionBox, GraphicsSettings, WeatherType } from './types';
 
 export interface CollisionCylinder {
   x: number;
@@ -30,6 +30,7 @@ export class SceneManager {
   public hemiLight: THREE.HemisphereLight;
   public torchLights: THREE.PointLight[] = [];
   public obstacles: CollisionCylinder[] = [];
+  public collisionBoxes: CollisionBox[] = [];
   public colliderMeshes: THREE.Object3D[] = [];
   public isHeadless: boolean;
 
@@ -43,6 +44,8 @@ export class SceneManager {
   private cursedCrystalMesh: THREE.Mesh | null = null;
   private catacombsGateMesh: THREE.Mesh | null = null;
   private floatingCraterRocks: { mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
+  private swampBubbles: { mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
+  private mineCrystals: { mesh: THREE.Mesh; phase: number }[] = [];
   private biomeFogTint = new THREE.Color(0x1e242b);
   private timeOfDay = 16.5; // Late afternoon atmospheric golden/dusk hour
   private weather: WeatherType = 'fog';
@@ -51,6 +54,11 @@ export class SceneManager {
   private weatherEffectsEnabled = true;
   private lightningFlash = 0;
   private lightningTimer = 14;
+
+  public windTimeUniform = { value: 0 };
+  public windStrengthUniform = { value: 1.0 };
+  private embersSystem: THREE.Points | null = null;
+  private emberVelocities: Float32Array | null = null;
 
   constructor(container: HTMLElement) {
     this.isHeadless =
@@ -70,7 +78,7 @@ export class SceneManager {
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.setPixelRatio(
-      this.isHeadless ? 1 : Math.min(window.devicePixelRatio, 2)
+      this.isHeadless ? 0.5 : Math.min(window.devicePixelRatio, 2)
     );
     this.renderer.shadowMap.enabled = !this.isHeadless;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -112,6 +120,8 @@ export class SceneManager {
     this.buildTerrainAndWater();
     this.buildCrowHollowVillage();
     this.buildOldForestAndCliffs();
+    this.buildGrassTufts();
+    this.buildEmbersAndGlowHalos();
     this.buildCursedSanctuary();
     this.buildRuinedFortress();
     this.buildUndergroundCatacombs();
@@ -157,14 +167,34 @@ export class SceneManager {
 
     const waterMat = new THREE.MeshPhysicalMaterial({
       color: 0x0f293a,
-      roughness: 0.15,
-      metalness: 0.1,
-      transmission: 0.65,
-      thickness: 1.2,
-      ior: 1.33,
+      roughness: 0.12,
+      metalness: 0.15,
+      transmission: 0.72,
+      thickness: 1.4,
+      ior: 1.333,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
     });
+
+    if (!this.isHeadless) {
+      waterMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = this.windTimeUniform;
+        shader.vertexShader = `
+          uniform float uTime;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          // Procedural river waves & ripple displacement
+          float wave1 = sin(position.x * 0.25 + uTime * 2.2) * 0.12;
+          float wave2 = cos(position.z * 0.42 + uTime * 1.8) * 0.08;
+          float wave3 = sin((position.x + position.z) * 0.32 + uTime * 2.8) * 0.04;
+          transformed.y += wave1 + wave2 + wave3;
+          `
+        );
+      };
+    }
     const waterMesh = new THREE.Mesh(waterGeo, waterMat);
     this.scene.add(waterMesh);
 
@@ -273,6 +303,21 @@ export class SceneManager {
     this.scene.add(group);
     this.colliderMeshes.push(walls, roof);
 
+    const cosR = Math.abs(Math.cos(rotY));
+    const sinR = Math.abs(Math.sin(rotY));
+    const halfExtX = (width * cosR + depth * sinR) * 0.5;
+    const halfExtZ = (width * sinR + depth * cosR) * 0.5;
+
+    this.collisionBoxes.push({
+      minX: x - halfExtX,
+      maxX: x + halfExtX,
+      minZ: z - halfExtZ,
+      maxZ: z + halfExtZ,
+      minY: y - 0.5,
+      maxY: y + height + 3.0,
+      label: 'house',
+    });
+
     this.obstacles.push({
       x,
       z,
@@ -374,6 +419,30 @@ export class SceneManager {
       roughness: 0.88,
     });
 
+    if (!this.isHeadless) {
+      canopyMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = this.windTimeUniform;
+        shader.uniforms.uWindStrength = this.windStrengthUniform;
+        shader.vertexShader = `
+          uniform float uTime;
+          uniform float uWindStrength;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          // Procedural vertex wind sway for pine trees
+          vec4 worldPos = instanceMatrix * vec4(position, 1.0);
+          float phase = uTime * 2.2 + worldPos.x * 0.12 + worldPos.z * 0.12;
+          float swayHeight = clamp((position.y - 1.2) * 0.18, 0.0, 1.0);
+          float sway = (sin(phase) * 0.7 + cos(phase * 0.7) * 0.3) * uWindStrength * swayHeight;
+          transformed.x += sway * 0.45;
+          transformed.z += sway * 0.35;
+          `
+        );
+      };
+    }
+
     const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
     const canopyInst = new THREE.InstancedMesh(canopyGeo, canopyMat, treeCount);
     trunkInst.castShadow = !this.isHeadless;
@@ -474,6 +543,181 @@ export class SceneManager {
     rockInst.instanceMatrix.needsUpdate = true;
     rockInst.computeBoundingSphere();
     this.scene.add(rockInst);
+  }
+
+  private buildGrassTufts(): void {
+    const grassCount = this.isHeadless ? 100 : 520;
+    // Crossed-quad blade tuft
+    const g1 = new THREE.PlaneGeometry(0.7, 0.75, 1, 2);
+    g1.translate(0, 0.375, 0);
+    const g2 = g1.clone();
+    g2.rotateY(Math.PI / 2);
+
+    // Merge geometries
+    const tuftGeo = new THREE.BufferGeometry();
+    const pos1 = g1.attributes.position.array;
+    const pos2 = g2.attributes.position.array;
+    const mergedPositions = new Float32Array(pos1.length + pos2.length);
+    mergedPositions.set(pos1, 0);
+    mergedPositions.set(pos2, pos1.length);
+    tuftGeo.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3));
+
+    const norm1 = g1.attributes.normal.array;
+    const norm2 = g2.attributes.normal.array;
+    const mergedNormals = new Float32Array(norm1.length + norm2.length);
+    mergedNormals.set(norm1, 0);
+    mergedNormals.set(norm2, norm1.length);
+    tuftGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3));
+
+    const uv1 = g1.attributes.uv.array;
+    const uv2 = g2.attributes.uv.array;
+    const mergedUvs = new Float32Array(uv1.length + uv2.length);
+    mergedUvs.set(uv1, 0);
+    mergedUvs.set(uv2, uv1.length);
+    tuftGeo.setAttribute('uv', new THREE.BufferAttribute(mergedUvs, 2));
+
+    const idx1 = g1.index?.array ?? [];
+    const idx2 = g2.index?.array ?? [];
+    const offset = g1.attributes.position.count;
+    const mergedIndices: number[] = [...idx1];
+    for (let i = 0; i < idx2.length; i++) {
+      mergedIndices.push(idx2[i] + offset);
+    }
+    tuftGeo.setIndex(mergedIndices);
+
+    const grassMat = new THREE.MeshStandardMaterial({
+      color: 0x385429,
+      roughness: 0.85,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+
+    if (!this.isHeadless) {
+      grassMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = this.windTimeUniform;
+        shader.uniforms.uWindStrength = this.windStrengthUniform;
+        shader.vertexShader = `
+          uniform float uTime;
+          uniform float uWindStrength;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          vec4 worldPos = instanceMatrix * vec4(position, 1.0);
+          float gPhase = uTime * 3.2 + worldPos.x * 0.35 + worldPos.z * 0.35;
+          float tipWeight = clamp(position.y / 0.75, 0.0, 1.0);
+          float gSway = sin(gPhase) * 0.22 * uWindStrength * tipWeight;
+          transformed.x += gSway;
+          transformed.z += gSway * 0.65;
+          `
+        );
+      };
+    }
+
+    const grassInst = new THREE.InstancedMesh(tuftGeo, grassMat, grassCount);
+    let gIdx = 0;
+    for (let i = 0; i < 900 && gIdx < grassCount; i++) {
+      const angle = i * 2.15;
+      const dist = 14 + ((i * 27) % 82);
+      const gx = Math.cos(angle) * dist;
+      const gz = Math.sin(angle) * dist;
+
+      // Keep river and roads clear
+      if (Math.abs(gz - (34 + Math.sin(gx * 0.03) * 6)) < 8.2) continue;
+      if (Math.abs(gx) < 4.5 && gz > -15 && gz < 40) continue;
+      if (Math.hypot(gx, gz) < 16) continue;
+
+      const gy = getGroundHeight(gx, gz);
+      const scale = 0.8 + ((i * 17) % 50) / 100;
+      _dummy.position.set(gx, gy, gz);
+      _dummy.rotation.set(0, (i * 0.9) % (Math.PI * 2), 0);
+      _dummy.scale.set(scale, scale, scale);
+      _dummy.updateMatrix();
+
+      grassInst.setMatrixAt(gIdx, _dummy.matrix);
+
+      // Natural grass color shade variations
+      const shade = 0.85 + ((i * 13) % 30) / 100;
+      _color.setRGB(0.18 * shade, 0.32 * shade, 0.14 * shade);
+      grassInst.setColorAt(gIdx, _color);
+      gIdx++;
+    }
+
+    grassInst.count = gIdx;
+    grassInst.instanceMatrix.needsUpdate = true;
+    if (grassInst.instanceColor) grassInst.instanceColor.needsUpdate = true;
+    grassInst.computeBoundingSphere();
+    this.scene.add(grassInst);
+  }
+
+  private buildEmbersAndGlowHalos(): void {
+    // 1. Soft Flame Glow Halos (Volumetric Light Billboard Sprites)
+    const haloGeo = new THREE.PlaneGeometry(1.6, 1.6);
+    const haloTex = this.assetManager['createCanvasTexture']?.(
+      'fire_halo',
+      64,
+      64,
+      (ctx, w, h) => {
+        const rad = w / 2;
+        const grad = ctx.createRadialGradient(rad, rad, 2, rad, rad, rad);
+        grad.addColorStop(0, 'rgba(251, 146, 60, 0.85)');
+        grad.addColorStop(0.35, 'rgba(234, 88, 12, 0.45)');
+        grad.addColorStop(0.7, 'rgba(180, 83, 9, 0.15)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+    );
+
+    const haloMat = new THREE.MeshBasicMaterial({
+      map: haloTex,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const firePositions: [number, number, number][] = [
+      [5, getGroundHeight(5, -5) + 3.0, -5],
+      [-7, getGroundHeight(-7, -4) + 3.0, -4],
+      [10, getGroundHeight(10, 5) + 3.0, 5],
+      [-2, getGroundHeight(-2, 16) + 3.0, 16],
+      [-34, getGroundHeight(-34, 18) + 1.2, 18], // Hunter camp campfire
+      [14, getGroundHeight(14, -18) + 1.8, -18], // Forge furnace
+    ];
+
+    for (const [fx, fy, fz] of firePositions) {
+      const halo = new THREE.Mesh(haloGeo, haloMat);
+      halo.position.set(fx, fy, fz);
+      this.scene.add(halo);
+    }
+
+    // 2. Rising Sparks / Embers Particle System
+    const emberCount = 140;
+    const emberGeo = new THREE.BufferGeometry();
+    const emberPositions = new Float32Array(emberCount * 3);
+    this.emberVelocities = new Float32Array(emberCount);
+
+    for (let i = 0; i < emberCount; i++) {
+      const anchor = firePositions[i % firePositions.length];
+      emberPositions[i * 3] = anchor[0] + (Math.random() - 0.5) * 0.8;
+      emberPositions[i * 3 + 1] = anchor[1] + Math.random() * 2.5;
+      emberPositions[i * 3 + 2] = anchor[2] + (Math.random() - 0.5) * 0.8;
+      this.emberVelocities[i] = 0.8 + Math.random() * 1.4;
+    }
+    emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+
+    const emberMat = new THREE.PointsMaterial({
+      color: 0xf59e0b,
+      size: 0.18,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.embersSystem = new THREE.Points(emberGeo, emberMat);
+    this.scene.add(this.embersSystem);
   }
 
   private buildCursedSanctuary(): void {
@@ -679,23 +923,86 @@ export class SceneManager {
     }
   }
 
+  private createStiltHut(x: number, z: number, rotY = 0): void {
+    const group = new THREE.Group();
+    const y = getGroundHeight(x, z);
+    group.position.set(x, y, z);
+    group.rotation.y = rotY;
+
+    const woodMat = this.assetManager.getMaterial('wood');
+    const thatchMat = new THREE.MeshStandardMaterial({
+      color: 0x3f3726,
+      roughness: 0.95,
+    });
+
+    // 4 Timber stilts driven into the swamp mud
+    for (const [sx, sz] of [
+      [-1.9, -2.2],
+      [1.9, -2.2],
+      [-1.9, 2.2],
+      [1.9, 2.2],
+    ]) {
+      const stilt = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.2, 2.2, 6),
+        woodMat
+      );
+      stilt.position.set(sx, 0.4, sz);
+      group.add(stilt);
+    }
+
+    // Elevated plank deck
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.22, 5.4), woodMat);
+    deck.position.y = 1.45;
+    deck.receiveShadow = true;
+
+    // Weathered cabin walls
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.4, 4.0), woodMat);
+    cabin.position.set(0, 2.75, -0.3);
+    cabin.castShadow = true;
+
+    // Pitched reed thatch roof
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 1.9, 4), thatchMat);
+    roof.position.set(0, 4.7, -0.3);
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+
+    // Sloped access ramp
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.16, 2.6), woodMat);
+    ramp.position.set(0, 0.75, 3.5);
+    ramp.rotation.x = 0.52;
+
+    group.add(deck, cabin, roof, ramp);
+    this.scene.add(group);
+
+    this.collisionBoxes.push({
+      minX: x - 2.2,
+      maxX: x + 2.2,
+      minZ: z - 2.5,
+      maxZ: z + 2.2,
+      minY: y - 0.5,
+      maxY: y + 5.5,
+      label: 'stilt_hut',
+    });
+    this.obstacles.push({ x, z, radius: 2.5, height: 5.5 });
+  }
+
   private buildNorthernMarchBiomes(): void {
     const stoneMat = this.assetManager.getMaterial('stone');
     const woodMat = this.assetManager.getMaterial('wood');
     const steelMat = this.assetManager.getMaterial('steel');
 
-    // 0. Seamless Northern Terrain Mesh covering x in [-130, 130], z in [-555, -100]
-    const northWidth = 260;
-    const northLength = 455;
-    const segX = this.isHeadless ? 48 : 96;
-    const segZ = this.isHeadless ? 90 : 180;
+    // 0. Massively Expanded Seamless Northern Terrain Mesh covering x in [-180, 180], z in [-558, -98] (3-4x wider physical area)
+    const northWidth = 360;
+    const northLength = 460;
+    const segX = this.isHeadless ? 64 : 128;
+    const segZ = this.isHeadless ? 100 : 200;
     const northGeo = new THREE.PlaneGeometry(northWidth, northLength, segX, segZ);
     northGeo.rotateX(-Math.PI / 2);
 
     const pos = northGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const vx = pos.getX(i);
-      const vz = pos.getZ(i) - 327.5; // shifts [-227.5, +227.5] to [-555, -100]
+      const vz = pos.getZ(i) - 328.0; // shifts [-230, +230] to [-558, -98]
       pos.setZ(i, vz);
       pos.setY(i, getGroundHeight(vx, vz));
     }
@@ -710,7 +1017,7 @@ export class SceneManager {
     this.colliderMeshes.push(northTerrainMesh);
 
     // =========================================================================
-    // BIOME 1: GALLOWS SWAMP & SUNKEN FENS (z in [-215, -105])
+    // BIOME 1: GALLOWS SWAMP & SUNKEN FENS ("Тракт Висельников и Затопленные Топи", z in [-215, -105])
     // =========================================================================
     // Transition 1: Ruined Northern Outpost Gate at z = -106
     for (const side of [-1, 1]) {
@@ -725,39 +1032,125 @@ export class SceneManager {
       gateTower.castShadow = true;
       this.scene.add(gateTower);
       this.obstacles.push({ x: gx, z: gz, radius: 1.6, height: 6 });
+      this.collisionBoxes.push({
+        minX: gx - 1.4,
+        maxX: gx + 1.4,
+        minZ: gz - 1.4,
+        maxZ: gz + 1.4,
+        minY: gy,
+        maxY: gy + 6,
+      });
     }
 
-    // Swamp Murky Toxic Water Plane (z from -112 to -208)
-    const swampWaterGeo = new THREE.PlaneGeometry(160, 96, 24, 24);
+    // Expanded Swamp Murky Toxic Water Plane (280m wide x 106m long)
+    const swampWaterGeo = new THREE.PlaneGeometry(280, 106, 32, 32);
     swampWaterGeo.rotateX(-Math.PI / 2);
     const swampWaterMat = new THREE.MeshStandardMaterial({
       color: 0x132e22,
       emissive: 0x062016,
-      emissiveIntensity: 0.35,
-      roughness: 0.25,
+      emissiveIntensity: 0.38,
+      roughness: 0.22,
       metalness: 0.15,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.84,
     });
     const swampWater = new THREE.Mesh(swampWaterGeo, swampWaterMat);
     swampWater.position.set(0, -0.35, -160);
     this.scene.add(swampWater);
 
-    // Rotten Wooden Boardwalk (Гать) from z = -110 to -182
-    for (let z = -112; z >= -182; z -= 6) {
+    // 1A. Main North-South Rotten Wooden Boardwalk (Гать) from z = -110 to -186
+    for (let z = -110; z >= -186; z -= 5.2) {
       const by = getGroundHeight(0, z);
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.22, 5.6), woodMat);
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.24, 4.9), woodMat);
       plank.position.set(0, by + 0.08, z);
+      plank.rotation.y = ((z * 13) % 7) * 0.015;
       plank.receiveShadow = true;
       this.scene.add(plank);
     }
 
-    // Hanging Iron Cages & Gallows Posts along the Swamp Road
+    // 1B. Western Boardwalk Branch (z = -152, x from -4 to -44) -> Abandoned Stilt Fisherman Village
+    for (let x = -5; x >= -44; x -= 4.8) {
+      const by = getGroundHeight(x, -152);
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.22, 3.6), woodMat);
+      plank.position.set(x, by + 0.08, -152);
+      plank.rotation.z = (x % 2 === 0 ? 1 : -1) * 0.02;
+      plank.receiveShadow = true;
+      this.scene.add(plank);
+    }
+
+    // Abandoned Fishermen's Stilt Village at x in [-46, -64], z in [-140, -166]
+    this.createStiltHut(-48, -145, 0.35);
+    this.createStiltHut(-58, -154, -0.4);
+    this.createStiltHut(-50, -164, 0.8);
+
+    // 1C. Eastern Boardwalk Branch (z = -166, x from 4 to 24) -> Lord Vane's Manor ("Поместье Воронов")
+    for (let x = 5; x <= 23; x += 4.5) {
+      const by = getGroundHeight(x, -166);
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 3.8), woodMat);
+      plank.position.set(x, by + 0.08, -166);
+      plank.receiveShadow = true;
+      this.scene.add(plank);
+    }
+
+    // Lord Vane's Gothic Manor House & Courtyard at (34, -166)
+    this.createMedievalHouse(36, -166, -Math.PI / 2, 8.2, 10.5, 5.2);
+    const banquetTableY = getGroundHeight(28, -166);
+    const banquetTable = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.85, 4.4),
+      woodMat
+    );
+    banquetTable.position.set(28, banquetTableY + 0.42, -166);
+    this.scene.add(banquetTable);
+
+    // 1D. Dozens of Sinking Wooden Carts & Wagons across the Swamp
+    const sinkingCartCoords: [number, number, number][] = [
+      [-11, -120, 0.4],
+      [13, -128, -0.6],
+      [-24, -135, 1.1],
+      [22, -142, -0.3],
+      [-15, -156, 0.8],
+      [-35, -148, -0.5],
+      [16, -158, 0.5],
+      [-28, -174, 1.3],
+      [25, -182, -0.9],
+      [-42, -172, 0.2],
+      [38, -146, -0.7],
+      [-14, -188, 0.6],
+    ];
+    for (const [cx, cz, rot] of sinkingCartCoords) {
+      const cy = getGroundHeight(cx, cz);
+      const cartGroup = new THREE.Group();
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.75, 1.55), woodMat);
+      bed.position.y = 0.35;
+      const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.14, 10);
+      wheelGeo.rotateX(Math.PI / 2);
+      for (const [wx, wz] of [
+        [-0.8, 0.82],
+        [0.8, 0.82],
+        [-0.8, -0.82],
+        [0.8, -0.82],
+      ]) {
+        const wheel = new THREE.Mesh(wheelGeo, woodMat);
+        wheel.position.set(wx, 0.28, wz);
+        cartGroup.add(wheel);
+      }
+      cartGroup.add(bed);
+      cartGroup.position.set(cx, cy - 0.18, cz);
+      cartGroup.rotation.set(0.22, rot, -0.28);
+      this.scene.add(cartGroup);
+      this.obstacles.push({ x: cx, z: cz, radius: 1.4, height: 1.5 });
+    }
+
+    // 1E. Old Gallows with Hanging Iron Cages along the Swamp Road & Branches
     const gallowsCoords: [number, number][] = [
-      [-8, -124],
-      [9, -135],
-      [-10, -155],
-      [11, -168],
+      [-8, -122],
+      [9, -134],
+      [-10, -148],
+      [11, -162],
+      [-24, -150],
+      [-42, -155],
+      [18, -164],
+      [-12, -178],
     ];
     for (const [gx, gz] of gallowsCoords) {
       const gy = getGroundHeight(gx, gz);
@@ -775,8 +1168,72 @@ export class SceneManager {
     }
 
     // Half-Sunken Village Ruins in the Swamp
-    this.createMedievalHouse(-18, -148, 0.35, 6.0, 7.0, 3.2);
-    this.createMedievalHouse(19, -164, -0.45, 6.2, 7.2, 3.0);
+    this.createMedievalHouse(-18, -138, 0.35, 6.0, 7.0, 3.2);
+    this.createMedievalHouse(19, -148, -0.45, 6.2, 7.2, 3.0);
+
+    // 1F. Dense Swamp Reed Beds (InstancedMesh — 240 reed stalks)
+    const reedCount = this.isHeadless ? 60 : 240;
+    const reedGeo = new THREE.CylinderGeometry(0.04, 0.08, 2.3, 5);
+    reedGeo.translate(0, 1.15, 0);
+    const reedMat = new THREE.MeshStandardMaterial({
+      color: 0x365314,
+      roughness: 0.9,
+    });
+    const reedInst = new THREE.InstancedMesh(reedGeo, reedMat, reedCount);
+    let rPlaced = 0;
+    for (let i = 0; i < reedCount; i++) {
+      const rx = -85 + ((i * 37) % 170);
+      const rz = -112 - ((i * 23) % 96);
+      if (Math.abs(rx) < 5.5) continue;
+      const ry = getGroundHeight(rx, rz);
+      _dummy.position.set(rx, ry - 0.15, rz);
+      _dummy.rotation.set(
+        ((i % 5) - 2) * 0.08,
+        (i * 1.3) % (Math.PI * 2),
+        ((i % 7) - 3) * 0.06
+      );
+      const s = 0.8 + (i % 5) * 0.18;
+      _dummy.scale.set(s, s, s);
+      _dummy.updateMatrix();
+      reedInst.setMatrixAt(rPlaced++, _dummy.matrix);
+    }
+    reedInst.count = rPlaced;
+    reedInst.instanceMatrix.needsUpdate = true;
+    reedInst.computeBoundingSphere();
+    this.scene.add(reedInst);
+
+    // 1G. Toxic Misty Depressions with Procedural Water Bubble Animations
+    const bubbleMat = new THREE.MeshStandardMaterial({
+      color: 0x4ade80,
+      emissive: 0x16a34a,
+      emissiveIntensity: 1.6,
+      transparent: true,
+      opacity: 0.78,
+      roughness: 0.15,
+    });
+    const bubbleGeo = new THREE.SphereGeometry(0.24, 8, 8);
+    const hollowCenters: [number, number][] = [
+      [-26, -132],
+      [26, -138],
+      [-34, -172],
+      [32, -182],
+      [-16, -165],
+      [18, -174],
+    ];
+    for (let i = 0; i < 24; i++) {
+      const hc = hollowCenters[i % hollowCenters.length];
+      const bx = hc[0] + Math.cos(i * 1.7) * (2.2 + (i % 4) * 1.8);
+      const bz = hc[1] + Math.sin(i * 1.7) * (2.2 + (i % 4) * 1.8);
+      const baseY = -0.32;
+      const bubble = new THREE.Mesh(bubbleGeo, bubbleMat);
+      bubble.position.set(bx, baseY, bz);
+      this.scene.add(bubble);
+      this.swampBubbles.push({
+        mesh: bubble,
+        baseY,
+        phase: i * 0.65,
+      });
+    }
 
     // Swamp Hydra Boss Arena Monoliths at (0, -190)
     const hydraY = getGroundHeight(0, -190);
@@ -788,7 +1245,7 @@ export class SceneManager {
     this.scene.add(hydraDais);
 
     // =========================================================================
-    // BIOME 2: SILVERTOOTH PASS & DEAD MINES (z in [-325, -215])
+    // BIOME 2: SILVERTOOTH PASS & DEAD MINES ("Среброзубый Перевал и Мёртвые Шахты", z in [-325, -215])
     // =========================================================================
     // Transition 2: Stone Mountain Pass Archway at z = -216
     for (const side of [-1, 1]) {
@@ -800,6 +1257,14 @@ export class SceneManager {
       pillar.castShadow = true;
       this.scene.add(pillar);
       this.obstacles.push({ x: px, z: pz, radius: 2.0, height: 8.5 });
+      this.collisionBoxes.push({
+        minX: px - 1.6,
+        maxX: px + 1.6,
+        minZ: pz - 1.6,
+        maxZ: pz + 1.6,
+        minY: py,
+        maxY: py + 8.5,
+      });
     }
     const passLint = new THREE.Mesh(
       new THREE.BoxGeometry(17.6, 1.8, 3.4),
@@ -807,6 +1272,40 @@ export class SceneManager {
     );
     passLint.position.set(0, getGroundHeight(0, -216) + 8.2, -216);
     this.scene.add(passLint);
+
+    // 2A. Winding Mountain Switchback Posts & Retaining Bollards (Серпантин)
+    for (let z = -222; z >= -282; z -= 6) {
+      const switchbackX = Math.sin((z + 215) * 0.09) * 18;
+      for (const side of [-1, 1]) {
+        const bx = switchbackX + side * 5.8;
+        const by = getGroundHeight(bx, z);
+        const bollard = new THREE.Mesh(
+          new THREE.BoxGeometry(0.65, 1.5, 0.65),
+          stoneMat
+        );
+        bollard.position.set(bx, by + 0.75, z);
+        this.scene.add(bollard);
+      }
+    }
+
+    // 2B. Deep Chasm & Suspension Bridge to the Western Smuggler's Ledge (x in [-26, -48], z = -255)
+    for (let x = -26; x >= -48; x -= 2.2) {
+      const by = getGroundHeight(x, -255);
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.24, 3.8), woodMat);
+      plank.position.set(x, by + 0.08, -255);
+      this.scene.add(plank);
+    }
+    for (const endX of [-26, -48]) {
+      const py = getGroundHeight(endX, -255);
+      for (const sideZ of [-2.1, 2.1]) {
+        const pylon = new THREE.Mesh(
+          new THREE.BoxGeometry(1.1, 3.8, 1.1),
+          stoneMat
+        );
+        pylon.position.set(endX, py + 1.9, -255 + sideZ);
+        this.scene.add(pylon);
+      }
+    }
 
     // Icy Watchtower at (-15, -246)
     const towerY = getGroundHeight(-15, -246);
@@ -819,43 +1318,158 @@ export class SceneManager {
     this.scene.add(iceTower);
     this.obstacles.push({ x: -15, z: -246, radius: 3.8, height: 10.5 });
 
-    // Abandoned Mine Tracks & Minecarts leading to the Crystal Colossus Cavern
-    for (let z = -252; z >= -288; z -= 4.5) {
-      const ry = getGroundHeight(0, z);
-      const tie = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.14, 0.4), woodMat);
-      tie.position.set(0, ry + 0.08, z);
-      this.scene.add(tie);
-    }
-    const cartY = getGroundHeight(-2.8, -268);
-    const minecart = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.1, 2.2), steelMat);
-    minecart.position.set(-2.8, cartY + 0.55, -268);
-    this.scene.add(minecart);
-    this.obstacles.push({ x: -2.8, z: -268, radius: 1.3, height: 1.5 });
-
-    // Glowing Black Ore Veins & Crystal Colossus Arena around (0, -300)
-    const blackCrystalMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      emissive: 0x0284c7,
-      emissiveIntensity: 1.5,
-      roughness: 0.2,
+    // 2C. Snow-Covered Pine Groves (InstancedMesh — 120 snow-covered spruces across the pass)
+    const snowTreeCount = this.isHeadless ? 40 : 120;
+    const snowCanopyGeo = new THREE.ConeGeometry(2.2, 5.8, 7);
+    snowCanopyGeo.translate(0, 4.4, 0);
+    const snowCanopyMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      roughness: 0.75,
     });
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      if (Math.abs(Math.cos(a)) < 0.35) continue; // Keep North-South road clear
-      const cx = Math.cos(a) * 14;
-      const cz = -300 + Math.sin(a) * 14;
+    const snowTrunkGeo = new THREE.CylinderGeometry(0.24, 0.38, 3.2, 6);
+    snowTrunkGeo.translate(0, 1.6, 0);
+    const snowTrunkInst = new THREE.InstancedMesh(snowTrunkGeo, woodMat, snowTreeCount);
+    const snowCanopyInst = new THREE.InstancedMesh(
+      snowCanopyGeo,
+      snowCanopyMat,
+      snowTreeCount
+    );
+    let stPlaced = 0;
+    for (let i = 0; i < snowTreeCount; i++) {
+      const tx = -95 + ((i * 43) % 190);
+      const tz = -220 - ((i * 19) % 100);
+      const switchbackCenter = Math.sin((tz + 215) * 0.09) * 18;
+      if (Math.abs(tx) < 11 || Math.abs(tx - switchbackCenter) < 9) continue;
+      if (Math.abs(tz + 255) < 6 && tx < -20 && tx > -60) continue; // Keep chasm bridge clear
+      if (Math.abs(tz + 275) < 12 && Math.abs(tx) < 62) continue; // Keep mine network clear
+      if (Math.hypot(tx, tz + 300) < 20) continue; // Keep Colossus arena clear
+      const ty = getGroundHeight(tx, tz);
+      const s = 0.85 + (i % 5) * 0.14;
+      _dummy.position.set(tx, ty, tz);
+      _dummy.rotation.set(0, (i * 1.7) % (Math.PI * 2), 0);
+      _dummy.scale.set(s, s, s);
+      _dummy.updateMatrix();
+      snowTrunkInst.setMatrixAt(stPlaced, _dummy.matrix);
+      snowCanopyInst.setMatrixAt(stPlaced, _dummy.matrix);
+      this.obstacles.push({ x: tx, z: tz, radius: 0.65 * s, height: 6 * s });
+      stPlaced++;
+    }
+    snowTrunkInst.count = stPlaced;
+    snowCanopyInst.count = stPlaced;
+    snowTrunkInst.instanceMatrix.needsUpdate = true;
+    snowCanopyInst.instanceMatrix.needsUpdate = true;
+    snowTrunkInst.computeBoundingSphere();
+    snowCanopyInst.computeBoundingSphere();
+    this.scene.add(snowTrunkInst, snowCanopyInst);
+
+    // 2D. Dead Mines Network: Timber Support Portals, Rails, Abandoned Minecarts & Rockfalls
+    // Main North-South Mine Adit (z from -250 to -288)
+    for (let z = -250; z >= -288; z -= 4.2) {
+      const ry = getGroundHeight(0, z);
+      const tie = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.14, 0.42), woodMat);
+      tie.position.set(0, ry + 0.08, z);
+      const railL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 4.3), steelMat);
+      railL.position.set(-0.85, ry + 0.18, z);
+      const railR = railL.clone();
+      railR.position.x = 0.85;
+      this.scene.add(tie, railL, railR);
+    }
+
+    // East-West Mine Gallery Tracks (z = -275, x from -38 to +54)
+    for (let x = -36; x <= 52; x += 4.5) {
+      if (Math.abs(x) < 4) continue;
+      const ry = getGroundHeight(x, -275);
+      const tie = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 2.6), woodMat);
+      tie.position.set(x, ry + 0.08, -275);
+      const railN = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.14, 0.1), steelMat);
+      railN.position.set(x, ry + 0.18, -275.85);
+      const railS = railN.clone();
+      railS.position.z = -274.15;
+      this.scene.add(tie, railN, railS);
+    }
+
+    // Timber Mine Support Arches (Крепи штольни) along the galleries
+    const archCoords: [number, number, number][] = [
+      [0, -256, 0],
+      [0, -268, 0],
+      [0, -280, 0],
+      [18, -275, Math.PI / 2],
+      [30, -275, Math.PI / 2],
+      [42, -275, Math.PI / 2],
+      [-18, -275, Math.PI / 2],
+      [-30, -275, Math.PI / 2],
+    ];
+    for (const [ax, az, rot] of archCoords) {
+      const ay = getGroundHeight(ax, az);
+      const archGroup = new THREE.Group();
+      const postL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 4.4, 0.45), woodMat);
+      postL.position.set(-2.6, 2.2, 0);
+      const postR = postL.clone();
+      postR.position.x = 2.6;
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.5, 0.55), woodMat);
+      beam.position.set(0, 4.4, 0);
+      archGroup.add(postL, postR, beam);
+      archGroup.position.set(ax, ay, az);
+      archGroup.rotation.y = rot;
+      this.scene.add(archGroup);
+    }
+
+    // Multiple Abandoned Minecarts (some overturned with Black Ore)
+    const minecartCoords: [number, number, number][] = [
+      [-2.8, -268, 0.15],
+      [14, -273.5, 1.4],
+      [36, -276.5, -1.2],
+      [-24, -273.8, 1.6],
+      [4.2, -284, -0.35],
+    ];
+    for (const [cx, cz, rot] of minecartCoords) {
       const cy = getGroundHeight(cx, cz);
+      const cart = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.1, 2.2), steelMat);
+      cart.position.set(cx, cy + 0.55, cz);
+      cart.rotation.y = rot;
+      this.scene.add(cart);
+      this.obstacles.push({ x: cx, z: cz, radius: 1.3, height: 1.5 });
+    }
+
+    // 2E. Flickering Wall Crystals & Black Ore Veins around the Mine Galleries & Colossus Arena
+    const crystalCoords: [number, number][] = [
+      [-12, -296],
+      [12, -296],
+      [-14, -304],
+      [14, -304],
+      [-8, -311],
+      [8, -311],
+      [24, -270],
+      [38, -270],
+      [50, -272],
+      [48, -280],
+      [-28, -270],
+      [-38, -279],
+      [-55, -252],
+      [22, -242],
+    ];
+    for (let i = 0; i < crystalCoords.length; i++) {
+      const [cx, cz] = crystalCoords[i];
+      const cy = getGroundHeight(cx, cz);
+      const cMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 1.5,
+        roughness: 0.2,
+      });
       const crystal = new THREE.Mesh(
-        new THREE.ConeGeometry(1.3, 4.6, 6),
-        blackCrystalMat
+        new THREE.ConeGeometry(1.1 + (i % 3) * 0.25, 3.8 + (i % 3) * 0.6, 6),
+        cMat
       );
-      crystal.position.set(cx, cy + 2.3, cz);
+      crystal.position.set(cx, cy + 1.9, cz);
+      crystal.rotation.z = ((i % 3) - 1) * 0.18;
       this.scene.add(crystal);
-      this.obstacles.push({ x: cx, z: cz, radius: 1.4, height: 4.6 });
+      this.mineCrystals.push({ mesh: crystal, phase: i * 0.85 });
+      this.obstacles.push({ x: cx, z: cz, radius: 1.3, height: 4.4 });
     }
 
     // =========================================================================
-    // BIOME 3: BLACK BASTION OF THE ASH BROTHERHOOD (z in [-435, -325])
+    // BIOME 3: BLACK BASTION OF THE ASH BROTHERHOOD ("Чёрный Бастион Братства Пепла", z in [-435, -325])
     // =========================================================================
     // Transition 3: Suspension Bridge over Mountain Abyss (z from -320 to -336)
     for (let z = -320; z >= -336; z -= 2.5) {
@@ -872,7 +1486,7 @@ export class SceneManager {
       this.scene.add(postS, postN);
     }
 
-    // Bastion Outer Fortress Gates at z = -346
+    // 3A. Massive Fortress Outer Curtain Walls & Gate Towers at z = -346
     for (const side of [-1, 1]) {
       const bx = side * 9.5;
       const bz = -346;
@@ -885,37 +1499,151 @@ export class SceneManager {
       bastionTower.castShadow = true;
       this.scene.add(bastionTower);
       this.obstacles.push({ x: bx, z: bz, radius: 3.1, height: 11.5 });
+
+      // Curtain wall wings extending from gate towers out to +/- 54m
+      const wallWing = new THREE.Mesh(new THREE.BoxGeometry(40, 7.5, 2.4), stoneMat);
+      const wx = side * 32;
+      const wy = getGroundHeight(wx, bz);
+      wallWing.position.set(wx, wy + 3.75, bz);
+      wallWing.castShadow = true;
+      this.scene.add(wallWing);
+      this.collisionBoxes.push({
+        minX: wx - 20,
+        maxX: wx + 20,
+        minZ: bz - 1.3,
+        maxZ: bz + 1.3,
+        minY: wy,
+        maxY: wy + 7.5,
+        label: 'bastion_wall',
+      });
     }
 
-    // Alchemical Trial Hall Vats (Чаны Тлеющей Крови) around z = -364
+    // 3B. Collapsed Corner Watchtowers with Masonry Rubble at (-54, -348) and (+54, -348)
+    for (const side of [-1, 1]) {
+      const tx = side * 54;
+      const tz = -348;
+      const ty = getGroundHeight(tx, tz);
+      const ruinedTower = new THREE.Mesh(
+        new THREE.CylinderGeometry(3.4, 3.8, 6.2, 8),
+        stoneMat
+      );
+      ruinedTower.position.set(tx, ty + 3.1, tz);
+      this.scene.add(ruinedTower);
+      this.obstacles.push({ x: tx, z: tz, radius: 3.8, height: 6.5 });
+      for (let r = 0; r < 4; r++) {
+        const rubble = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(1.1 + (r % 2) * 0.4, 0),
+          stoneMat
+        );
+        rubble.position.set(
+          tx - side * (3.2 + r * 1.4),
+          ty + 0.6,
+          tz + (r - 1.5) * 1.6
+        );
+        this.scene.add(rubble);
+      }
+    }
+
+    // 3C. Western Wing (x = -38, z = -376): Burned Barracks & Combat Training Grounds with Dummies
+    this.createMedievalHouse(-46, -366, Math.PI / 2, 7.5, 9.5, 3.8);
+    this.createMedievalHouse(-46, -386, Math.PI / 2, 7.5, 9.5, 3.4);
+
+    // 6 Combat Training Dummies (Манекены для фехтования) in the Western Training Yard
+    const dummyCoords: [number, number][] = [
+      [-28, -368],
+      [-34, -368],
+      [-28, -376],
+      [-34, -376],
+      [-28, -384],
+      [-34, -384],
+    ];
+    const strawMat = new THREE.MeshStandardMaterial({
+      color: 0xd97706,
+      roughness: 0.9,
+    });
+    for (const [dx, dz] of dummyCoords) {
+      const dy = getGroundHeight(dx, dz);
+      const dummyGroup = new THREE.Group();
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.12, 2.1, 6),
+        woodMat
+      );
+      post.position.y = 1.05;
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.32, 0.28, 0.95, 8),
+        strawMat
+      );
+      body.position.y = 1.25;
+      const crossbar = new THREE.Mesh(
+        new THREE.BoxGeometry(1.35, 0.12, 0.12),
+        woodMat
+      );
+      crossbar.position.y = 1.45;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), strawMat);
+      head.position.y = 1.92;
+      dummyGroup.add(post, body, crossbar, head);
+      dummyGroup.position.set(dx, dy, dz);
+      this.scene.add(dummyGroup);
+      this.obstacles.push({ x: dx, z: dz, radius: 0.6, height: 2.1 });
+    }
+
+    // 3D. Eastern Wing (x = +38, z = -376): Alchemical Laboratory & Mutagen Vats
     const vatMat = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
       emissive: 0xd97706,
       emissiveIntensity: 1.4,
       roughness: 0.25,
     });
-    for (const side of [-1, 1]) {
-      const vx = side * 9.0;
-      const vz = -364;
+    const mutagenGreenMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x059669,
+      emissiveIntensity: 1.6,
+      roughness: 0.2,
+    });
+    // Central Trial Vats (Чаны Тлеющей Крови) at z = -364 + Eastern Lab Vats at x in [28..44]
+    const allVats: [number, number, boolean][] = [
+      [-9.0, -364, false],
+      [9.0, -364, false],
+      [32.0, -368, true],
+      [42.0, -368, false],
+      [32.0, -382, false],
+      [42.0, -382, true],
+    ];
+    for (const [vx, vz, isGreen] of allVats) {
       const vy = getGroundHeight(vx, vz);
       const vatBase = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.1, 2.4, 1.8, 12),
+        new THREE.CylinderGeometry(2.0, 2.3, 1.8, 12),
         stoneMat
       );
       vatBase.position.set(vx, vy + 0.9, vz);
       const vatGlow = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.8, 1.8, 0.2, 12),
-        vatMat
+        new THREE.CylinderGeometry(1.75, 1.75, 0.2, 12),
+        isGreen ? mutagenGreenMat : vatMat
       );
       vatGlow.position.set(vx, vy + 1.82, vz);
       this.scene.add(vatBase, vatGlow);
-      this.obstacles.push({ x: vx, z: vz, radius: 2.4, height: 2.2 });
+      this.obstacles.push({ x: vx, z: vz, radius: 2.3, height: 2.2 });
     }
+
+    // Alchemical Lab Stone Worktable at (37, -375)
+    const labY = getGroundHeight(37, -375);
+    const labTable = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.0, 1.8), stoneMat);
+    labTable.position.set(37, labY + 0.5, -375);
+    this.scene.add(labTable);
+    this.collisionBoxes.push({
+      minX: 35.2,
+      maxX: 38.8,
+      minZ: -376.0,
+      maxZ: -374.0,
+      minY: labY,
+      maxY: labY + 1.5,
+      label: 'alchemy_table',
+    });
 
     // Courtyard of Fallen Brothers & Grandmaster Vesper Duel Arena at (0, -400)
     const courtY = getGroundHeight(0, -400);
     const courtFloor = new THREE.Mesh(
-      new THREE.CylinderGeometry(16.5, 17.5, 0.35, 16),
+      new THREE.CylinderGeometry(18.5, 19.5, 0.35, 16),
       stoneMat
     );
     courtFloor.position.set(0, courtY + 0.15, -400);
@@ -942,7 +1670,7 @@ export class SceneManager {
     }
 
     // =========================================================================
-    // BIOME 4: ECLIPSE CRATER & VOID THRONE HALL (z in [-550, -435])
+    // BIOME 4: ECLIPSE CRATER & VOID THRONE HALL ("Кратер Затмения и Зал Трона Пустоты", z in [-550, -435])
     // =========================================================================
     const obsidianMat = new THREE.MeshStandardMaterial({
       color: 0x090d16,
@@ -954,6 +1682,14 @@ export class SceneManager {
       emissive: 0xbe123c,
       emissiveIntensity: 2.1,
       roughness: 0.2,
+    });
+    const pureEnergyBridgeMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e,
+      emissive: 0xe11d48,
+      emissiveIntensity: 2.4,
+      transparent: true,
+      opacity: 0.86,
+      roughness: 0.15,
     });
 
     // Transition 4: Underground Obsidian Gates at z = -436
@@ -970,49 +1706,106 @@ export class SceneManager {
       this.obstacles.push({ x: ox, z: oz, radius: 2.3, height: 12 });
     }
 
-    // Crimson Void Energy Rivers flanking the Obsidian Causeway (z from -445 to -520)
+    // 4A. Crimson Void Energy & Lava Rivers flanking the Causeway and Crater Floor
     for (const side of [-1, 1]) {
       const riverStream = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.2, 76),
+        new THREE.PlaneGeometry(4.2, 82),
         crimsonEnergyMat
       );
       riverStream.rotateX(-Math.PI / 2);
       riverStream.position.set(
-        side * 9.5,
-        getGroundHeight(side * 9.5, -482) + 0.15,
+        side * 10.5,
+        getGroundHeight(side * 10.5, -482) + 0.15,
         -482
       );
       this.scene.add(riverStream);
     }
 
-    // Floating Rock Debris suspended in mid-air above the Eclipse Crater
-    for (let i = 0; i < 12; i++) {
-      const angle = (i / 12) * Math.PI * 2;
-      const radius = 16 + (i % 3) * 7;
-      const fx = Math.cos(angle) * radius;
-      const fz = -492 + Math.sin(angle) * 28;
-      const baseY = getGroundHeight(fx, fz) + 5.5 + (i % 4) * 2.2;
-      const shard = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(1.4 + (i % 3) * 0.5, 0),
+    // 4B. Walkable Bridges of Pure Crimson Energy connecting to West (-42, -478) & East (+42, -478) Obsidian Islands
+    for (const side of [-1, 1]) {
+      const bridgeMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(24, 0.26, 4.2),
+        pureEnergyBridgeMat
+      );
+      const bx = side * 20;
+      const by = getGroundHeight(bx, -478);
+      bridgeMesh.position.set(bx, by + 0.08, -478);
+      this.scene.add(bridgeMesh);
+
+      // Walkable Obsidian Sanctuary Island Dais at (-42, -478) and (+42, -478)
+      const islandX = side * 42;
+      const islandY = getGroundHeight(islandX, -478);
+      const islandDais = new THREE.Mesh(
+        new THREE.CylinderGeometry(11.5, 9.0, 2.2, 8),
         obsidianMat
       );
+      islandDais.position.set(islandX, islandY - 0.9, -478);
+      this.scene.add(islandDais);
+
+      // Ruined Precursor Altar on each Obsidian Island
+      const ruinedAltar = new THREE.Mesh(
+        new THREE.BoxGeometry(2.4, 1.5, 1.4),
+        obsidianMat
+      );
+      ruinedAltar.position.set(islandX + side * 4, islandY + 0.75, -478);
+      const brokenRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.6, 0.14, 6, 16, Math.PI * 1.4),
+        crimsonEnergyMat
+      );
+      brokenRing.position.set(islandX + side * 4, islandY + 2.2, -478);
+      this.scene.add(ruinedAltar, brokenRing);
+    }
+
+    // 4C. 18 Floating Obsidian Islands & Shards suspended in mid-air above the Eclipse Crater
+    for (let i = 0; i < 18; i++) {
+      const angle = (i / 18) * Math.PI * 2;
+      const radius = 22 + (i % 4) * 11;
+      const fx = Math.cos(angle) * radius;
+      const fz = -492 + Math.sin(angle) * 34;
+      const baseY = getGroundHeight(fx, fz) + 5.8 + (i % 4) * 2.5;
+      const shard = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1.6 + (i % 3) * 0.75, 0),
+        obsidianMat
+      );
+      shard.scale.set(1.3, 0.75, 1.3);
       shard.position.set(fx, baseY, fz);
       this.scene.add(shard);
       this.floatingCraterRocks.push({
         mesh: shard,
         baseY,
-        phase: i * 0.9,
+        phase: i * 0.75,
       });
     }
 
-    // Void Throne Citadel Platform at (0, -505) & Final Eclipse Altar at (0, -518)
+    // 4D. Giant Void Throne Boss Arena at (0, -505) & Final Eclipse Altar at (0, -518)
     const throneY = getGroundHeight(0, -505);
     const voidDais = new THREE.Mesh(
-      new THREE.CylinderGeometry(18, 19.5, 0.5, 16),
+      new THREE.CylinderGeometry(20, 22, 0.6, 16),
       obsidianMat
     );
     voidDais.position.set(0, throneY + 0.2, -505);
     this.scene.add(voidDais);
+
+    // Ring of 8 Obsidian Runic Monoliths flanking the Boss Arena
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) < 0.35) continue; // Keep North-South causeway open
+      const mx = Math.cos(a) * 18.5;
+      const mz = -505 + Math.sin(a) * 18.5;
+      const my = getGroundHeight(mx, mz);
+      const monolith = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 6.8, 1.5),
+        obsidianMat
+      );
+      monolith.position.set(mx, my + 3.4, mz);
+      const runeVein = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, 5.2, 1.56),
+        crimsonEnergyMat
+      );
+      monolith.add(runeVein);
+      this.scene.add(monolith);
+      this.obstacles.push({ x: mx, z: mz, radius: 1.4, height: 6.8 });
+    }
 
     // Monolithic Obsidian Spire behind the Eclipse Altar at (0, -525)
     const spireY = getGroundHeight(0, -525);
@@ -1274,7 +2067,25 @@ export class SceneManager {
         getGroundHeight(-65, -55) + 2.3 + Math.sin(elapsed * 2.5) * 0.15;
     }
 
-    // Animate Floating Obsidian Rocks in the Eclipse Crater
+    // Animate Toxic Swamp Water Bubbles (Biome 1)
+    if (playerZ < -95 && playerZ > -230) {
+      for (const sb of this.swampBubbles) {
+        const cycle = (elapsed * 0.9 + sb.phase) % 1.0;
+        sb.mesh.position.y = sb.baseY + cycle * 0.65;
+        const scale = Math.sin(cycle * Math.PI) * 1.35;
+        sb.mesh.scale.setScalar(Math.max(0.05, scale));
+      }
+    }
+
+    // Animate Flickering Wall Crystals in the Dead Mines (Biome 2)
+    if (playerZ < -205 && playerZ > -340) {
+      for (const mc of this.mineCrystals) {
+        const mat = mc.mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = 1.2 + Math.sin(elapsed * 3.4 + mc.phase) * 0.65;
+      }
+    }
+
+    // Animate Floating Obsidian Rocks in the Eclipse Crater (Biome 4)
     if (playerZ < -390) {
       for (const fr of this.floatingCraterRocks) {
         fr.mesh.position.y = fr.baseY + Math.sin(elapsed * 1.3 + fr.phase) * 0.65;
@@ -1370,6 +2181,26 @@ export class SceneManager {
         }
         posAttr.needsUpdate = true;
       }
+    }
+
+    // Advance Wind Uniforms for custom vertex shaders (Trees, Grass, Water)
+    this.windTimeUniform.value += dt;
+    this.windStrengthUniform.value = wMetrics.windStrength;
+
+    // Animate Rising Sparks & Embers from campfires and torches
+    if (this.embersSystem && this.emberVelocities) {
+      const posAttr = this.embersSystem.geometry.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < this.emberVelocities.length; i++) {
+        let ey = posAttr.getY(i) + this.emberVelocities[i] * dt;
+        let ex = posAttr.getX(i) + Math.sin(elapsed * 2.5 + i) * 0.012;
+        let ez = posAttr.getZ(i) + Math.cos(elapsed * 2.2 + i) * 0.012;
+        // Loop back down near anchor flame
+        if (ey > 7.5) {
+          ey = 1.2 + (i % 5) * 0.4;
+        }
+        posAttr.setXYZ(i, ex, ey, ez);
+      }
+      posAttr.needsUpdate = true;
     }
   }
 

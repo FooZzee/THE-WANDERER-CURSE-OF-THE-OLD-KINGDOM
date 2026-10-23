@@ -201,9 +201,13 @@ export class CombatSystem {
             continue;
           }
 
+          const activeSword = player.stats.activeSword ?? 'steel';
+          const swordEff = getSwordEffectiveness(activeSword, ed.isSilverVulnerable);
+
           let dmg = calculatePlayerAttackDamage({
             steelAttack: effectiveStats.steelAttack,
             silverAttack: effectiveStats.silverAttack,
+            activeSword,
             isHeavy: player.isHeavyAttack,
             comboStep: player.comboStep,
             enemy: ed,
@@ -345,9 +349,15 @@ export class CombatSystem {
           }
 
           enemyAI.triggerHitFlash(activeEnemy);
-          this.spawnHitParticles(ed.x, ed.y + 1.15, ed.z, 0xf59e0b, 18);
+          this.spawnHitParticles(
+            ed.x,
+            ed.y + 1.15,
+            ed.z,
+            activeSword === 'silver' ? 0x38bdf8 : 0xf59e0b,
+            18
+          );
           this.spawnHitParticles(ed.x, ed.y + 1.0, ed.z, 0xdc2626, 14);
-          this.audio.playHitImpact(false);
+          this.audio.playHitImpact(swordEff < 1.0);
           onCameraShake?.(player.isHeavyAttack ? 0.16 : 0.08, 0.14);
 
           const strikeLabel = player.isHeavyAttack
@@ -355,15 +365,32 @@ export class CombatSystem {
             : isBackstab
             ? 'Удар в спину'
             : `Комбо x${player.comboStep}`;
-          onCombatLog(
-            `${strikeLabel}${isCrit ? ' [КРИТ!]' : ''} по ${ed.name}: -${dmg} ОЗ`,
-            'damage'
-          );
-          onFloatingDamage?.(
-            `-${dmg}${isCrit ? ' КРИТ!' : ''}`,
-            isCrit,
-            false
-          );
+          if (swordEff < 1.0) {
+            const needed = ed.isSilverVulnerable
+              ? 'Серебряный меч [клавиша 2]'
+              : 'Стальной меч [клавиша 1]';
+            onCombatLog(
+              `⚠️ Неэффективный клинок (35% урона)! Против «${ed.name}» нужен ${needed}: -${dmg} ОЗ`,
+              'info'
+            );
+            onFloatingDamage?.(
+              `-${dmg} (НУЖЕН ${ed.isSilverVulnerable ? 'СЕРЕБРЯНЫЙ [2]' : 'СТАЛЬНОЙ [1]'})`,
+              false,
+              false,
+              '#94a3b8'
+            );
+          } else {
+            onCombatLog(
+              `${strikeLabel}${isCrit ? ' [КРИТ!]' : ''} (${activeSword === 'silver' ? 'Серебро' : 'Сталь'}) по ${ed.name}: -${dmg} ОЗ`,
+              'damage'
+            );
+            onFloatingDamage?.(
+              `-${dmg}${isCrit ? ' КРИТ!' : ''}`,
+              isCrit,
+              false,
+              activeSword === 'silver' ? '#bae6fd' : undefined
+            );
+          }
 
           if (ed.hp <= 0) {
             ed.state = 'DEAD';

@@ -1,16 +1,24 @@
 import type {
+  ActiveSwordType,
   BestiaryEntry,
   BiomeId,
+  CollisionBox,
+  CompanionCommand,
+  CompanionId,
   EnemyData,
+  EquipmentSlot,
   GameItem,
   MagicSignInfo,
+  NpcActivityState,
   PlayerStats,
   Quest,
+  QuestConsequenceRecord,
   SignType,
   SkillNode,
   WaystoneData,
   WeatherType,
   WitcherSetId,
+  WorldInteractable,
 } from './types.ts';
 
 export const WAYSTONES: WaystoneData[] = [
@@ -351,6 +359,18 @@ export const BESTIARY_ENTRIES: BestiaryEntry[] = [
     trophyBonus: 'Право решить судьбу Вальдмарка у Алтаря Затмения',
     dangerLevel: 5,
   },
+  {
+    id: 'bestiary_bounty_hunter',
+    type: 'bounty_hunter',
+    name: 'Наёмный Охотник за головами',
+    title: 'Карательный отряд трактов Вальдмарка',
+    category: 'Люди и Охотники',
+    lore: 'Безжалостные ветераны и головорезы, нанятые купеческой гильдией и старостами за голову «Пепельного Мясника». Выслеживают Корвуса на дорогах при дурной славе (Репутация <= -20), используют арбалеты и тяжёлые клинки.',
+    weaknessSigns: ['Иллюзия (Морок)', 'Импульс (Аард)', 'Пламя (Игнис)'],
+    weaknessOil: 'Стальной клинок и блок [ПКМ]',
+    trophyBonus: 'Кошель с кровавым золотом и заказ на голову Зольника',
+    dangerLevel: 3,
+  },
 ];
 
 /**
@@ -369,55 +389,118 @@ export function getGroundHeight(x: number, z: number): number {
     // Transition blend at z in [-112, -102]
     const northBlend = Math.min(1, Math.max(0, (-102 - z) / 10));
 
-    // Biome 1: Gallows Swamp (z in [-215, -102]) — low-lying sunken mire
+    // Biome 1: Gallows Swamp & Drowned Mire (z in [-215, -102], x in [-95, 95])
     if (z >= -215) {
       const distSwampArena = Math.hypot(x - 0, z - -190);
       const distCharonCamp = Math.hypot(x - -8, z - -145);
-      const arenaFlat = Math.min(1, Math.max(0, (distSwampArena - 18) / 10));
+      const distManor = Math.hypot(x - 30, z - -166);
+      const distStiltVillage = Math.hypot(x - -46, z - -158);
+      const distMarauderIsle = Math.hypot(x - 52, z - -138);
+      const arenaFlat = Math.min(1, Math.max(0, (distSwampArena - 20) / 10));
       const campFlat = Math.min(1, Math.max(0, (distCharonCamp - 12) / 8));
-      // Wooden causeway / boardwalk along x in [-3.5, 3.5]
-      if (Math.abs(x) < 3.6) {
-        return -0.25 * northBlend;
+      const manorFlat = Math.min(1, Math.max(0, (distManor - 16) / 8));
+      const stiltFlat = Math.min(1, Math.max(0, (distStiltVillage - 16) / 8));
+      const isleFlat = Math.min(1, Math.max(0, (distMarauderIsle - 14) / 8));
+
+      // Main north-south boardwalk or east-west branch boardwalks
+      const onMainBoardwalk = Math.abs(x) < 3.8;
+      const onWestBranch = Math.abs(z - -158) < 2.6 && x >= -52 && x <= 0;
+      const onEastBranch = Math.abs(z - -166) < 2.6 && x >= 0 && x <= 38;
+      if (onMainBoardwalk || onWestBranch || onEastBranch) {
+        return -0.22 * northBlend;
       }
+
+      // Elevated dry hummocks for Manor & Marauder island
+      if (distManor < 14) {
+        return 0.45 * northBlend;
+      }
+      if (distMarauderIsle < 12) {
+        return 0.35 * northBlend;
+      }
+
+      // Deep toxic hollows in the bog vs undulating mire
+      const toxicHollow =
+        Math.hypot(x - -26, z - -134) < 12 || Math.hypot(x - 24, z - -182) < 12
+          ? -0.45
+          : 0;
+
       const swampWaves =
-        Math.sin(x * 0.06) * Math.cos(z * 0.06) * 0.85 * arenaFlat * campFlat - 0.65;
+        (Math.sin(x * 0.055) * Math.cos(z * 0.055) * 0.95 +
+          Math.sin(x * 0.14 - z * 0.11) * 0.35) *
+          arenaFlat *
+          campFlat *
+          manorFlat *
+          stiltFlat *
+          isleFlat -
+        0.65 +
+        toxicHollow;
       return swampWaves * northBlend;
     }
 
-    // Biome 2: Silvertooth Pass & Dead Mines (z in [-325, -215]) — ascending rocky canyon
+    // Biome 2: Silvertooth Pass & Dead Mines (z in [-325, -215], x in [-95, 95])
     if (z >= -325) {
       const progress = Math.min(1, Math.max(0, (-215 - z) / 110));
       const baseElevation = progress * 6.5; // Climbs from 0 to +6.5m
       const distColossusArena = Math.hypot(x - 0, z - -300);
       const distBromCamp = Math.hypot(x - 6, z - -255);
+      const distMineHub = Math.hypot(x - -38, z - -276);
+      const distEastGrove = Math.hypot(x - 44, z - -262);
       const flatFactor =
-        Math.min(1, Math.max(0, (distColossusArena - 20) / 10)) *
-        Math.min(1, Math.max(0, (distBromCamp - 12) / 8));
-      // Canyon road center vs rocky walls
-      const roadFactor = Math.min(1, Math.max(0, (Math.abs(x) - 10) / 18));
+        Math.min(1, Math.max(0, (distColossusArena - 22) / 10)) *
+        Math.min(1, Math.max(0, (distBromCamp - 13) / 8)) *
+        Math.min(1, Math.max(0, (distMineHub - 18) / 8)) *
+        Math.min(1, Math.max(0, (distEastGrove - 16) / 8));
+
+      // Winding mountain switchback (серпантин) path
+      const serpCenter = Math.sin((z + 215) * 0.075) * 16;
+      const distFromSerp = Math.abs(x - serpCenter);
+      const onSwitchback = distFromSerp < 5.5;
+      if (onSwitchback) {
+        return baseElevation + Math.sin(z * 0.04) * 0.25 * flatFactor;
+      }
+
+      // Suspension bridge across chasm at z in [-248, -240]
+      if (Math.abs(z - -244) < 3.2 && Math.abs(x) < 18) {
+        return baseElevation + 0.4;
+      }
+
+      const roadFactor = Math.min(1, Math.max(0, (Math.abs(x) - 12) / 26));
       const crags =
-        (Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2.6 + roadFactor * 3.2) * flatFactor;
+        (Math.sin(x * 0.048) * Math.cos(z * 0.048) * 2.4 + roadFactor * 3.0) * flatFactor;
       return baseElevation + crags;
     }
 
-    // Biome 3: Black Bastion of the Brotherhood of Ash (z in [-435, -325]) — mountain plateau at +6.5m
+    // Biome 3: Black Bastion of the Brotherhood of Ash (z in [-435, -325], x in [-95, 95])
     if (z >= -435) {
       const basePlateau = 6.5;
       const distCourtyard = Math.hypot(x - 0, z - -395);
       const distKaelCamp = Math.hypot(x - 0, z - -355);
+      const distWestBarracks = Math.hypot(x - -42, z - -382);
+      const distEastLab = Math.hypot(x - 42, z - -382);
       const flatBastion =
-        Math.min(1, Math.max(0, (distCourtyard - 26) / 12)) *
-        Math.min(1, Math.max(0, (distKaelCamp - 14) / 8));
-      const ridges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.4 * flatBastion;
+        Math.min(1, Math.max(0, (distCourtyard - 28) / 12)) *
+        Math.min(1, Math.max(0, (distKaelCamp - 16) / 8)) *
+        Math.min(1, Math.max(0, (distWestBarracks - 20) / 10)) *
+        Math.min(1, Math.max(0, (distEastLab - 20) / 10));
+      const ridges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.35 * flatBastion;
       return basePlateau + ridges;
     }
 
-    // Biome 4: Eclipse Crater & Throne of the Void (z < -435) — descends into obsidian caldera at +3.5m
+    // Biome 4: Eclipse Crater & Throne of the Void (z < -435, x in [-95, 95])
     const craterProgress = Math.min(1, Math.max(0, (-435 - z) / 25));
     const baseCrater = 6.5 - craterProgress * 3.0; // Settles at +3.5m
     const distThrone = Math.hypot(x - 0, z - -505);
-    const flatThrone = Math.min(1, Math.max(0, (distThrone - 28) / 12));
-    const rim = Math.min(1, Math.max(0, (Math.abs(x) - 26) / 20)) * 3.5 * flatThrone;
+    const distWestIsland = Math.hypot(x - -42, z - -482);
+    const distEastIsland = Math.hypot(x - 42, z - -482);
+    const flatThrone =
+      Math.min(1, Math.max(0, (distThrone - 30) / 12)) *
+      Math.min(1, Math.max(0, (distWestIsland - 16) / 8)) *
+      Math.min(1, Math.max(0, (distEastIsland - 16) / 8));
+    // Energy bridges linking side obsidian islands to the center at z = -482
+    if (Math.abs(z - -482) < 3.5 && Math.abs(x) <= 46) {
+      return baseCrater + 0.25;
+    }
+    const rim = Math.min(1, Math.max(0, (Math.abs(x) - 48) / 24)) * 3.2 * flatThrone;
     return baseCrater + rim;
   }
 
@@ -528,8 +611,78 @@ export function isTargetInAttackCone(
 }
 
 /**
- * Calculates effective player combat stats taking equipped items, Witcher Set bonuses,
- * Trophy passives, socketed Runes, Elixirs, Decoctions, and skill tree into account.
+ * Determines which exclusive equipment slot an item belongs to.
+ * Returns null for consumables, resources, runes, blueprints, and quest items.
+ */
+export function getItemEquipSlot(item: GameItem): EquipmentSlot | null {
+  if (item.equipSlot) return item.equipSlot;
+  if (item.category === 'armor') return 'armor';
+  if (item.category === 'trophy') return 'trophy';
+  if (item.category === 'weapon') {
+    const steel = item.stats?.attack ?? 0;
+    const silver = item.stats?.silverAttack ?? 0;
+    if (silver > steel) return 'silverSword';
+    if (
+      item.id.includes('silver') ||
+      item.id.includes('ancient') ||
+      item.id.includes('coven') ||
+      item.id.includes('flame') ||
+      item.id.includes('grandmaster') ||
+      item.id.includes('plague_scythe') ||
+      item.id.includes('dusk_fangs') ||
+      item.id.includes('void_voice')
+    ) {
+      return 'silverSword';
+    }
+    return 'steelSword';
+  }
+  return null;
+}
+
+/**
+ * Enforces strict slot exclusivity across an inventory array:
+ * at most ONE item per EquipmentSlot ('steelSword', 'silverSword', 'armor', 'trophy')
+ * can be equipped at any time. If preferredItemId is provided, it wins its slot.
+ */
+export function enforceExclusiveEquipment(
+  items: GameItem[],
+  preferredItemId?: string
+): GameItem[] {
+  const occupiedSlots = new Set<EquipmentSlot>();
+  const result = items.map((i) => ({ ...i }));
+
+  if (preferredItemId) {
+    const preferred = result.find((i) => i.id === preferredItemId);
+    if (preferred) {
+      preferred.equipped = true;
+      const slot = getItemEquipSlot(preferred);
+      if (slot) {
+        occupiedSlots.add(slot);
+      }
+    }
+  }
+
+  for (const item of result) {
+    if (item.id === preferredItemId) continue;
+    if (!item.equipped) continue;
+    const slot = getItemEquipSlot(item);
+    if (!slot) {
+      item.equipped = false;
+      continue;
+    }
+    if (occupiedSlots.has(slot)) {
+      item.equipped = false;
+    } else {
+      occupiedSlots.add(slot);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Calculates effective player combat stats taking equipped items (strictly 1 per slot),
+ * Witcher Set bonuses, Trophy passives, socketed Runes, Elixirs, Decoctions, and skill tree into account.
  */
 export function computeEffectivePlayerStats(
   base: PlayerStats,
@@ -565,8 +718,17 @@ export function computeEffectivePlayerStats(
     frost_warden: 0,
   };
 
+  // Enforce 1 item per EquipmentSlot during stat calculation so stats can never stack
+  const seenSlots = new Set<EquipmentSlot>();
+
   for (const item of inventory) {
     if (!item.equipped || !item.stats) continue;
+    const slot = getItemEquipSlot(item);
+    if (slot) {
+      if (seenSlots.has(slot)) continue;
+      seenSlots.add(slot);
+    }
+
     if (item.setId) {
       setCounts[item.setId] = (setCounts[item.setId] ?? 0) + 1;
     }
@@ -671,18 +833,64 @@ export function computeEffectivePlayerStats(
 }
 
 /**
- * Calculates damage dealt by player to an enemy.
+ * Returns sword effectiveness multiplier and HUD hint based on active sword vs enemy vulnerability.
+ */
+export function getSwordEffectiveness(
+  activeSword: ActiveSwordType,
+  isSilverVulnerable: boolean
+): {
+  multiplier: number;
+  isOptimal: boolean;
+  hint: string;
+} {
+  if (activeSword === 'silver' && isSilverVulnerable) {
+    return {
+      multiplier: 1.0,
+      isOptimal: true,
+      hint: 'Серебряный клинок эффективен против чудовища (100% урона)',
+    };
+  }
+  if (activeSword === 'steel' && !isSilverVulnerable) {
+    return {
+      multiplier: 1.0,
+      isOptimal: true,
+      hint: 'Стальной клинок эффективен против зверя/человека (100% урона)',
+    };
+  }
+  if (activeSword === 'steel' && isSilverVulnerable) {
+    return {
+      multiplier: 0.35,
+      isOptimal: false,
+      hint: 'Сталь малоэффективна против монстра (35% урона) — обнажите Серебро [2]!',
+    };
+  }
+  return {
+    multiplier: 0.35,
+    isOptimal: false,
+    hint: 'Серебро мягкое против людей и зверей (35% урона) — обнажите Сталь [1]!',
+  };
+}
+
+/**
+ * Calculates damage dealt by player to an enemy, factoring in active sword type (Steel vs Silver).
  */
 export function calculatePlayerAttackDamage(params: {
   steelAttack: number;
   silverAttack: number;
+  activeSword?: ActiveSwordType;
   isHeavy: boolean;
   comboStep: number; // 1, 2, 3
   enemy: Pick<EnemyData, 'isSilverVulnerable' | 'state'> &
     Partial<Pick<EnemyData, 'type' | 'isContractBoss'>>;
   bossDamageMultiplier?: number;
 }): number {
-  const baseDmg = params.enemy.isSilverVulnerable ? params.silverAttack : params.steelAttack;
+  const chosenSword: ActiveSwordType =
+    params.activeSword ?? (params.enemy.isSilverVulnerable ? 'silver' : 'steel');
+  const baseDmg = chosenSword === 'silver' ? params.silverAttack : params.steelAttack;
+  const effectiveness = params.activeSword
+    ? getSwordEffectiveness(params.activeSword, params.enemy.isSilverVulnerable).multiplier
+    : 1.0;
+
   const heavyMult = params.isHeavy ? 1.75 : 1.0;
   const comboMult = 1 + (Math.max(1, Math.min(3, params.comboStep)) - 1) * 0.15;
   const stunBonus = params.enemy.state === 'STUNNED' ? 1.25 : 1.0;
@@ -704,7 +912,10 @@ export function calculatePlayerAttackDamage(params: {
   const bossMult =
     isBossEnemy && params.bossDamageMultiplier ? params.bossDamageMultiplier : 1.0;
 
-  return Math.max(1, Math.round(baseDmg * heavyMult * comboMult * stunBonus * bossMult));
+  return Math.max(
+    1,
+    Math.round(baseDmg * effectiveness * heavyMult * comboMult * stunBonus * bossMult)
+  );
 }
 
 /**
@@ -1158,6 +1369,782 @@ export function discoverLoreEntry(
     unlockedLoreMaster,
   };
 }
+
+// ============================================================================
+// 1. REPUTATION & MORALITY SYSTEM («Спаситель Вальдмарка» vs «Пепельный Мясник»)
+// ============================================================================
+
+export function clampReputation(rep: number): number {
+  return Math.max(-100, Math.min(100, Math.round(rep)));
+}
+
+export interface ReputationInfo {
+  score: number;
+  title: string;
+  tier: 'savior' | 'defender' | 'neutral' | 'mercenary' | 'butcher';
+  priceMultiplier: number;
+  greetingPrefix: string;
+  triggersBountyHunters: boolean;
+  bountyHuntersActive: boolean;
+}
+
+export function getReputationInfo(reputation = 0): ReputationInfo {
+  const score = clampReputation(reputation);
+  if (score >= 50) {
+    return {
+      score,
+      title: 'Спаситель Вальдмарка',
+      tier: 'savior',
+      priceMultiplier: 0.75, // 25% discount
+      greetingPrefix: 'Честь и слава Спасителю Вальдмарка! Для тебя лучшие цены в долине.',
+      triggersBountyHunters: false,
+      bountyHuntersActive: false,
+    };
+  }
+  if (score >= 15) {
+    return {
+      score,
+      title: 'Защитник Долины',
+      tier: 'defender',
+      priceMultiplier: 0.88, // 12% discount
+      greetingPrefix: 'Рады видеть честного Зольника! Люди благодарны за твою защиту.',
+      triggersBountyHunters: false,
+      bountyHuntersActive: false,
+    };
+  }
+  if (score <= -50) {
+    return {
+      score,
+      title: 'Пепельный Мясник',
+      tier: 'butcher',
+      priceMultiplier: 1.3, // 30% markup at honest shops
+      greetingPrefix: 'Не убивай! За твою голову назначена награда, Пепельный Мясник...',
+      triggersBountyHunters: true,
+      bountyHuntersActive: true,
+    };
+  }
+  if (score <= -20) {
+    return {
+      score,
+      title: 'Безжалостный Наёмник',
+      tier: 'mercenary',
+      priceMultiplier: 1.15, // 15% markup
+      greetingPrefix: 'Говорят, от твоего меча плачут даже вдовы... Плати сполна, Зольник.',
+      triggersBountyHunters: true,
+      bountyHuntersActive: true,
+    };
+  }
+  return {
+    score,
+    title: 'Странствующий Зольник',
+    tier: 'neutral',
+    priceMultiplier: 1.0,
+    greetingPrefix: 'Здравствуй, охотник из Братства Пепла.',
+    triggersBountyHunters: false,
+    bountyHuntersActive: false,
+  };
+}
+
+export function calculateMerchantPrice(
+  basePrice: number,
+  reputation = 0,
+  isFence = false
+): number {
+  const info = getReputationInfo(reputation);
+  if (isFence) {
+    // Fence on Silvertooth Pass favors outlaws and gives a discount to low-reputation players
+    const fenceMult = info.score <= -20 ? 0.8 : info.score >= 40 ? 1.1 : 0.95;
+    return Math.max(1, Math.round(basePrice * fenceMult));
+  }
+  return Math.max(1, Math.round(basePrice * info.priceMultiplier));
+}
+
+// ============================================================================
+// 2. COMPANIONS SYSTEM (Лира, Торвальд, Веспер)
+// ============================================================================
+
+export interface CompanionProfile {
+  id: CompanionId;
+  name: string;
+  title: string;
+  role: string;
+  roleDescription: string;
+  weaponLabel: string;
+  weaponDesc: string;
+  abilityLabel: string;
+  maxHp: number;
+  baseDamage: number;
+  preferredRange: number;
+  biomeBarks: Partial<Record<BiomeId, string>>;
+  campfireDialogue: {
+    title: string;
+    text: string;
+    corvusReply: string;
+    bondBonusText: string;
+  };
+}
+
+export const COMPANION_PROFILES: Record<CompanionId, CompanionProfile> = {
+  lyra: {
+    id: 'lyra',
+    name: 'Лира из Вольной Роты',
+    title: 'Мастер-лучница и следопыт',
+    role: 'Мастер-лучница и следопыт',
+    roleDescription: 'Держит дистанцию, расстреливает врагов из лука и подсвечивает ловушки/тайники',
+    weaponLabel: 'Длинный тисовый лук',
+    weaponDesc: 'Длинный тисовый лук',
+    abilityLabel: 'Стрелковое прикрытие и подсветка ловушек/тайников',
+    maxHp: 210,
+    baseDamage: 26,
+    preferredRange: 9.5,
+    biomeBarks: {
+      village: 'Лира: «В Вороньей Пади хоть пахнет хлебом и дымом, а не мертвечиной.»',
+      old_forest: 'Лира: «Держи тетиву сухой, Корвус. В этих зарослях волки заходят со спины.»',
+      cursed_sanctuary: 'Лира: «От этого алтаря у меня мурашки по коже... Смотри под ноги, я подсвечу тайники!»',
+      ruined_fortress: 'Лира: «Вольная Рота штурмовала такие стены в юности. Ищи брешь во фланге!»',
+      ash_cemetery: 'Лира: «Костры инквизиторов и могильный пепел... Не подпускай мертвецов близко, я прикрою залпом!»',
+      gallows_swamp: 'Лира: «Проклятая трясина! Клетки на деревьях ещё качаются... Стреляю по тварям в воде!»',
+      silver_pass: 'Лира: «Пальцы коченеют от метели на перевале, но моя стрела найдёт глаз троглодита.»',
+      ash_bastion: 'Лира: «Так вот где вас ковали, Зольников... Мрачное место даже для наёмницы.»',
+      eclipse_crater: 'Лира: «Небо расколото надвое... Клянусь Вольной Ротой, Корвус, мы дойдём до Трона!»',
+    },
+    campfireDialogue: {
+      title: 'Беседа у костра: Клятва Вольной Роты',
+      text: 'Знаешь, почему я ушла из Вольной Роты, Корвус? В Ночь Пепельного Затмения наш капитан приказал бросить беженцев у моста и спасать обоз с золотом. Я пустила стрелу ему в сапог и осталась прикрывать переправу. С тех пор я стреляю только за тех, кто не прячется за чужими спинами.',
+      corvusReply: 'Твой лук спас мне жизнь не раз, Лира. Вместе мы выведем эту долину из мрака.',
+      bondBonusText: 'Узы доверия с Лирой укреплены: +15% к урону стрел и скорости стрельбы!',
+    },
+  },
+  thorvald: {
+    id: 'thorvald',
+    name: 'Брат Торвальд',
+    title: 'Паладин-Отступник Алого Солнца',
+    role: 'Паладин-Отступник Алого Солнца',
+    roleDescription: 'Танкует врагов щитом и булавой, периодически накладывает лечение и щит Света',
+    weaponLabel: 'Башенный щит и боевое кадило-булава',
+    weaponDesc: 'Башенный щит и булава',
+    abilityLabel: 'Танкование угрозы и «Благословение Света» (Щит + Исцеление)',
+    maxHp: 340,
+    baseDamage: 32,
+    preferredRange: 2.3,
+    biomeBarks: {
+      village: 'Торвальд: «Эти люди измучены страхом. Наш щит — их единственная надежда, брат Корвус.»',
+      old_forest: 'Торвальд: «Тьма в кронах сгущается, но истинный Свет не нуждается в кострах инквизиции.»',
+      cursed_sanctuary: 'Торвальд: «Ересь древнего культа! Встань за моим щитом, Зольник, я приму первый удар.»',
+      ruined_fortress: 'Торвальд: «Гордыня короля Малакора обратила твердыню в склеп. Сокрушим его стражей!»',
+      ash_cemetery: 'Торвальд: «Инквизитор Лазарь опозорил наш Орден. Истинный паладин защищает живых, а не сжигает их!»',
+      gallows_swamp: 'Торвальд: «Господи милосердный... Беженцев топили здесь целыми семьями. Я упокою их души булавой.»',
+      silver_pass: 'Торвальд: «Мороз Среброзубого Перевала не остудит праведный гнев! Держись за моей спиной!»',
+      ash_bastion: 'Торвальд: «Твоё Братство приняло мученический венец, Корвус. Почтим их память в честном бою!»',
+      eclipse_crater: 'Торвальд: «В самое пекло Пустоты! Пусть мой щит расколется, но ты дойдёшь до Алтаря!»',
+    },
+    campfireDialogue: {
+      title: 'Беседа у костра: Пепел и Солнце',
+      text: 'Когда Лазарь приказал запереть ворота чумного квартала и поджечь крыши, я сорвал с плаща золотое солнце Ордена. Они называют тебя мутантом с Тлеющей Кровью, Корвус, но в твоём сердце больше человечности, чем у всех кардиналов столицы. Мой щит закрывает тебя до последнего вздоха.',
+      corvusReply: 'Для меня честь идти в бой плечом к плечу с настоящим рыцарем, брат Торвальд.',
+      bondBonusText: 'Узы братства с Торвальдом укреплены: +20% к прочности щита и исцелению!',
+    },
+  },
+  vesper: {
+    id: 'vesper',
+    name: 'Грандмастер Веспер',
+    title: 'Наставник Школы Ворона · Мастер Пепла',
+    role: 'Наставник Школы Ворона · Мастер Пепла',
+    roleDescription: 'Мастер-охотник Братства, сражается парными клинками и боевыми Знаками',
+    weaponLabel: 'Парные рунные клинки «Клыки Сумерек»',
+    weaponDesc: 'Парные рунные клинки',
+    abilityLabel: 'Вихрь парных мечей и боевые Печати Пепла (Игнис / Аард)',
+    maxHp: 380,
+    baseDamage: 44,
+    preferredRange: 2.5,
+    biomeBarks: {
+      village: 'Веспер: «Воронья Падь... Двенадцать лет я хранил их тайну. Завершим начатое, ученик.»',
+      old_forest: 'Веспер: «Помни первый урок Каэр-Пепла, Корвус: слушай ветер прежде, чем обнажить серебро.»',
+      gallows_swamp: 'Веспер: «Я видел, как армия Малакора гнала людей в эти топи. Тогда я был бессилен... но не сегодня.»',
+      silver_pass: 'Веспер: «В глубине этих шахт мы впервые нашли Чёрную Руду. Держи клинок наготове.»',
+      ash_bastion: 'Веспер: «Каждый меч во дворе Бастиона — мой крест, Корвус. Спасибо, что дал мне шанс искупить его в бою.»',
+      eclipse_crater: 'Веспер: «Вот он — эпицентр Ночи Пепельного Затмения. Два последних Зольника против самой Бездны!»',
+    },
+    campfireDialogue: {
+      title: 'Беседа у костра: Искупление Наставника',
+      text: 'Когда ты прижал клинок к моему горлу во дворе Чёрного Бастиона, я ждал смерти как избавления, Корвус. Ты превзошёл меня не только в фехтовании, но и в мудрости. Всё, чему я учил тебя с детства — теперь твоё. Веди нас к Сердцу Пустоты, Грандмастер.',
+      corvusReply: 'Школа Ворона ещё жива, пока мы оба держим строй, учитель.',
+      bondBonusText: 'Единство Школы Ворона: урон клинков и Печатей Веспера увеличен на +20%!',
+    },
+  },
+};
+
+export const COMPANION_COMMAND_ORDER: CompanionCommand[] = [
+  'attack_target',
+  'follow_close',
+  'hold_position',
+];
+
+export function getNextCompanionCommand(current: CompanionCommand): CompanionCommand {
+  const normalized = current === 'follow' ? 'follow_close' : current;
+  const idx = COMPANION_COMMAND_ORDER.indexOf(normalized);
+  if (idx === -1) return 'attack_target';
+  return COMPANION_COMMAND_ORDER[(idx + 1) % COMPANION_COMMAND_ORDER.length];
+}
+
+export function getCompanionCommandLabel(command: CompanionCommand): string {
+  switch (command) {
+    case 'attack_target':
+      return 'Атакуй мою цель';
+    case 'follow':
+    case 'follow_close':
+      return 'Держись рядом';
+    case 'hold_position':
+      return 'Жди здесь';
+  }
+}
+
+// ============================================================================
+// 3. AI DAILY SCHEDULES & LIVING WORLD SIMULATION
+// ============================================================================
+
+export function computeNpcSchedule(
+  role: NonNullable<WorldInteractable['npcScheduleRole']>,
+  timeOfDay: number,
+  weather: WeatherType,
+  hasNearbyMonster: boolean,
+  isArmedDefender: boolean,
+  homeX: number,
+  homeZ: number,
+  elapsed = 0
+): {
+  state: NpcActivityState;
+  targetX: number;
+  targetZ: number;
+  activityLabel: string;
+  torchLit: boolean;
+} {
+  // 1. Emergency Combat / Monster Lured into Village or Camp
+  if (hasNearbyMonster) {
+    if (isArmedDefender || role === 'torch_guard' || role === 'blacksmith' || role === 'companion_npc') {
+      return {
+        state: 'COMBAT_DEFEND',
+        targetX: homeX,
+        targetZ: homeZ,
+        activityLabel: '⚔️ В бою: Защищает поселение от чудовищ!',
+        torchLit: role === 'torch_guard',
+      };
+    }
+    return {
+      state: 'PANIC_FLEE',
+      targetX: -8,
+      targetZ: 10, // Flee toward safe houses
+      activityLabel: '😱 В панике: Прячется от монстра!',
+      torchLit: false,
+    };
+  }
+
+  // 2. Wandering Caravan Merchant along the trade road
+  if (role === 'caravan') {
+    const cycle = Math.sin(elapsed * 0.04); // Smoothly travels between village (z=12) and northern road (z=-75)
+    const roadZ = -30 + cycle * 42;
+    const roadX = 2 + Math.sin(roadZ * 0.05) * 3;
+    return {
+      state: 'CARAVAN_MARCH',
+      targetX: roadX,
+      targetZ: roadZ,
+      activityLabel:
+        weather === 'rain'
+          ? '🛞 Караван в пути (Укрывает тюки от дождя)'
+          : '🛞 Странствующий караван (Торговля редкими товарами)',
+      torchLit: timeOfDay >= 20 || timeOfDay < 6,
+    };
+  }
+
+  // 3. Torch Guards patrol 24/7, lighting torches at night/rain/fog
+  if (role === 'torch_guard') {
+    const patrolOffset = Math.sin(elapsed * 0.35 + homeX) * 6.5;
+    const patrolOffsetZ = Math.cos(elapsed * 0.35 + homeZ) * 6.5;
+    const isDark = timeOfDay >= 19 || timeOfDay < 7 || weather !== 'clear';
+    return {
+      state: 'PATROL_TORCH',
+      targetX: homeX + patrolOffset,
+      targetZ: homeZ + patrolOffsetZ,
+      activityLabel: isDark
+        ? '🔥 Ночной дозор с факелом (Охраняет периметр)'
+        : '🛡️ Дозор стражи (Охраняет порядок)',
+      torchLit: isDark,
+    };
+  }
+
+  // 4. Contraband Fence on Silvertooth Pass
+  if (role === 'fence') {
+    return {
+      state: 'WORK',
+      targetX: homeX,
+      targetZ: homeZ,
+      activityLabel: '🗡️ Чёрный рынок Перевала (Скупка трофеев и редкостей)',
+      torchLit: true,
+    };
+  }
+
+  // 5. Companion waiting in camp
+  if (role === 'companion_npc') {
+    return {
+      state: 'WORK',
+      targetX: homeX,
+      targetZ: homeZ,
+      activityLabel: '⚔️ Готов отправиться в поход',
+      torchLit: timeOfDay >= 20 || timeOfDay < 6,
+    };
+  }
+
+  // 6. Rain / Storm Shelter for villagers
+  if (weather === 'rain') {
+    return {
+      state: 'SHELTER_RAIN',
+      targetX: homeX * 0.6 - 4,
+      targetZ: homeZ * 0.6 - 2,
+      activityLabel: '🌧️ Пережидает непогоду под навесом',
+      torchLit: false,
+    };
+  }
+
+  // 7. Nighttime Sleep (22:00 .. 06:30)
+  if (timeOfDay >= 22 || timeOfDay < 6.5) {
+    return {
+      state: 'SLEEP_INDOORS',
+      targetX: homeX > 0 ? 11.5 : -10.5,
+      targetZ: homeZ > 0 ? 10.5 : -8.5,
+      activityLabel: '🌙 Спит в доме до рассвета',
+      torchLit: false,
+    };
+  }
+
+  // 8. Evening Gathering at Tavern & Campfire (18:00 .. 22:00)
+  if (timeOfDay >= 18 && timeOfDay < 22) {
+    if (role === 'bard') {
+      return {
+        state: 'PERFORM_BARD',
+        targetX: -5.2,
+        targetZ: -3.2,
+        activityLabel: '🎵 Исполняет вечерние баллады у трактира',
+        torchLit: true,
+      };
+    }
+    return {
+      state: 'GATHER_TAVERN',
+      targetX: 1.5 + Math.cos(homeX) * 3.2,
+      targetZ: 1.5 + Math.sin(homeZ) * 3.2,
+      activityLabel: '🍺 Отдыхает у вечернего костра и в трактире',
+      torchLit: false,
+    };
+  }
+
+  // 9. Daytime Work Schedules (06:30 .. 18:00)
+  switch (role) {
+    case 'blacksmith':
+      return {
+        state: 'ANVIL_FORGE',
+        targetX: 10,
+        targetZ: 6.5,
+        activityLabel: '🔨 Куёт сталь у раскалённой наковальни',
+        torchLit: false,
+      };
+    case 'farmer':
+      return {
+        state: 'WORK',
+        targetX: -14 + Math.sin(elapsed * 0.25) * 3,
+        targetZ: 5 + Math.cos(elapsed * 0.25) * 2.5,
+        activityLabel: '🌾 Работает в поле (Возделывает землю)',
+        torchLit: false,
+      };
+    case 'woodcutter':
+      return {
+        state: 'WORK',
+        targetX: 14.5,
+        targetZ: -7.5,
+        activityLabel: '🪓 Рубит дрова на зиму у поленницы',
+        torchLit: false,
+      };
+    case 'water_carrier': {
+      const wPhase = (Math.sin(elapsed * 0.3) + 1) * 0.5;
+      return {
+        state: 'WORK',
+        targetX: -1 + wPhase * 4,
+        targetZ: -12 + wPhase * 13,
+        activityLabel: '🪣 Носит воду вёдрами от реки к деревне',
+        torchLit: false,
+      };
+    }
+    case 'bard':
+      return {
+        state: 'PERFORM_BARD',
+        targetX: -5.2,
+        targetZ: -3.2,
+        activityLabel: '🎵 Слагает баллады о подвигах Корвуса',
+        torchLit: false,
+      };
+    case 'merchant':
+      return {
+        state: 'WORK',
+        targetX: homeX,
+        targetZ: homeZ,
+        activityLabel: '⚖️ Торгует припасами в лавке',
+        torchLit: false,
+      };
+    case 'herbalist':
+      return {
+        state: 'WORK',
+        targetX: homeX + Math.sin(elapsed * 0.2) * 1.5,
+        targetZ: homeZ + Math.cos(elapsed * 0.2) * 1.5,
+        activityLabel: '🌿 Сушит целебные травы и варит снадобья',
+        torchLit: false,
+      };
+    case 'elder':
+    default:
+      return {
+        state: 'WORK',
+        targetX: homeX,
+        targetZ: homeZ,
+        activityLabel: '📜 Следит за порядком в Вороньей Пади',
+        torchLit: false,
+      };
+  }
+}
+
+// ============================================================================
+// 4. NON-LINEAR INVESTIGATION QUESTS & WORLD CONSEQUENCES
+// ============================================================================
+
+export interface InvestigationChoiceDefinition {
+  questId: string;
+  questTitle: string;
+  choiceId: string;
+  choiceTitle: string;
+  summary: string;
+  worldEffectDescription: string;
+  reputationDelta: number;
+  goldReward: number;
+  xpReward: number;
+  itemReward?: string;
+  blacksmithClosedSeconds?: number;
+  maxHpBonus?: number;
+  signIntensityBonus?: number;
+}
+
+export const INVESTIGATION_QUEST_CHOICES: Record<string, InvestigationChoiceDefinition> = {
+  belltower_kill_wife: {
+    questId: 'quest_blood_belltower',
+    questTitle: 'Кровь на колокольне',
+    choiceId: 'belltower_kill_wife',
+    choiceTitle: 'Суд Стали: Казнь заражённой Хельги',
+    summary:
+      'Корвус исполнил суровый закон охотников и прервал страдания Хельги, жены кузнеца Торна, обращённой проклятием «Ночного Голода». Деревня спасена от ночных убийств, но сердце кузнеца разбито.',
+    worldEffectDescription:
+      'У кузницы возведён могильный крест со свечами. Кузнец Торн впал в глубокий траур и временно закрыл горн, а в разговорах винит Корвуса в гибели жены.',
+    reputationDelta: 10,
+    goldReward: 180,
+    xpReward: 280,
+    blacksmithClosedSeconds: 120,
+  },
+  belltower_cleanse_ritual: {
+    questId: 'quest_blood_belltower',
+    questTitle: 'Кровь на колокольне',
+    choiceId: 'belltower_cleanse_ritual',
+    choiceTitle: 'Ритуал Очищения: Спасение через Тлеющую Кровь',
+    summary:
+      'Корвус отказался убивать Хельгу и вместе с травницей Марфой провёл опаснейший ритуал выжигания «Ночного Голода» собственной Тлеющей Кровью и Знаком Игнис.',
+    worldEffectDescription:
+      'Исцелённая Хельга вернулась к очагу у кузницы, а благодарный Мастер Торн даровал Корвусу древний рунный слиток и вечное уважение.',
+    reputationDelta: 25,
+    goldReward: 140,
+    xpReward: 320,
+    itemReward: 'black_ore',
+  },
+  belltower_blame_outsider: {
+    questId: 'quest_blood_belltower',
+    questTitle: 'Кровь на колокольне',
+    choiceId: 'belltower_blame_outsider',
+    choiceTitle: 'Кровавая Сделка: Ложное обвинение чужака',
+    summary:
+      'За мешок золота от отчаявшегося кузнеца Торна Корвус скрыл правду о болезни Хельги и свалил вину на бродячего артиста. Невиновный изгнан, а тайный голод в кузнице лишь затаился.',
+    worldEffectDescription:
+      'У ворот Вороньей Пади выставлен позорный столб изгнанного артиста. Жители перешёптываются в страхе, а по ночам у кузницы всё ещё видят багровые тени.',
+    reputationDelta: -25,
+    goldReward: 300,
+    xpReward: 240,
+  },
+
+  feast_burn_manor: {
+    questId: 'quest_feast_of_ravens',
+    questTitle: 'Пир Воронов',
+    choiceId: 'feast_burn_manor',
+    choiceTitle: 'Пепел Иллюзий: Сожжение проклятого поместья Вейнов',
+    summary:
+      'Корвус отверг сделку с безумным лордом Эдгаром Вейном, сжёг иллюзорный пир мертвецов и упокоил призраков его семьи, сразив самого одержимого аристократа и чудовище в подвале.',
+    worldEffectDescription:
+      'Заброшенное поместье в Топях очищено священным пламенем: иллюзорные гости исчезли, а путники на Тракте Висельников больше не пропадают по ночам.',
+    reputationDelta: 25,
+    goldReward: 220,
+    xpReward: 350,
+  },
+  feast_spare_illusions: {
+    questId: 'quest_feast_of_ravens',
+    questTitle: 'Пир Воронов',
+    choiceId: 'feast_spare_illusions',
+    choiceTitle: 'Пакт с Призраками: Сохранение вечного пира лорда Вейна',
+    summary:
+      'Корвус оставил лорду Вейну артефакт иллюзий в обмен на ключ от сокровищницы и фамильный клинок Дома Вейнов, позволив мёртвому пиру продолжаться в тумане Топей.',
+    worldEffectDescription:
+      'Над поместьем Вейнов в Топях продолжает гореть призрачное лиловое зарево, за столом пируют мертвецы, а лорд Вейн приветствует Корвуса как почётного гостя.',
+    reputationDelta: -20,
+    goldReward: 360,
+    xpReward: 300,
+    itemReward: 'relic_blade',
+  },
+
+  mines_protect_ghouls: {
+    questId: 'quest_dead_mines_oath',
+    questTitle: 'Клятва в Мёртвых Шахтах',
+    choiceId: 'mines_protect_ghouls',
+    choiceTitle: 'Щит для Изгоев: Защита разумных горняков-гулей',
+    summary:
+      'Увидев, что обращённые Чёрной Рудой рудокопы сохранили человечность и защищают своего ребёнка, Корвус встал на их сторону и разгромил карательный отряд Инквизиции.',
+    worldEffectDescription:
+      'Заблокированный штрек Мёртвых Шахт перешёл под контроль общины старейшины Тороса: горняки-мутанты мирно добывают Чёрную Руду и делятся ею с Корвусом.',
+    reputationDelta: 20,
+    goldReward: 180,
+    xpReward: 380,
+    itemReward: 'black_ore',
+  },
+  mines_purge_for_order: {
+    questId: 'quest_dead_mines_oath',
+    questTitle: 'Клятва в Мёртвых Шахтах',
+    choiceId: 'mines_purge_for_order',
+    choiceTitle: 'Железный Закон Ордена: Зачистка Мёртвых Шахт',
+    summary:
+      'Корвус счёл мутацию Чёрной Руды необратимой угрозой и помог отряду Ордена Алого Солнца полностью выжечь общину заражённых горняков ради безопасности перевала.',
+    worldEffectDescription:
+      'Над Мёртвыми Шахтами реют стяги Ордена Алого Солнца и горят очистительные жаровни инквизиции, а капитан Валлен выплатил полную казённую награду.',
+    reputationDelta: -20,
+    goldReward: 340,
+    xpReward: 340,
+  },
+
+  exam_revive_brotherhood: {
+    questId: 'quest_last_ash_exam',
+    questTitle: 'Последний Экзамен Зольника',
+    choiceId: 'exam_revive_brotherhood',
+    choiceTitle: 'Возрождение Школы Ворона: Испытание Тлеющей Кровью',
+    summary:
+      'Корвус безупречно провёл смертельный ритуал мутации над молодым адептом Эрианом. Выдержав агонию Тлеющей Крови, Эриан открыл янтарные глаза и стал первым новым Зольником возрождённого Братства.',
+    worldEffectDescription:
+      'В алхимическом зале Чёрного Бастиона вновь горят янтарные чаны Школы Ворона, а посвящённый охотник Эриан несёт стражу с двумя мечами за спиной.',
+    reputationDelta: 15,
+    goldReward: 200,
+    xpReward: 450,
+    maxHpBonus: 20,
+    signIntensityBonus: 0.15,
+  },
+  exam_bury_secrets: {
+    questId: 'quest_last_ash_exam',
+    questTitle: 'Последний Экзамен Зольника',
+    choiceId: 'exam_bury_secrets',
+    choiceTitle: 'Конец Мутаций: Погребение секретов Тлеющей Крови',
+    summary:
+      'Корвус отказался обрекать юного Эриана на муки мутации, разбил алхимические сосуды Каэр-Пепла и навсегда похоронил бесчеловечные формулы создания Зольников.',
+    worldEffectDescription:
+      'Чаны мутаций в Чёрном Бастионе разрушены навсегда. Спасённый Эриан сохранил человеческую жизнь и стал хранителем летописей Братства.',
+    reputationDelta: 25,
+    goldReward: 260,
+    xpReward: 450,
+  },
+};
+
+export function validateAshExamRitual(
+  dosageCorrect: boolean,
+  signCorrect: boolean
+): {
+  precisionScore: number;
+  statusLabel: string;
+  bonusXp: number;
+} {
+  const precisionScore = (dosageCorrect ? 50 : 0) + (signCorrect ? 50 : 0);
+  if (precisionScore === 100) {
+    return {
+      precisionScore,
+      statusLabel: 'Безупречный синтез Тлеющей Крови (Пульс адепта стабилен)',
+      bonusXp: 120,
+    };
+  }
+  if (precisionScore === 50) {
+    return {
+      precisionScore,
+      statusLabel: 'Нестабильная мутация (Высокая токсичность, но сердце выдержало)',
+      bonusXp: 60,
+    };
+  }
+  return {
+    precisionScore,
+    statusLabel: 'Критический сбой ритуала (Потребовалось экстренное вмешательство Знаком)',
+    bonusXp: 25,
+  };
+}
+
+export function resolveInvestigationQuestChoice(
+  stats: PlayerStats,
+  choiceId: string,
+  dayTimeLabel = 'ДЕНЬ 1'
+): {
+  updatedStats: PlayerStats;
+  consequence: QuestConsequenceRecord | null;
+  definition: InvestigationChoiceDefinition | null;
+} {
+  const def = INVESTIGATION_QUEST_CHOICES[choiceId];
+  if (!def) {
+    return { updatedStats: stats, consequence: null, definition: null };
+  }
+
+  const record: QuestConsequenceRecord = {
+    questId: def.questId,
+    questTitle: def.questTitle,
+    choiceId: def.choiceId,
+    choiceTitle: def.choiceTitle,
+    summary: def.summary,
+    worldEffectDescription: def.worldEffectDescription,
+    timestampLabel: dayTimeLabel,
+  };
+
+  const prevChoices = { ...(stats.questChoices ?? {}) };
+  prevChoices[def.questId] = def.choiceId;
+
+  const prevConsequences = (stats.questConsequences ?? []).filter(
+    (c) => c.questId !== def.questId
+  );
+  prevConsequences.unshift(record);
+
+  const xpResult = applyExperienceGain(stats, def.xpReward);
+  const nextRep = clampReputation((stats.reputation ?? 0) + def.reputationDelta);
+
+  const updatedStats: PlayerStats = {
+    ...xpResult.updated,
+    gold: xpResult.updated.gold + def.goldReward,
+    reputation: nextRep,
+    maxHp: xpResult.updated.maxHp + (def.maxHpBonus ?? 0),
+    hp: Math.min(
+      xpResult.updated.maxHp + (def.maxHpBonus ?? 0),
+      xpResult.updated.hp + (def.maxHpBonus ?? 0)
+    ),
+    signIntensity: Number(
+      (xpResult.updated.signIntensity + (def.signIntensityBonus ?? 0)).toFixed(2)
+    ),
+    questChoices: prevChoices,
+    questConsequences: prevConsequences,
+    blacksmithClosedTimer:
+      def.blacksmithClosedSeconds !== undefined
+        ? def.blacksmithClosedSeconds
+        : stats.blacksmithClosedTimer,
+  };
+
+  return {
+    updatedStats,
+    consequence: record,
+    definition: def,
+  };
+}
+
+/**
+ * Resolves 3D movement against both cylindrical obstacles (trees, pillars, rocks)
+ * and AABB Box3 footprints (houses, fortress walls, chests, ruins) with smooth
+ * X/Z axis-separated Sliding Collision and floor elevation clamping.
+ */
+export function resolveSlidingCollision(
+  prevX: number,
+  prevZ: number,
+  targetX: number,
+  targetZ: number,
+  entityRadius: number,
+  cylinders: { x: number; z: number; radius: number }[],
+  boxes: CollisionBox[] = []
+): { x: number; z: number; y: number } {
+  let x = targetX;
+  let z = targetZ;
+
+  // 1. Axis-separated AABB Box3 sliding resolution (X then Z)
+  let testX = x;
+  let testZ = prevZ;
+  for (const box of boxes) {
+    if (box.isWalkableFloor) continue;
+    const expandedMinX = box.minX - entityRadius;
+    const expandedMaxX = box.maxX + entityRadius;
+    const expandedMinZ = box.minZ - entityRadius;
+    const expandedMaxZ = box.maxZ + entityRadius;
+
+    if (
+      testX > expandedMinX &&
+      testX < expandedMaxX &&
+      testZ > expandedMinZ &&
+      testZ < expandedMaxZ
+    ) {
+      // Push out along X to nearest edge
+      const distLeft = Math.abs(testX - expandedMinX);
+      const distRight = Math.abs(expandedMaxX - testX);
+      testX = distLeft < distRight ? expandedMinX : expandedMaxX;
+    }
+  }
+  x = testX;
+
+  testZ = z;
+  for (const box of boxes) {
+    if (box.isWalkableFloor) continue;
+    const expandedMinX = box.minX - entityRadius;
+    const expandedMaxX = box.maxX + entityRadius;
+    const expandedMinZ = box.minZ - entityRadius;
+    const expandedMaxZ = box.maxZ + entityRadius;
+
+    if (
+      x > expandedMinX &&
+      x < expandedMaxX &&
+      testZ > expandedMinZ &&
+      testZ < expandedMaxZ
+    ) {
+      // Push out along Z to nearest edge
+      const distTop = Math.abs(testZ - expandedMinZ);
+      const distBottom = Math.abs(expandedMaxZ - testZ);
+      testZ = distTop < distBottom ? expandedMinZ : expandedMaxZ;
+    }
+  }
+  z = testZ;
+
+  // 2. Cylindrical radial push-out (smooth tangential slide around trees, rocks, pillars)
+  for (const obs of cylinders) {
+    const dx = x - obs.x;
+    const dz = z - obs.z;
+    const minDist = entityRadius + obs.radius;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < minDist * minDist) {
+      const dist = Math.sqrt(distSq) || 0.001;
+      const overlap = minDist - dist;
+      x += (dx / dist) * overlap;
+      z += (dz / dist) * overlap;
+    }
+  }
+
+  // 3. Determine accurate ground + walkable bridge/platform floor height
+  let y = x > 75 && z > 75 ? 0 : getGroundHeight(x, z);
+  for (const box of boxes) {
+    if (
+      box.isWalkableFloor &&
+      typeof box.floorY === 'number' &&
+      x >= box.minX &&
+      x <= box.maxX &&
+      z >= box.minZ &&
+      z <= box.maxZ
+    ) {
+      y = Math.max(y, box.floorY);
+    }
+  }
+
+  return { x, z, y };
+}
+
+
 
 
 

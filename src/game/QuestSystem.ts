@@ -418,7 +418,206 @@ export class QuestSystem {
         goldReward: 1000,
         itemReward: 'mythic_void_voice',
       },
+
+      // =======================================================================
+      // 4 НЕЛИНЕЙНЫХ КВЕСТА-РАССЛЕДОВАНИЯ (ДЕТЕКТИВНЫЕ ИСТОРИИ И ПОСЛЕДСТВИЯ)
+      // =======================================================================
+      {
+        id: 'quest_blood_belltower',
+        title: 'Расследование I: «Кровь на колокольне»',
+        giver: 'Староста Бран / Дозорный Ворон',
+        biome: 'Деревня Воронья Падь',
+        recommendedLevel: 2,
+        isInvestigationQuest: true,
+        description:
+          'По ночам у старой колокольни Вороньей Пади находят растерзанных жителей. Толпа готова линчевать ручного волка травницы или бродячего артиста. Проведите расследование с «Чутьём Охотника» [V], изучите улики на крыше, допросите подозреваемых и раскройте страшную тайну семьи кузнеца Торна.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_bell_corpse',
+            description: 'Осмотреть раны жертвы у подножия старой колокольни с Чутьём Охотника [V]',
+            completed: false,
+            targetX: -9,
+            targetZ: -9,
+            radius: 4.5,
+          },
+          {
+            id: 'q_bell_roof_tracks',
+            description: 'Изучить следы когтей и обрывок кузнечного передника на балке у колокольни',
+            completed: false,
+            targetX: -12,
+            targetZ: -13,
+            radius: 4.5,
+          },
+          {
+            id: 'q_bell_interrogate',
+            description: 'Допросить подозреваемых и вывести на чистую воду Хельгу, жену кузнеца Торна',
+            completed: false,
+            targetX: 11.5,
+            targetZ: 8.2,
+            radius: 4.5,
+          },
+          {
+            id: 'q_bell_verdict',
+            description: 'Принять решение: Казнить Хельгу по закону / Провести ритуал очищения / Обвинить чужака',
+            completed: false,
+            targetX: 11.5,
+            targetZ: 8.2,
+            radius: 4.5,
+          },
+        ],
+        xpReward: 280,
+        goldReward: 180,
+      },
+      {
+        id: 'quest_feast_of_ravens',
+        title: 'Расследование II: «Пир Воронов»',
+        giver: 'Лорд Эдгар Вейн',
+        biome: 'Заброшенное поместье в Топях',
+        recommendedLevel: 5,
+        isInvestigationQuest: true,
+        description:
+          'Аристократ лорд Эдгар Вейн приглашает Корвуса снять проклятие с его родового поместья в Топях, где каждый вечер за столом пируют знатные гости. Проведите расследование с «Чутьём Охотника» [V] и узнайте, какой ценой лорд удерживает рядом свою погибшую семью.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_feast_talk_vane',
+            description: 'Встретиться с лордом Эдгаром Вейном у ворот поместья в Затопленных Топях',
+            completed: false,
+            targetX: 25,
+            targetZ: -160,
+            radius: 5,
+          },
+          {
+            id: 'q_feast_inspect_table',
+            description: 'Осмотреть пиршественный стол поместья с Чутьём Охотника [V] и разоблачить иллюзию',
+            completed: false,
+            targetX: 30,
+            targetZ: -166,
+            radius: 5,
+          },
+          {
+            id: 'q_feast_inspect_cellar',
+            description: 'Исследовать люк в подвал поместья, куда лорд Вейн сбрасывает путников',
+            completed: false,
+            targetX: 33,
+            targetZ: -171,
+            radius: 5,
+          },
+          {
+            id: 'q_feast_choice',
+            description: 'Решить судьбу поместья у лорда Вейна: Сжечь иллюзии и дать бой ИЛИ принять сделку',
+            completed: false,
+            targetX: 25,
+            targetZ: -160,
+            radius: 5,
+          },
+        ],
+        xpReward: 350,
+        goldReward: 220,
+        itemReward: 'relic_blade',
+      },
+      {
+        id: 'quest_dead_mines_oath',
+        title: 'Расследование III: «Клятва в Мёртвых Шахтах»',
+        giver: 'Капитан Ордена Валлен / Старейшина Торос',
+        biome: 'Среброзубый Перевал и Мёртвые Шахты',
+        recommendedLevel: 6,
+        isInvestigationQuest: true,
+        description:
+          'В заблокированном штреке Мёртвых Шахт выжившие горняки мутировали в полуразумных гулей из-за Чёрной Руды, но не нападают первыми и защищают своего ребёнка. Снаружи отряд Ордена требует перебить их всех. Выберите, чью клятву защитить.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_mines_talk_captain',
+            description: 'Выслушать ультиматум капитана Ордена Валлена у заблокированного штрека Перевала',
+            completed: false,
+            targetX: -18,
+            targetZ: -268,
+            radius: 5,
+          },
+          {
+            id: 'q_mines_inspect_barricade',
+            description: 'Изучить баррикаду горняков с Чутьём Охотника [V] и услышать голоса внутри',
+            completed: false,
+            targetX: -22,
+            targetZ: -275,
+            radius: 5,
+          },
+          {
+            id: 'q_mines_choice',
+            description: 'Поговорить со старейшиной горняков-гулей Торосом и выбрать сторону конфликта',
+            completed: false,
+            targetX: -26,
+            targetZ: -281,
+            radius: 5,
+          },
+        ],
+        xpReward: 380,
+        goldReward: 240,
+      },
+      {
+        id: 'quest_last_ash_exam',
+        title: 'Расследование IV: «Последний Экзамен Зольника»',
+        giver: 'Младший адепт Эриан',
+        biome: 'Чёрный Бастион Братства Пепла',
+        recommendedLevel: 7,
+        isInvestigationQuest: true,
+        description:
+          'В руинах Чёрного Бастиона Корвус находит выжившего молодого ученика Эриана, который умоляет провести над ним смертельно опасный ритуал «Тлеющей Крови», чтобы отомстить за павших братьев. Соберите мутагены, проведите ритуал и решите будущее Школы Ворона.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_exam_talk_erian',
+            description: 'Поговорить с выжившим младшим адептом Эрианом в западном крыле Бастиона',
+            completed: false,
+            targetX: -16,
+            targetZ: -365,
+            radius: 5,
+          },
+          {
+            id: 'q_exam_collect_mutagens',
+            description: 'Отыскать с Чутьём Охотника [V] уцелевшие мутагены «Тлеющей Крови» в реликвариуме',
+            completed: false,
+            targetX: -21,
+            targetZ: -372,
+            radius: 5,
+          },
+          {
+            id: 'q_exam_ritual_choice',
+            description: 'Провести ритуал у алхимического стола и решить судьбу секретов Братства Пепла',
+            completed: false,
+            targetX: -18,
+            targetZ: -378,
+            radius: 5,
+          },
+        ],
+        xpReward: 450,
+        goldReward: 260,
+      },
     ];
+  }
+
+  public applyChoiceConsequenceToQuest(
+    questId: string,
+    choiceId: string,
+    consequenceTitle: string,
+    consequenceSummary: string,
+    consequenceWorldEffect: string
+  ): Quest | null {
+    const q = this.quests.find((item) => item.id === questId);
+    if (!q) return null;
+    q.choiceTaken = choiceId;
+    q.consequenceTitle = consequenceTitle;
+    q.consequenceSummary = consequenceSummary;
+    q.consequenceWorldEffect = consequenceWorldEffect;
+    q.status = 'completed';
+    q.stages = q.stages.map((s) => ({ ...s, completed: true }));
+    return q;
   }
 
   public getActiveQuest(): Quest | null {

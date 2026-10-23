@@ -75,6 +75,19 @@ export class ThirdPersonCamera {
     this.shakeTimer = duration;
   }
 
+  public isDialogueMode = false;
+  private dialogueNpcPos: THREE.Vector3 | null = null;
+
+  public setDialogueTarget(npcPos: THREE.Vector3): void {
+    this.isDialogueMode = true;
+    this.dialogueNpcPos = npcPos.clone();
+  }
+
+  public clearDialogueTarget(): void {
+    this.isDialogueMode = false;
+    this.dialogueNpcPos = null;
+  }
+
   public update(
     dt: number,
     playerX: number,
@@ -84,26 +97,42 @@ export class ThirdPersonCamera {
     obstacles: CollisionCylinder[],
     colliderMeshes: THREE.Object3D[] = []
   ): void {
-    // Subtle FOV widening during sprint
-    const targetFov = isSprinting ? 66 : 60;
+    // Cinematic FOV: narrower 46° in dialogue (Witcher 3 style portrait), wider in sprint
+    const targetFov = this.isDialogueMode ? 46 : isSprinting ? 66 : 60;
     if (Math.abs(this.camera.fov - targetFov) > 0.1) {
       this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 6, dt);
       this.camera.updateProjectionMatrix();
     }
 
-    // Target point is player's upper chest/shoulder
-    _targetPos.set(playerX, playerY + 1.55, playerZ);
+    // Target point: NPC chest/head in dialogue, player chest in exploration
+    if (this.isDialogueMode && this.dialogueNpcPos) {
+      _targetPos.set(
+        this.dialogueNpcPos.x,
+        this.dialogueNpcPos.y + 1.45,
+        this.dialogueNpcPos.z
+      );
+    } else {
+      _targetPos.set(playerX, playerY + 1.55, playerZ);
+    }
     const lerpAlpha = 1 - Math.exp(-14 * dt);
     this.currentLookAt.lerp(_targetPos, lerpAlpha);
 
-    // Compute camera spherical offset behind player
-    const horizDist = this.distance * Math.cos(this.pitch);
-    const vertDist = this.distance * Math.sin(this.pitch);
+    // Compute camera spherical offset behind player with over-the-shoulder bias in dialogue
+    const targetDist = this.isDialogueMode ? 2.7 : this.distance;
+    const horizDist = targetDist * Math.cos(this.pitch);
+    const vertDist = (this.isDialogueMode ? 1.15 : targetDist) * Math.sin(this.pitch);
 
-    const offsetX = -Math.sin(this.yaw) * horizDist;
-    const offsetZ = -Math.cos(this.yaw) * horizDist;
+    let offsetX = -Math.sin(this.yaw) * horizDist;
+    let offsetZ = -Math.cos(this.yaw) * horizDist;
 
-    let effectiveDist = this.distance;
+    if (this.isDialogueMode) {
+      const shoulderX = Math.cos(this.yaw) * 0.65;
+      const shoulderZ = -Math.sin(this.yaw) * 0.65;
+      offsetX += shoulderX;
+      offsetZ += shoulderZ;
+    }
+
+    let effectiveDist = targetDist;
 
     // 1. Raycaster collision check against terrain & building meshes
     _rayDir.set(offsetX, vertDist, offsetZ).normalize();
