@@ -23,18 +23,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages.outcome }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: 24
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Typecheck (Lint)
         run: npm run lint
@@ -46,17 +47,19 @@ jobs:
         run: npm run build
 
       - name: Setup Pages
+        id: pages
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request' && steps.pages.outcome == 'success'
+        uses: actions/upload-pages-artifact@v4
         with:
           path: './dist'
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.build.outputs.pages_enabled == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
