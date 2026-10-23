@@ -128,6 +128,14 @@ export default function App() {
                   Продолжить сохранение
                 </button>
               )}
+              <a
+                href="https://foozzee.ru"
+                target="_top"
+                rel="noopener noreferrer"
+                className="px-6 py-3.5 text-sm font-semibold bg-stone-900/90 hover:bg-stone-800 text-stone-300 hover:text-amber-400 border border-stone-700 hover:border-amber-600/60 rounded transition-colors cursor-pointer whitespace-nowrap inline-flex items-center justify-center"
+              >
+                Выход
+              </a>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 text-xs text-stone-300 border-t border-stone-800/80">
