@@ -499,7 +499,7 @@ test('Exclusive equipment slots prevent stat stacking across duplicate armors or
       name: 'Броня Медведя',
       description: '',
       category: 'armor',
-      rarity: 'epic',
+      rarity: 'relic',
       value: 200,
       quantity: 1,
       equipped: true, // Even if both are marked equipped before sanitization

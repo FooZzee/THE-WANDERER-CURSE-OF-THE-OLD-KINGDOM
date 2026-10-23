@@ -6,6 +6,7 @@ import {
   calculateIncomingPlayerDamage,
   calculatePlayerAttackDamage,
   getGroundHeight,
+  getSwordEffectiveness,
   isTargetInAttackCone,
 } from './rules';
 import type { CollisionCylinder } from './SceneManager';
@@ -202,7 +203,7 @@ export class CombatSystem {
           }
 
           const activeSword = player.stats.activeSword ?? 'steel';
-          const swordEff = getSwordEffectiveness(activeSword, ed.isSilverVulnerable);
+          const swordEff = getSwordEffectiveness(activeSword, ed.isSilverVulnerable).multiplier;
 
           let dmg = calculatePlayerAttackDamage({
             steelAttack: effectiveStats.steelAttack,

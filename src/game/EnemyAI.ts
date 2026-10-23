@@ -1170,7 +1170,8 @@ export class EnemyAI {
     onAttackPlayer: (enemy: EnemyData, customDamage?: number) => void,
     onEnemyBurnDeath: (enemy: ActiveEnemy) => void,
     decoyTarget: { x: number; z: number } | null = null,
-    onCombatEvent?: (msg: string, type: 'info' | 'damage' | 'quest' | 'loot') => void
+    onCombatEvent?: (msg: string, type: 'info' | 'damage' | 'quest' | 'loot') => void,
+    collisionBoxes: CollisionBox[] = []
   ): { lockedEnemy: EnemyData | null; bossEnemy: EnemyData | null } {
     let closestCombatEnemy: EnemyData | null = null;
     let closestDist = 22;
@@ -1587,7 +1588,7 @@ export class EnemyAI {
         const dist = Math.hypot(dx, dz);
         if (dist > 0.25) {
           const step = d.speed * 0.45 * speedMult * dt;
-          this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles);
+          this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles, collisionBoxes);
           d.rotationY = Math.atan2(dx, dz);
           this.animateEnemy(enemy, 'walk');
         } else {
@@ -1598,7 +1599,7 @@ export class EnemyAI {
         const dz = d.spawnZ - d.z;
         const dist = Math.max(0.01, Math.hypot(dx, dz));
         const step = d.speed * 1.15 * dt;
-        this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles);
+        this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles, collisionBoxes);
         d.rotationY = Math.atan2(dx, dz);
         this.animateEnemy(enemy, 'run');
       } else if (d.state === 'CHASE') {
@@ -1607,7 +1608,7 @@ export class EnemyAI {
         const dz = aggroZ - d.z;
         const dist = Math.max(0.01, Math.hypot(dx, dz));
         const step = d.speed * speedMult * dt;
-        this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles);
+        this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles, collisionBoxes);
         d.rotationY = Math.atan2(dx, dz);
         this.animateEnemy(enemy, 'run');
       } else if (d.state === 'ATTACK') {
@@ -1623,7 +1624,7 @@ export class EnemyAI {
             enemy.attackWindupTimer = Math.max(0, enemy.attackWindupTimer - dt);
             const lungeStep = 10.2 * speedMult * dt;
             if (dist > 1.15) {
-              this.moveEnemy(enemy, (dx / dist) * lungeStep, (dz / dist) * lungeStep, obstacles);
+              this.moveEnemy(enemy, (dx / dist) * lungeStep, (dz / dist) * lungeStep, obstacles, collisionBoxes);
             }
             this.animateEnemy(enemy, 'attack');
             if (enemy.attackWindupTimer === 0) {

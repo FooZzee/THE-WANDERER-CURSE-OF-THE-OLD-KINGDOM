@@ -13,6 +13,7 @@ export interface CollisionBox {
   maxY?: number;
   isWalkableFloor?: boolean;
   floorY?: number;
+  label?: string;
 }
 
 export interface MagicSignInfo {

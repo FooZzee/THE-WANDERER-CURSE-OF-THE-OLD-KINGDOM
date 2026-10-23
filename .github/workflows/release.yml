@@ -1,0 +1,55 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify types and unit tests
+        run: |
+          npm run lint
+          npm test
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Package Web Distribution ZIP
+        run: |
+          cd dist
+          zip -r ../the-wanderer-web-dist.zip .
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: "Странник: Проклятие Старого Королевства ${{ github.event.inputs.tag_name || github.ref_name }}"
+          body_path: RELEASE_NOTES.md
+          files: |
+            the-wanderer-web-dist.zip
+          draft: false
+          prerelease: false

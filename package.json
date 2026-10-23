@@ -1,7 +1,10 @@
 {
-  "name": "react-example",
+  "name": "the-wanderer-curse-of-the-old-kingdom",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Странник: Проклятие Старого Королевства (The Wanderer: Curse of the Old Kingdom) — 3D Dark Fantasy Action RPG built with Three.js, React 19, and TypeScript",
+  "license": "MIT",
+  "homepage": "https://foozzee.ru",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
