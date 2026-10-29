@@ -5,6 +5,7 @@ import {
   getGroundHeight,
   getNextWeatherState,
   interpolateWeatherMetrics,
+  SETTLEMENT_ZONES,
   WEATHER_PRESETS,
 } from './rules';
 import type { CollisionBox, GraphicsSettings, WeatherType } from './types';
@@ -19,9 +20,24 @@ export interface CollisionCylinder {
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 const _weatherTint = new THREE.Color();
-const _skyDay = new THREE.Color(0x334155);
-const _skyDusk = new THREE.Color(0x432818);
-const _skyNight = new THREE.Color(0x090d16);
+const _skyDawn = new THREE.Color(0x4a3028);
+const _skyDay = new THREE.Color(0x3a4e66);
+const _skyDusk = new THREE.Color(0x452618);
+const _skyNight = new THREE.Color(0x070b14);
+
+const _sunDawn = new THREE.Color(0xff9e5e);
+const _sunNoon = new THREE.Color(0xfff1d6);
+const _sunDusk = new THREE.Color(0xff7733);
+const _moonNight = new THREE.Color(0x7da2d6);
+
+export interface WorldLightAnchor {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  baseIntensity: number;
+  distance: number;
+}
 
 export class SceneManager {
   public scene: THREE.Scene;
@@ -29,6 +45,8 @@ export class SceneManager {
   public sunLight: THREE.DirectionalLight;
   public hemiLight: THREE.HemisphereLight;
   public torchLights: THREE.PointLight[] = [];
+  public worldLightAnchors: WorldLightAnchor[] = [];
+  private celestialOrb: THREE.Mesh | null = null;
   public obstacles: CollisionCylinder[] = [];
   public collisionBoxes: CollisionBox[] = [];
   public colliderMeshes: THREE.Object3D[] = [];
@@ -43,15 +61,20 @@ export class SceneManager {
   private mistPhases: Float32Array | null = null;
   private cursedCrystalMesh: THREE.Mesh | null = null;
   private catacombsGateMesh: THREE.Mesh | null = null;
+  private windmillSailsMesh: THREE.Group | null = null;
+  private lighthouseBeamMesh: THREE.Group | null = null;
+  private monasteryAstrolabeMesh: THREE.Group | null = null;
+  private starfallCoreMesh: THREE.Group | null = null;
   private floatingCraterRocks: { mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
   private swampBubbles: { mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
   private mineCrystals: { mesh: THREE.Mesh; phase: number }[] = [];
   private biomeFogTint = new THREE.Color(0x1e242b);
-  private timeOfDay = 16.5; // Late afternoon atmospheric golden/dusk hour
+  private timeOfDay = 14.5; // Starts in atmospheric afternoon, progresses smoothly through dusk, night, dawn, day
   private weather: WeatherType = 'fog';
   private previousWeather: WeatherType = 'fog';
   private weatherTransitionBlend = 1.0;
   private weatherEffectsEnabled = true;
+  private shadowsEnabled = true;
   private lightningFlash = 0;
   private lightningTimer = 14;
 
@@ -116,6 +139,32 @@ export class SceneManager {
     this.sunLight.shadow.bias = -0.0012;
     this.sunLight.shadow.normalBias = 0.04;
     this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
+
+    // Celestial Sun / Moon Disc in the sky
+    const orbGeo = new THREE.SphereGeometry(4.2, 16, 16);
+    const orbMat = new THREE.MeshBasicMaterial({
+      color: 0xffdcb5,
+      fog: false,
+    });
+    this.celestialOrb = new THREE.Mesh(orbGeo, orbMat);
+    this.scene.add(this.celestialOrb);
+
+    // Pre-allocate 4 dynamic shadow-casting PointLights for nearest world light sources (torches, campfires, braziers)
+    if (!this.isHeadless) {
+      for (let i = 0; i < 4; i++) {
+        const pt = new THREE.PointLight(0xf97316, 6.2, 24, 1.45);
+        pt.castShadow = this.shadowsEnabled;
+        pt.shadow.mapSize.width = 512;
+        pt.shadow.mapSize.height = 512;
+        pt.shadow.camera.near = 0.35;
+        pt.shadow.camera.far = 24;
+        pt.shadow.bias = -0.0025;
+        pt.shadow.normalBias = 0.035;
+        this.scene.add(pt);
+        this.torchLights.push(pt);
+      }
+    }
 
     this.buildTerrainAndWater();
     this.buildCrowHollowVillage();
@@ -127,6 +176,10 @@ export class SceneManager {
     this.buildUndergroundCatacombs();
     this.buildAshCemeteryAndOrderCamp();
     this.buildNorthernMarchBiomes();
+    this.buildSunkenPortSolheim();
+    this.buildSunMonastery();
+    this.buildStarfallValleyAndForge();
+    this.buildSettlementFencesAndGates();
     this.buildWeatherSystem();
   }
 
@@ -135,9 +188,11 @@ export class SceneManager {
   }
 
   private buildTerrainAndWater(): void {
-    const size = 260;
-    const segments = this.isHeadless ? 64 : 128;
-    const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+    const widthX = 430;
+    const lengthZ = 270;
+    const segX = this.isHeadless ? 160 : 220;
+    const segZ = this.isHeadless ? 120 : 180;
+    const geo = new THREE.PlaneGeometry(widthX, lengthZ, segX, segZ);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
@@ -198,28 +253,39 @@ export class SceneManager {
     const waterMesh = new THREE.Mesh(waterGeo, waterMat);
     this.scene.add(waterMesh);
 
-    // Wooden Bridge across the river at (0, 34)
-    const bridgeGroup = new THREE.Group();
-    const woodMat = this.assetManager.getMaterial('wood');
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.35, 17), woodMat);
-    deck.position.set(0, 0.25, 34);
-    deck.receiveShadow = true;
-    deck.castShadow = true;
-    bridgeGroup.add(deck);
+    // Western Sea Ocean Water Plane for Sunken Port Solheim (x in [-225, -130], z in [-115, 115])
+    const seaGeo = new THREE.PlaneGeometry(96, 230, 24, 48);
+    seaGeo.rotateX(-Math.PI / 2);
+    const seaMesh = new THREE.Mesh(seaGeo, waterMat);
+    seaMesh.position.set(-178, -1.65, 0);
+    this.scene.add(seaMesh);
 
-    for (let zOffset = -7.5; zOffset <= 7.5; zOffset += 3) {
-      const postL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.3, 0.3), woodMat);
-      postL.position.set(-3.4, 0.9, 34 + zOffset);
-      const postR = postL.clone();
-      postR.position.x = 3.4;
-      bridgeGroup.add(postL, postR);
+    // 3 Wooden Bridges across the river at x = 0, x = -52 (West Forest Bridge), and x = 52 (East Outpost Bridge)
+    const woodMat = this.assetManager.getMaterial('wood');
+    for (const bx of [0, -52, 52]) {
+      const riverCenterZ = 34 + Math.sin(bx * 0.03) * 6;
+      const bridgeGroup = new THREE.Group();
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.35, 17), woodMat);
+      deck.position.set(bx, 0.195, riverCenterZ);
+      deck.receiveShadow = true;
+      deck.castShadow = true;
+      bridgeGroup.add(deck);
+      this.colliderMeshes.push(deck);
+
+      for (let zOffset = -7.5; zOffset <= 7.5; zOffset += 3) {
+        const postL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.3, 0.3), woodMat);
+        postL.position.set(bx - 3.4, 0.9, riverCenterZ + zOffset);
+        const postR = postL.clone();
+        postR.position.x = bx + 3.4;
+        bridgeGroup.add(postL, postR);
+      }
+      const railL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 16.5), woodMat);
+      railL.position.set(bx - 3.4, 1.35, riverCenterZ);
+      const railR = railL.clone();
+      railR.position.x = bx + 3.4;
+      bridgeGroup.add(railL, railR);
+      this.scene.add(bridgeGroup);
     }
-    const railL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 16.5), woodMat);
-    railL.position.set(-3.4, 1.35, 34);
-    const railR = railL.clone();
-    railR.position.x = 3.4;
-    bridgeGroup.add(railL, railR);
-    this.scene.add(bridgeGroup);
   }
 
   private createMedievalHouse(
@@ -328,6 +394,34 @@ export class SceneManager {
     return group;
   }
 
+  private createWatchtower(x: number, z: number): void {
+    const y = getGroundHeight(x, z);
+    const woodMat = this.assetManager.getMaterial('wood');
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.4, 2.4, 8), stoneMat);
+    base.position.y = 1.2;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(3.2, 5.2, 3.2), woodMat);
+    shaft.position.y = 5.0;
+    shaft.castShadow = true;
+    shaft.receiveShadow = true;
+    const platform = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 4.2), woodMat);
+    platform.position.y = 7.7;
+    platform.castShadow = true;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 2.4, 4), stoneMat);
+    roof.position.y = 10.1;
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+
+    group.add(base, shaft, platform, roof);
+    this.scene.add(group);
+    this.obstacles.push({ x, z, radius: 2.4, height: 10.5 });
+  }
+
   private buildCrowHollowVillage(): void {
     // 1. Elder's Manor (North-East of square)
     this.createMedievalHouse(12, -10, -Math.PI / 4, 7.5, 9.0, 4.6);
@@ -339,6 +433,80 @@ export class SceneManager {
     this.createMedievalHouse(10, 18, Math.PI, 5.5, 6.5, 3.6);
     // 5. Abandoned Border House
     this.createMedievalHouse(-14, 15, Math.PI / 3, 6.0, 7.0, 3.8);
+    // 6. Baker & Granary House (West-South-West)
+    this.createMedievalHouse(-22, 6, Math.PI / 2, 6.2, 7.2, 3.9);
+    // 7. Weaver & Apothecary Cottage (Far East)
+    this.createMedievalHouse(23, -3, -Math.PI / 2, 5.8, 6.8, 3.8);
+    // 8. Northern Garrison Guardhouse
+    this.createMedievalHouse(-10, -20, 0, 6.4, 7.4, 4.1);
+
+    // 9. Crow Hollow Windmill ("Старая Ветряная Мельница") at (23, -15)
+    const millX = 23;
+    const millZ = -15;
+    const millY = getGroundHeight(millX, millZ);
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const woodMat = this.assetManager.getMaterial('wood');
+    const sailClothMat = new THREE.MeshStandardMaterial({
+      color: 0xd6d3d1,
+      roughness: 0.85,
+      side: THREE.DoubleSide,
+    });
+    const millTower = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.6, 3.5, 8.8, 10),
+      stoneMat
+    );
+    millTower.position.set(millX, millY + 4.4, millZ);
+    millTower.castShadow = true;
+    millTower.receiveShadow = true;
+    const millCap = new THREE.Mesh(new THREE.ConeGeometry(3.1, 2.6, 10), woodMat);
+    millCap.position.set(millX, millY + 10.1, millZ);
+    millCap.castShadow = true;
+    this.scene.add(millTower, millCap);
+    this.obstacles.push({ x: millX, z: millZ, radius: 3.6, height: 11 });
+
+    this.windmillSailsMesh = new THREE.Group();
+    this.windmillSailsMesh.position.set(millX - 2.7, millY + 7.6, millZ);
+    this.windmillSailsMesh.rotation.y = -Math.PI / 2;
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1.2, 8), woodMat);
+    hub.rotation.x = Math.PI / 2;
+    this.windmillSailsMesh.add(hub);
+    for (let i = 0; i < 4; i++) {
+      const armGroup = new THREE.Group();
+      armGroup.rotation.z = (i * Math.PI) / 2;
+      const spar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.2, 0.18), woodMat);
+      spar.position.y = 2.6;
+      const sail = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 4.2), sailClothMat);
+      sail.position.set(0.58, 2.8, 0.05);
+      armGroup.add(spar, sail);
+      this.windmillSailsMesh.add(armGroup);
+    }
+    this.scene.add(this.windmillSailsMesh);
+
+    // 10. Village Perimeter Watchtowers & Market Stalls
+    this.createWatchtower(-21, -17);
+    this.createWatchtower(19, 20);
+
+    // Market Stalls near the Village Square
+    for (const [sx, sz, rot] of [
+      [-6.5, 7.5, 0.3],
+      [6.5, 11.5, -0.4],
+    ] as [number, number, number][]) {
+      const sy = getGroundHeight(sx, sz);
+      const stall = new THREE.Group();
+      stall.position.set(sx, sy, sz);
+      stall.rotation.y = rot;
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.9, 1.4), woodMat);
+      counter.position.y = 0.45;
+      const awning = new THREE.Mesh(
+        new THREE.BoxGeometry(3.1, 0.15, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.9 })
+      );
+      awning.position.y = 2.1;
+      awning.rotation.x = 0.18;
+      stall.add(counter, awning);
+      this.scene.add(stall);
+      this.obstacles.push({ x: sx, z: sz, radius: 1.5, height: 2.3 });
+    }
 
     // Blacksmith Forge Anvil & Brazier at (11.5, 7.5)
     const forgeY = getGroundHeight(11.5, 7.5);
@@ -384,12 +552,14 @@ export class SceneManager {
       flame.position.set(tx, ty + 2.9, tz);
       this.scene.add(post, flame);
 
-      if (!this.isHeadless && this.torchLights.length < 2) {
-        const pt = new THREE.PointLight(0xf97316, 6, 18, 1.6);
-        pt.position.set(tx, ty + 3.0, tz);
-        this.scene.add(pt);
-        this.torchLights.push(pt);
-      }
+      this.worldLightAnchors.push({
+        x: tx,
+        y: ty + 3.0,
+        z: tz,
+        color: 0xf97316,
+        baseIntensity: 6.2,
+        distance: 21,
+      });
     }
 
     // Ambushed Hunter's Camp in the Old Forest (-34, 18) for Quest 1
@@ -403,11 +573,16 @@ export class SceneManager {
     brokenCart.castShadow = true;
     this.scene.add(brokenCart);
     this.obstacles.push({ x: -34, z: 18, radius: 1.8, height: 2 });
+
+    // Forest Ranger Outpost ("Лесной Кордон Егерей") at (-60, 17) & Abandoned Farmhouse at (44, 8)
+    this.createMedievalHouse(-60, 17, Math.PI / 4, 6.2, 7.4, 3.8);
+    this.createWatchtower(-64, 13);
+    this.createMedievalHouse(44, 8, -Math.PI / 3, 6.0, 7.2, 3.6);
   }
 
   private buildOldForestAndCliffs(): void {
     // Instanced Trees (Trunks + Foliage Cones)
-    const treeCount = 210;
+    const treeCount = 240;
     const trunkGeo = new THREE.CylinderGeometry(0.26, 0.42, 3.6, 7);
     trunkGeo.translate(0, 1.8, 0);
     const canopyGeo = new THREE.ConeGeometry(2.3, 6.2, 7);
@@ -450,20 +625,24 @@ export class SceneManager {
     canopyInst.receiveShadow = true;
 
     let placed = 0;
-    for (let i = 0; i < 450 && placed < treeCount; i++) {
+    for (let i = 0; i < 520 && placed < treeCount; i++) {
       // Deterministic pseudo-random placement
       const angle = i * 2.39996;
-      const r = 24 + ((i * 19) % 88);
+      const r = 26 + ((i * 19) % 86);
       const tx = Math.cos(angle) * r;
       const tz = Math.sin(angle) * r;
 
-      // Keep village center, roads, river, sanctuary, and fortress clear
-      if (Math.hypot(tx, tz) < 23) continue;
-      if (Math.abs(tx) < 6 && tz > -5 && tz < 45) continue; // North road
+      // Keep village center, roads, river, sanctuary, fortress, and ranger outpost clear
+      if (Math.hypot(tx, tz) < 28) continue;
+      if (Math.abs(tx) < 6 && tz > -5 && tz < 45) continue; // North-South road
       if (Math.abs(tz - (34 + Math.sin(tx * 0.03) * 6)) < 8.5) continue; // River
-      if (Math.hypot(tx - -65, tz - -55) < 17) continue; // Sanctuary
-      if (Math.hypot(tx - 72, tz - -68) < 23) continue; // Fortress
+      if (Math.hypot(tx - -65, tz - -55) < 18) continue; // Sanctuary
+      if (Math.hypot(tx - 72, tz - -68) < 24) continue; // Fortress
       if (Math.hypot(tx - -34, tz - 18) < 7) continue; // Hunter camp
+      if (Math.hypot(tx - -58, tz - 18) < 12) continue; // Ranger outpost
+      if (Math.hypot(tx - 44, tz - 8) < 10) continue; // Abandoned farmhouse
+      if (Math.abs(tz) < 10 && tx < -75) continue; // Western Solheim road
+      if (Math.abs(tz + 15) < 10 && tx > 75) continue; // Eastern Monastery road
 
       const ty = getGroundHeight(tx, tz);
       const scale = 0.85 + ((i * 13) % 45) / 100;
@@ -506,12 +685,14 @@ export class SceneManager {
     rockInst.receiveShadow = true;
 
     let rockIdx = 0;
-    // Outer natural cliff ring at radius ~ 112m (with Northern Pass gap at z < -95, |x| < 18)
+    // Outer natural cliff ring at radius ~ 112m (with gaps for Northern Pass, Western Solheim Coast, and Eastern Sun Monastery)
     for (let i = 0; i < 80; i++) {
       const a = (i / 80) * Math.PI * 2;
       const rx = Math.cos(a) * 114;
       const rz = Math.sin(a) * 114;
-      if (rz < -94 && Math.abs(rx) < 18) continue;
+      if (rz < -94 && Math.abs(rx) < 18) continue; // Northern Pass gap
+      if (rx < -88 && Math.abs(rz) < 42) continue; // Western Solheim Port pass gap
+      if (rx > 88 && Math.abs(rz + 15) < 42) continue; // Eastern Sun Monastery pass gap
       const ry = getGroundHeight(rx, rz);
       _dummy.position.set(rx, ry - 0.5, rz);
       _dummy.rotation.set(i * 0.4, i * 0.9, 0);
@@ -522,12 +703,13 @@ export class SceneManager {
     // Scattered boulders in the world
     for (let i = 0; i < 50 && rockIdx < rockCount; i++) {
       const a = i * 1.75;
-      const r = 28 + ((i * 23) % 75);
+      const r = 30 + ((i * 23) % 75);
       const rx = Math.cos(a) * r;
       const rz = Math.sin(a) * r;
-      if (Math.hypot(rx, rz) < 26) continue;
+      if (Math.hypot(rx, rz) < 30) continue;
       if (Math.hypot(rx - -65, rz - -55) < 18) continue;
       if (Math.hypot(rx - 72, rz - -68) < 24) continue;
+      if (Math.hypot(rx - -56, rz - 22) < 12) continue;
       if (Math.abs(rz - 34) < 9) continue;
 
       const ry = getGroundHeight(rx, rz);
@@ -683,13 +865,40 @@ export class SceneManager {
       [10, getGroundHeight(10, 5) + 3.0, 5],
       [-2, getGroundHeight(-2, 16) + 3.0, 16],
       [-34, getGroundHeight(-34, 18) + 1.2, 18], // Hunter camp campfire
-      [14, getGroundHeight(14, -18) + 1.8, -18], // Forge furnace
+      [11.5, getGroundHeight(11.5, 7.5) + 1.6, 7.5], // Blacksmith forge furnace
+      [-65, getGroundHeight(-65, -55) + 2.4, -55], // Cursed Sanctuary altar glow
+      [50, getGroundHeight(50, -46) + 2.6, -46], // Ruined Fortress gate brazier
+      [72, getGroundHeight(72, -68) + 2.8, -68], // Fortress throne brazier
+      [24, getGroundHeight(24, 32) + 1.5, 32], // Order of the Crimson Sun campfire
+      [0, getGroundHeight(0, -112) + 2.2, -112], // Gallows Swamp Charon lantern
+      [0, getGroundHeight(0, -225) + 1.6, -225], // Silvertooth Pass Brom campfire
+      [0, getGroundHeight(0, -335) + 2.2, -335], // Black Bastion Kael brazier
+      [-122, getGroundHeight(-122, -4) + 1.6, -4], // Solheim Port Keeper campfire
+      [-172, getGroundHeight(-172, -18) + 14.5, -18], // Solheim Lighthouse beacon
+      [148, getGroundHeight(148, -15) + 1.8, -15], // Sun Monastery courtyard brazier
+      [0, getGroundHeight(0, -572) + 1.8, -572], // Starfall Valley herald campfire
+      [0, getGroundHeight(0, -655) + 2.6, -655], // Starfall Precursor Anvil glow
     ];
 
     for (const [fx, fy, fz] of firePositions) {
       const halo = new THREE.Mesh(haloGeo, haloMat);
       halo.position.set(fx, fy, fz);
       this.scene.add(halo);
+
+      // Register in dynamic light source pool if not already added
+      const exists = this.worldLightAnchors.some((a) => Math.hypot(a.x - fx, a.z - fz) < 2.0);
+      if (!exists) {
+        const isSanctuary = Math.hypot(fx - -65, fz - -55) < 5;
+        const isStarfall = fz < -550;
+        this.worldLightAnchors.push({
+          x: fx,
+          y: fy + 0.3,
+          z: fz,
+          color: isSanctuary ? 0xa855f7 : isStarfall ? 0x38bdf8 : 0xff7b24,
+          baseIntensity: isSanctuary ? 6.5 : 7.0,
+          distance: 24,
+        });
+      }
     }
 
     // 2. Rising Sparks / Embers Particle System
@@ -734,11 +943,12 @@ export class SceneManager {
       roughness: 0.2,
     });
 
-    // Stone Ritual Circle Platform
+    // Stone Ritual Circle Platform (top surface flush with cy + 0.03)
     const dais = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 9.5, 0.5, 16), stoneMat);
-    dais.position.set(cx, cy + 0.25, cz);
+    dais.position.set(cx, cy - 0.22, cz);
     dais.receiveShadow = true;
     this.scene.add(dais);
+    this.colliderMeshes.push(dais);
 
     // 6 Standing Monoliths
     for (let i = 0; i < 6; i++) {
@@ -759,6 +969,26 @@ export class SceneManager {
       this.scene.add(monolith);
       this.colliderMeshes.push(monolith);
       this.obstacles.push({ x: mx, z: mz, radius: 1.0, height: 5 });
+    }
+
+    // Outer Druid Archways & Ritual Ossuary Shrine at (-76, -64)
+    for (const [ax, az, rot] of [
+      [-52, -45, -0.7],
+      [-78, -46, 0.7],
+      [-76, -67, -0.5],
+    ] as [number, number, number][]) {
+      const ay = getGroundHeight(ax, az);
+      const arch = new THREE.Group();
+      arch.position.set(ax, ay, az);
+      arch.rotation.y = rot;
+      const pL = new THREE.Mesh(new THREE.BoxGeometry(0.9, 4.2, 0.9), stoneMat);
+      pL.position.set(-1.8, 2.1, 0);
+      const pR = pL.clone();
+      pR.position.x = 1.8;
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.8, 1.1), stoneMat);
+      lintel.position.set(0, 4.3, 0);
+      arch.add(pL, pR, lintel);
+      this.scene.add(arch);
     }
 
     // Central Cursed Altar & Floating Artifact Crystal
@@ -782,12 +1012,14 @@ export class SceneManager {
     const fz = -68;
     const fy = getGroundHeight(fx, fz);
     const stoneMat = this.assetManager.getMaterial('stone');
+    const woodMat = this.assetManager.getMaterial('wood');
 
-    // Courtyard Floor
+    // Courtyard Floor (top surface flush with fy + 0.03)
     const floor = new THREE.Mesh(new THREE.CylinderGeometry(16, 17, 0.4, 16), stoneMat);
-    floor.position.set(fx, fy + 0.2, fz);
+    floor.position.set(fx, fy - 0.17, fz);
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.colliderMeshes.push(floor);
 
     // Ruined Battlement Pillars around the Boss Arena (leaving South-West entrance open)
     for (let i = 0; i < 10; i++) {
@@ -811,6 +1043,25 @@ export class SceneManager {
       this.obstacles.push({ x: wx, z: wz, radius: 2.1, height: 7 });
     }
 
+    // Outer Fortress Gatehouse & Siege Ballistae at (52, -48) and (86, -54)
+    this.createMedievalHouse(88, -56, -Math.PI / 3, 6.8, 8.2, 4.2);
+    for (const [bx, bz, rot] of [
+      [54, -46, -0.8],
+      [62, -48, -0.6],
+    ] as [number, number, number][]) {
+      const by = getGroundHeight(bx, bz);
+      const ballista = new THREE.Group();
+      ballista.position.set(bx, by, bz);
+      ballista.rotation.y = rot;
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.9, 2.4), woodMat);
+      base.position.y = 0.45;
+      const arms = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.2, 0.25), woodMat);
+      arms.position.set(0, 1.0, 0.8);
+      ballista.add(base, arms);
+      this.scene.add(ballista);
+      this.obstacles.push({ x: bx, z: bz, radius: 1.4, height: 1.5 });
+    }
+
     // Ancient King's Ruined Throne at back of Fortress
     const throne = new THREE.Mesh(new THREE.BoxGeometry(3.2, 4.2, 1.8), stoneMat);
     throne.position.set(fx + 8, fy + 2.1, fz - 8);
@@ -828,9 +1079,10 @@ export class SceneManager {
     const steelMat = this.assetManager.getMaterial('steel');
 
     const floor = new THREE.Mesh(new THREE.BoxGeometry(34, 0.4, 34), stoneMat);
-    floor.position.set(cx, 0.1, cz);
+    floor.position.set(cx, -0.18, cz);
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.colliderMeshes.push(floor);
 
     // Perimeter Crypt Walls
     const wallN = new THREE.Mesh(new THREE.BoxGeometry(34, 6.5, 1.5), stoneMat);
@@ -889,13 +1141,43 @@ export class SceneManager {
       roughness: 0.7,
     });
 
-    // Order Command Tent at (-10, 64)
-    const tentY = getGroundHeight(-10, 64);
-    const tent = new THREE.Mesh(new THREE.ConeGeometry(3.6, 4.2, 6), crimsonBannerMat);
-    tent.position.set(-10, tentY + 2.1, 64);
-    tent.castShadow = true;
-    this.scene.add(tent);
-    this.obstacles.push({ x: -10, z: 64, radius: 3.2, height: 4.2 });
+    // Order Command Tent at (-10, 64) + Secondary Tents at (-18, 60) and (10, 62)
+    for (const [tx, tz, r] of [
+      [-10, 64, 3.6],
+      [-18, 60, 2.8],
+      [10, 62, 2.9],
+    ] as [number, number, number][]) {
+      const tentY = getGroundHeight(tx, tz);
+      const tent = new THREE.Mesh(new THREE.ConeGeometry(r, 4.2, 6), crimsonBannerMat);
+      tent.position.set(tx, tentY + 2.1, tz);
+      tent.castShadow = true;
+      this.scene.add(tent);
+      this.obstacles.push({ x: tx, z: tz, radius: r * 0.9, height: 4.2 });
+    }
+
+    // Ruined Bell Tower Chapel ("Часовня Пепельного Колокола") at (18, 76) & Stone Mausoleums
+    const chapelY = getGroundHeight(18, 76);
+    const chapelNave = new THREE.Mesh(new THREE.BoxGeometry(5.6, 4.8, 7.8), stoneMat);
+    chapelNave.position.set(18, chapelY + 2.4, 76);
+    const belfry = new THREE.Mesh(new THREE.BoxGeometry(3.2, 9.2, 3.2), stoneMat);
+    belfry.position.set(18, chapelY + 4.6, 72.5);
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(2.6, 3.4, 4), stoneMat);
+    spire.position.set(18, chapelY + 10.9, 72.5);
+    spire.rotation.y = Math.PI / 4;
+    this.scene.add(chapelNave, belfry, spire);
+    this.obstacles.push({ x: 18, z: 76, radius: 4.2, height: 11 });
+
+    for (const [mx, mz] of [
+      [-18, 78],
+      [-16, 90],
+      [16, 92],
+    ] as [number, number][]) {
+      const my = getGroundHeight(mx, mz);
+      const crypt = new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.2, 4.6), stoneMat);
+      crypt.position.set(mx, my + 1.6, mz);
+      this.scene.add(crypt);
+      this.obstacles.push({ x: mx, z: mz, radius: 2.5, height: 3.4 });
+    }
 
     // Ash Cemetery Boss Arena & Crypt Monoliths around (0, 84)
     const arenaY = getGroundHeight(0, 84);
@@ -903,9 +1185,10 @@ export class SceneManager {
       new THREE.CylinderGeometry(14, 15, 0.45, 16),
       stoneMat
     );
-    cryptDais.position.set(0, arenaY + 0.2, 84);
+    cryptDais.position.set(0, arenaY - 0.195, 84);
     cryptDais.receiveShadow = true;
     this.scene.add(cryptDais);
+    this.colliderMeshes.push(cryptDais);
 
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
@@ -991,18 +1274,18 @@ export class SceneManager {
     const woodMat = this.assetManager.getMaterial('wood');
     const steelMat = this.assetManager.getMaterial('steel');
 
-    // 0. Massively Expanded Seamless Northern Terrain Mesh covering x in [-180, 180], z in [-558, -98] (3-4x wider physical area)
-    const northWidth = 360;
-    const northLength = 460;
-    const segX = this.isHeadless ? 64 : 128;
-    const segZ = this.isHeadless ? 100 : 200;
+    // 0. Massively Expanded Seamless Northern Terrain Mesh covering x in [-205, 205], z in [-718, -98] (including Act III Starfall Valley)
+    const northWidth = 410;
+    const northLength = 620;
+    const segX = this.isHeadless ? 140 : 180;
+    const segZ = this.isHeadless ? 240 : 320;
     const northGeo = new THREE.PlaneGeometry(northWidth, northLength, segX, segZ);
     northGeo.rotateX(-Math.PI / 2);
 
     const pos = northGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const vx = pos.getX(i);
-      const vz = pos.getZ(i) - 328.0; // shifts [-230, +230] to [-558, -98]
+      const vz = pos.getZ(i) - 408.0; // shifts [-310, +310] to [-718, -98]
       pos.setZ(i, vz);
       pos.setY(i, getGroundHeight(vx, vz));
     }
@@ -1055,45 +1338,51 @@ export class SceneManager {
       opacity: 0.84,
     });
     const swampWater = new THREE.Mesh(swampWaterGeo, swampWaterMat);
-    swampWater.position.set(0, -0.35, -160);
+    swampWater.position.set(0, -0.48, -160);
     this.scene.add(swampWater);
 
     // 1A. Main North-South Rotten Wooden Boardwalk (Гать) from z = -110 to -186
     for (let z = -110; z >= -186; z -= 5.2) {
       const by = getGroundHeight(0, z);
       const plank = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.24, 4.9), woodMat);
-      plank.position.set(0, by + 0.08, z);
+      plank.position.set(0, by - 0.08, z);
       plank.rotation.y = ((z * 13) % 7) * 0.015;
       plank.receiveShadow = true;
       this.scene.add(plank);
+      this.colliderMeshes.push(plank);
     }
 
     // 1B. Western Boardwalk Branch (z = -152, x from -4 to -44) -> Abandoned Stilt Fisherman Village
     for (let x = -5; x >= -44; x -= 4.8) {
       const by = getGroundHeight(x, -152);
       const plank = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.22, 3.6), woodMat);
-      plank.position.set(x, by + 0.08, -152);
+      plank.position.set(x, by - 0.08, -152);
       plank.rotation.z = (x % 2 === 0 ? 1 : -1) * 0.02;
       plank.receiveShadow = true;
       this.scene.add(plank);
+      this.colliderMeshes.push(plank);
     }
 
-    // Abandoned Fishermen's Stilt Village at x in [-46, -64], z in [-140, -166]
+    // Abandoned Fishermen's Stilt Village at x in [-46, -64], z in [-140, -166] + Alchemist Stilt Hut
     this.createStiltHut(-48, -145, 0.35);
     this.createStiltHut(-58, -154, -0.4);
     this.createStiltHut(-50, -164, 0.8);
+    this.createStiltHut(-64, -144, 0.15);
+    this.createStiltHut(42, -136, -0.5);
+    this.createWatchtower(-36, -182);
 
     // 1C. Eastern Boardwalk Branch (z = -166, x from 4 to 24) -> Lord Vane's Manor ("Поместье Воронов")
     for (let x = 5; x <= 23; x += 4.5) {
       const by = getGroundHeight(x, -166);
       const plank = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 3.8), woodMat);
-      plank.position.set(x, by + 0.08, -166);
+      plank.position.set(x, by - 0.08, -166);
       plank.receiveShadow = true;
       this.scene.add(plank);
+      this.colliderMeshes.push(plank);
     }
 
-    // Lord Vane's Gothic Manor House & Courtyard at (34, -166)
-    this.createMedievalHouse(36, -166, -Math.PI / 2, 8.2, 10.5, 5.2);
+    // Lord Vane's Gothic Manor House & Courtyard at (39.5, -166)
+    this.createMedievalHouse(39.5, -166, -Math.PI / 2, 8.2, 10.5, 5.2);
     const banquetTableY = getGroundHeight(28, -166);
     const banquetTable = new THREE.Mesh(
       new THREE.BoxGeometry(1.8, 0.85, 4.4),
@@ -1241,8 +1530,10 @@ export class SceneManager {
       new THREE.CylinderGeometry(14.5, 15.5, 0.4, 16),
       stoneMat
     );
-    hydraDais.position.set(0, hydraY + 0.15, -190);
+    hydraDais.position.set(0, hydraY - 0.17, -190);
+    hydraDais.receiveShadow = true;
     this.scene.add(hydraDais);
+    this.colliderMeshes.push(hydraDais);
 
     // =========================================================================
     // BIOME 2: SILVERTOOTH PASS & DEAD MINES ("Среброзубый Перевал и Мёртвые Шахты", z in [-325, -215])
@@ -1292,8 +1583,9 @@ export class SceneManager {
     for (let x = -26; x >= -48; x -= 2.2) {
       const by = getGroundHeight(x, -255);
       const plank = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.24, 3.8), woodMat);
-      plank.position.set(x, by + 0.08, -255);
+      plank.position.set(x, by - 0.09, -255);
       this.scene.add(plank);
+      this.colliderMeshes.push(plank);
     }
     for (const endX of [-26, -48]) {
       const py = getGroundHeight(endX, -255);
@@ -1307,7 +1599,7 @@ export class SceneManager {
       }
     }
 
-    // Icy Watchtower at (-15, -246)
+    // Icy Watchtower at (-15, -246) & Dwarven Ore Smelting Foundry ("Плавильня Чёрной Руды") at (24, -256)
     const towerY = getGroundHeight(-15, -246);
     const iceTower = new THREE.Mesh(
       new THREE.CylinderGeometry(3.2, 3.8, 10.5, 8),
@@ -1317,6 +1609,16 @@ export class SceneManager {
     iceTower.castShadow = true;
     this.scene.add(iceTower);
     this.obstacles.push({ x: -15, z: -246, radius: 3.8, height: 10.5 });
+
+    const foundryY = getGroundHeight(24, -256);
+    const foundryHall = new THREE.Mesh(new THREE.BoxGeometry(7.6, 5.2, 9.2), stoneMat);
+    foundryHall.position.set(24, foundryY + 2.6, -256);
+    const stack1 = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 8.8, 8), stoneMat);
+    stack1.position.set(21.5, foundryY + 6.4, -253.5);
+    const stack2 = stack1.clone();
+    stack2.position.set(26.5, foundryY + 6.4, -258.5);
+    this.scene.add(foundryHall, stack1, stack2);
+    this.obstacles.push({ x: 24, z: -256, radius: 4.8, height: 9 });
 
     // 2C. Snow-Covered Pine Groves (InstancedMesh — 120 snow-covered spruces across the pass)
     const snowTreeCount = this.isHeadless ? 40 : 120;
@@ -1475,8 +1777,9 @@ export class SceneManager {
     for (let z = -320; z >= -336; z -= 2.5) {
       const by = getGroundHeight(0, z);
       const deck = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.28, 2.3), woodMat);
-      deck.position.set(0, by + 0.1, z);
+      deck.position.set(0, by - 0.11, z);
       this.scene.add(deck);
+      this.colliderMeshes.push(deck);
     }
     for (const side of [-1, 1]) {
       const postS = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4.2, 1.2), stoneMat);
@@ -1646,9 +1949,10 @@ export class SceneManager {
       new THREE.CylinderGeometry(18.5, 19.5, 0.35, 16),
       stoneMat
     );
-    courtFloor.position.set(0, courtY + 0.15, -400);
+    courtFloor.position.set(0, courtY - 0.145, -400);
     courtFloor.receiveShadow = true;
     this.scene.add(courtFloor);
+    this.colliderMeshes.push(courtFloor);
 
     // Memorial Swords of Fallen Ashen Brothers around the Courtyard perimeter
     for (let i = 0; i < 12; i++) {
@@ -1729,8 +2033,9 @@ export class SceneManager {
       );
       const bx = side * 20;
       const by = getGroundHeight(bx, -478);
-      bridgeMesh.position.set(bx, by + 0.08, -478);
+      bridgeMesh.position.set(bx, by - 0.1, -478);
       this.scene.add(bridgeMesh);
+      this.colliderMeshes.push(bridgeMesh);
 
       // Walkable Obsidian Sanctuary Island Dais at (-42, -478) and (+42, -478)
       const islandX = side * 42;
@@ -1739,8 +2044,9 @@ export class SceneManager {
         new THREE.CylinderGeometry(11.5, 9.0, 2.2, 8),
         obsidianMat
       );
-      islandDais.position.set(islandX, islandY - 0.9, -478);
+      islandDais.position.set(islandX, islandY - 1.07, -478);
       this.scene.add(islandDais);
+      this.colliderMeshes.push(islandDais);
 
       // Ruined Precursor Altar on each Obsidian Island
       const ruinedAltar = new THREE.Mesh(
@@ -1783,8 +2089,9 @@ export class SceneManager {
       new THREE.CylinderGeometry(20, 22, 0.6, 16),
       obsidianMat
     );
-    voidDais.position.set(0, throneY + 0.2, -505);
+    voidDais.position.set(0, throneY - 0.27, -505);
     this.scene.add(voidDais);
+    this.colliderMeshes.push(voidDais);
 
     // Ring of 8 Obsidian Runic Monoliths flanking the Boss Arena
     for (let i = 0; i < 8; i++) {
@@ -1816,6 +2123,294 @@ export class SceneManager {
     voidSpire.position.set(0, spireY + 9.0, -525);
     this.scene.add(voidSpire);
     this.obstacles.push({ x: 0, z: -525, radius: 4.0, height: 18 });
+  }
+
+  private buildSunkenPortSolheim(): void {
+    // BIOME 5: SUNKEN PORT SOLHEIM & ABYSSAL LIGHTHOUSE ("Затонувший Порт Сольхейм и Маяк Бездны", x in [-205, -105], z in [-95, 95])
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const woodMat = this.assetManager.getMaterial('wood');
+    const steelMat = this.assetManager.getMaterial('steel');
+    const beaconGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 2.4,
+      roughness: 0.15,
+    });
+
+    // 1. Stone Harbor Causeway & Timber Piers extending from x = -115 to x = -175
+    for (let x = -114; x >= -168; x -= 6.0) {
+      const py = getGroundHeight(x, 0);
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.45, 7.2), stoneMat);
+      slab.position.set(x, py - 0.195, 0);
+      slab.receiveShadow = true;
+      this.scene.add(slab);
+      this.colliderMeshes.push(slab);
+    }
+
+    // North & South Wooden Harbor Docks at (-148, 22) and (-148, -22)
+    for (const sideZ of [-22, 22]) {
+      for (let x = -132; x >= -164; x -= 4.5) {
+        const dy = getGroundHeight(x, sideZ);
+        const dock = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.28, 4.6), woodMat);
+        dock.position.set(x, Math.max(-1.1, dy + 0.35), sideZ);
+        this.scene.add(dock);
+      }
+    }
+
+    // 2. Half-Sunken Merchant Guild Houses & Harbor Warehouses
+    this.createMedievalHouse(-126, -14, Math.PI / 6, 7.2, 8.8, 4.4);
+    this.createMedievalHouse(-128, 16, -Math.PI / 5, 6.8, 8.2, 4.0);
+    this.createMedievalHouse(-142, -26, Math.PI / 4, 7.5, 9.2, 3.8);
+    this.createMedievalHouse(-140, 28, -Math.PI / 4, 6.5, 7.8, 3.6);
+    this.createStiltHut(-152, 34, 0.4);
+    this.createStiltHut(-154, -36, -0.5);
+
+    // 3. Shipwrecked Galleons jutting out of the surf at (-166, 26) and (-162, -32)
+    for (const [sx, sz, rotZ, rotY] of [
+      [-166, 26, 0.28, 0.45],
+      [-162, -32, -0.32, -0.55],
+    ] as [number, number, number, number][]) {
+      const sy = getGroundHeight(sx, sz);
+      const shipGroup = new THREE.Group();
+      shipGroup.position.set(sx, sy + 0.2, sz);
+      shipGroup.rotation.set(0.15, rotY, rotZ);
+
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(11.5, 3.2, 4.2), woodMat);
+      hull.position.y = 1.4;
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 9.5, 8), woodMat);
+      mast.position.set(0, 5.8, 0);
+      const yardarm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 5.2), woodMat);
+      yardarm.position.set(0, 7.8, 0);
+      shipGroup.add(hull, mast, yardarm);
+      this.scene.add(shipGroup);
+      this.obstacles.push({ x: sx, z: sz, radius: 4.5, height: 8 });
+    }
+
+    // 4. Colossal Lighthouse of the Abyss ("Маяк Бездны Сольхейма") at (-172, -18)
+    const lx = -172;
+    const lz = -18;
+    const ly = getGroundHeight(lx, lz);
+    const lhBase = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.8, 4.0, 12), stoneMat);
+    lhBase.position.set(lx, ly + 2.0, lz);
+    const lhShaft = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4.4, 12.0, 12), stoneMat);
+    lhShaft.position.set(lx, ly + 10.0, lz);
+    lhShaft.castShadow = true;
+    const lhGallery = new THREE.Mesh(new THREE.CylinderGeometry(3.9, 3.9, 0.6, 12), steelMat);
+    lhGallery.position.set(lx, ly + 16.2, lz);
+    const lhLantern = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 2.8, 10), beaconGlowMat);
+    lhLantern.position.set(lx, ly + 17.8, lz);
+    const lhDome = new THREE.Mesh(new THREE.ConeGeometry(3.1, 2.6, 12), steelMat);
+    lhDome.position.set(lx, ly + 20.4, lz);
+    this.scene.add(lhBase, lhShaft, lhGallery, lhLantern, lhDome);
+    this.obstacles.push({ x: lx, z: lz, radius: 5.2, height: 21 });
+
+    // Rotating Lighthouse Light Beam Group
+    this.lighthouseBeamMesh = new THREE.Group();
+    this.lighthouseBeamMesh.position.set(lx, ly + 17.8, lz);
+    const beamConeGeo = new THREE.ConeGeometry(3.2, 26, 12, 1, true);
+    beamConeGeo.rotateX(Math.PI / 2);
+    beamConeGeo.translate(0, 0, 13);
+    const beamConeMat = new THREE.MeshBasicMaterial({
+      color: 0xfef08a,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const beamCone = new THREE.Mesh(beamConeGeo, beamConeMat);
+    this.lighthouseBeamMesh.add(beamCone);
+    this.scene.add(this.lighthouseBeamMesh);
+
+    // 5. Siren Queen's Tidal Boss Arena Dais at (-158, 0)
+    const arenaY = getGroundHeight(-158, 0);
+    const sirenDais = new THREE.Mesh(new THREE.CylinderGeometry(14, 15.5, 0.5, 16), stoneMat);
+    sirenDais.position.set(-158, arenaY - 0.22, 0);
+    this.scene.add(sirenDais);
+    this.colliderMeshes.push(sirenDais);
+  }
+
+  private buildSunMonastery(): void {
+    // BIOME 6: AZURE MONASTERY OF SOLAR VOWS ("Лазурный Монастырь Солнечных Клятв", x in [105, 205], z in [-85, 75])
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const azureRoofMat = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8,
+      emissive: 0x1e3a8a,
+      emissiveIntensity: 0.35,
+      roughness: 0.4,
+      metalness: 0.25,
+    });
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.85,
+      roughness: 0.22,
+      metalness: 0.85,
+    });
+
+    // 1. Grand Ascending Mountain Stairway & Colonnade from x = 106 to x = 136 (z = -15)
+    for (let x = 106; x <= 136; x += 4.5) {
+      const sy = getGroundHeight(x, -15);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.45, 7.6), stoneMat);
+      step.position.set(x, sy - 0.195, -15);
+      step.receiveShadow = true;
+      this.scene.add(step);
+      this.colliderMeshes.push(step);
+
+      for (const sideZ of [-4.2, 4.2]) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.52, 5.2, 8), stoneMat);
+        col.position.set(x, sy + 2.6, -15 + sideZ);
+        this.scene.add(col);
+      }
+    }
+
+    // 2. Central Solar Cloister Courtyard Dais at (160, -15)
+    const courtY = getGroundHeight(160, -15);
+    const courtDais = new THREE.Mesh(new THREE.CylinderGeometry(18, 19.5, 0.5, 16), stoneMat);
+    courtDais.position.set(160, courtY - 0.22, -15);
+    courtDais.receiveShadow = true;
+    this.scene.add(courtDais);
+    this.colliderMeshes.push(courtDais);
+
+    // Ring of 10 Marble & Azure Cloister Columns around the Solar Courtyard
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      if (Math.cos(a) < -0.75) continue; // Keep West entrance open
+      const cx = 160 + Math.cos(a) * 16.8;
+      const cz = -15 + Math.sin(a) * 16.8;
+      const cy = getGroundHeight(cx, cz);
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.0, 7.4, 10), stoneMat);
+      pillar.position.set(cx, cy + 3.7, cz);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(1.35, 1.8, 8), azureRoofMat);
+      cap.position.set(cx, cy + 8.3, cz);
+      this.scene.add(pillar, cap);
+      this.obstacles.push({ x: cx, z: cz, radius: 1.2, height: 8.5 });
+    }
+
+    // 3. Northern Scriptorium Hall at (152, -38) & Southern Belfry Sanctuary at (152, 8)
+    this.createMedievalHouse(152, -38, 0, 8.8, 10.5, 5.2);
+    this.createMedievalHouse(152, 8, Math.PI, 8.4, 9.8, 5.0);
+
+    // 4. Grand Astronomical Observatory Dome at (182, -15)
+    const obsY = getGroundHeight(182, -15);
+    const obsRotunda = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 7.4, 7.5, 16), stoneMat);
+    obsRotunda.position.set(182, obsY + 3.75, -15);
+    const obsDome = new THREE.Mesh(
+      new THREE.SphereGeometry(6.9, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      azureRoofMat
+    );
+    obsDome.position.set(182, obsY + 7.5, -15);
+    const obsFinial = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), goldMat);
+    obsFinial.position.set(182, obsY + 15.2, -15);
+    this.scene.add(obsRotunda, obsDome, obsFinial);
+    this.obstacles.push({ x: 182, z: -15, radius: 7.4, height: 15 });
+
+    // 5. Rotating Golden Celestial Astrolabe suspended over the Solar Courtyard at (160, -15)
+    this.monasteryAstrolabeMesh = new THREE.Group();
+    this.monasteryAstrolabeMesh.position.set(160, courtY + 6.8, -15);
+    const ring1 = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.16, 8, 24), goldMat);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.5, 0.14, 8, 24), goldMat);
+    ring2.rotation.x = Math.PI / 3;
+    const coreSun = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 12), goldMat);
+    this.monasteryAstrolabeMesh.add(ring1, ring2, coreSun);
+    this.scene.add(this.monasteryAstrolabeMesh);
+  }
+
+  private buildStarfallValleyAndForge(): void {
+    // BIOME 7 (ACT III): STARFALL VALLEY & FORGE OF THE PRECURSORS ("Долина Звёздного Пепла и Кузница Предтеч", z in [-705, -550])
+    const obsidianMat = new THREE.MeshStandardMaterial({
+      color: 0x090d16,
+      roughness: 0.2,
+      metalness: 0.78,
+    });
+    const astralCyanMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 2.3,
+      roughness: 0.15,
+    });
+    const starGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xd97706,
+      emissiveIntensity: 2.0,
+      roughness: 0.2,
+      metalness: 0.85,
+    });
+
+    // 1. Astral Causeway extending North from the Eclipse Spire (z = -534 to z = -615)
+    for (let z = -536; z >= -614; z -= 6.5) {
+      const cy = getGroundHeight(0, z);
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.4, 5.8), obsidianMat);
+      slab.position.set(0, cy - 0.17, z);
+      const trimL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.46, 5.8), astralCyanMat);
+      trimL.position.set(-4.0, cy - 0.15, z);
+      const trimR = trimL.clone();
+      trimR.position.x = 4.0;
+      this.scene.add(slab, trimL, trimR);
+      this.colliderMeshes.push(slab);
+    }
+
+    // 2. Fallen Meteorite Craters & Crystalline Star-Pillars across the Valley (z in [-565, -675])
+    const starPillarCoords: [number, number, number][] = [
+      [-24, -575, 7.5],
+      [24, -575, 7.5],
+      [-38, -598, 9.2],
+      [38, -598, 9.2],
+      [-32, -622, 8.4],
+      [32, -622, 8.4],
+      [-44, -648, 10.5],
+      [44, -648, 10.5],
+      [-28, -672, 8.8],
+      [28, -672, 8.8],
+    ];
+    for (let i = 0; i < starPillarCoords.length; i++) {
+      const [px, pz, h] = starPillarCoords[i];
+      const py = getGroundHeight(px, pz);
+      const crystal = new THREE.Mesh(
+        new THREE.ConeGeometry(1.8, h, 6),
+        i % 2 === 0 ? astralCyanMat : starGoldMat
+      );
+      crystal.position.set(px, py + h * 0.5, pz);
+      crystal.rotation.z = ((i % 3) - 1) * 0.14;
+      this.scene.add(crystal);
+      this.obstacles.push({ x: px, z: pz, radius: 1.9, height: h });
+    }
+
+    // 3. Grand Megalithic Forge of the Precursors ("Звёздная Кузница Предтеч") at (0, -640) & Anvil at (0, -655)
+    const forgeY = getGroundHeight(0, -640);
+    const forgeDais = new THREE.Mesh(
+      new THREE.CylinderGeometry(23, 25, 0.7, 16),
+      obsidianMat
+    );
+    forgeDais.position.set(0, forgeY - 0.32, -640);
+    this.scene.add(forgeDais);
+    this.colliderMeshes.push(forgeDais);
+
+    // 6 Towering Precursor Forge Pylons around the Archon Boss Arena
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) < 0.35 && Math.sin(a) > 0) continue; // Keep South entrance open
+      const mx = Math.cos(a) * 21.5;
+      const mz = -640 + Math.sin(a) * 21.5;
+      const my = getGroundHeight(mx, mz);
+      const pylon = new THREE.Mesh(new THREE.BoxGeometry(2.4, 11.5, 2.4), obsidianMat);
+      pylon.position.set(mx, my + 5.75, mz);
+      const coreStrip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 9.5, 2.5), starGoldMat);
+      pylon.add(coreStrip);
+      this.scene.add(pylon);
+      this.obstacles.push({ x: mx, z: mz, radius: 2.2, height: 11.5 });
+    }
+
+    // 4. Rotating Star Core Dynamo above the Precursor Anvil at (0, -655)
+    const anvilY = getGroundHeight(0, -655);
+    this.starfallCoreMesh = new THREE.Group();
+    this.starfallCoreMesh.position.set(0, anvilY + 7.5, -655);
+    const outerRing = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.22, 8, 28), starGoldMat);
+    const innerRing = new THREE.Mesh(new THREE.TorusGeometry(2.8, 0.18, 8, 24), astralCyanMat);
+    innerRing.rotation.x = Math.PI / 2;
+    const starHeart = new THREE.Mesh(new THREE.OctahedronGeometry(1.35, 1), astralCyanMat);
+    this.starfallCoreMesh.add(outerRing, innerRing, starHeart);
+    this.scene.add(this.starfallCoreMesh);
   }
 
   private buildWeatherSystem(): void {
@@ -1898,6 +2493,203 @@ export class SceneManager {
     this.scene.add(this.mistSystem);
   }
 
+  private buildSettlementFencesAndGates(): void {
+    const woodMat = this.assetManager.getMaterial('wood');
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const steelMat = this.assetManager.getMaterial('steel');
+    const flameMat = new THREE.MeshStandardMaterial({
+      color: 0xf97316,
+      emissive: 0xea580c,
+      emissiveIntensity: 2.2,
+      roughness: 0.25,
+    });
+
+    const shortestAngleDiff = (a: number, b: number): number => {
+      let diff = ((a - b + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (diff < -Math.PI) diff += Math.PI * 2;
+      return diff;
+    };
+
+    for (const zone of SETTLEMENT_ZONES) {
+      const circumference = 2 * Math.PI * zone.fenceRadius;
+      const stepDist = 2.1;
+      const numSegments = Math.max(18, Math.round(circumference / stepDist));
+      const gateHalfAngle = (zone.gateWidth * 0.5) / zone.fenceRadius;
+
+      // 1. Build Wooden Palisade / Fence Segments around the settlement perimeter
+      for (let i = 0; i < numSegments; i++) {
+        const angle = (i / numSegments) * Math.PI * 2;
+        const inGate = zone.gateAngles.some(
+          (ga) => Math.abs(shortestAngleDiff(angle, ga)) < gateHalfAngle
+        );
+        if (inGate) continue;
+
+        const px = zone.x + Math.cos(angle) * zone.fenceRadius;
+        const pz = zone.z + Math.sin(angle) * zone.fenceRadius;
+        const py = getGroundHeight(px, pz);
+
+        const segGroup = new THREE.Group();
+        segGroup.position.set(px, py, pz);
+        // Align local Z along the tangent of the perimeter circle
+        segGroup.rotation.y = -angle;
+
+        // Main vertical timber post
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.18, 0.22, 2.35, 6),
+          woodMat
+        );
+        post.position.y = 1.17;
+        post.castShadow = true;
+        post.receiveShadow = true;
+
+        // Sharpened palisade stake tip
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.45, 6), woodMat);
+        tip.position.y = 2.55;
+        tip.castShadow = true;
+
+        // Upper & lower horizontal fence rails
+        const railUpper = new THREE.Mesh(
+          new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25),
+          woodMat
+        );
+        railUpper.position.y = 1.65;
+        railUpper.castShadow = true;
+        railUpper.receiveShadow = true;
+
+        const railLower = new THREE.Mesh(
+          new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25),
+          woodMat
+        );
+        railLower.position.y = 0.85;
+        railLower.castShadow = true;
+        railLower.receiveShadow = true;
+
+        // Intermediate wooden palisade plank
+        const midPlank = new THREE.Mesh(
+          new THREE.BoxGeometry(0.12, 2.05, 0.32),
+          woodMat
+        );
+        midPlank.position.set(0, 1.05, stepDist * 0.48);
+        midPlank.castShadow = true;
+        midPlank.receiveShadow = true;
+
+        segGroup.add(post, tip, railUpper, railLower, midPlank);
+        this.scene.add(segGroup);
+
+        // Register physical obstacle so player cannot walk through the fence (must use gates)
+        this.obstacles.push({
+          x: px,
+          z: pz,
+          radius: 0.96,
+          height: 2.75,
+        });
+      }
+
+      // 2. Build Wooden Archway Gates ("Ворота") at each gate opening
+      for (const gateAngle of zone.gateAngles) {
+        const radX = Math.cos(gateAngle);
+        const radZ = Math.sin(gateAngle);
+        const tanX = -Math.sin(gateAngle);
+        const tanZ = Math.cos(gateAngle);
+
+        const gx = zone.x + radX * zone.fenceRadius;
+        const gz = zone.z + radZ * zone.fenceRadius;
+        const gy = getGroundHeight(gx, gz);
+
+        const halfSpan = Math.max(2.2, zone.gateWidth * 0.5 - 0.45);
+        const leftX = gx - tanX * halfSpan;
+        const leftZ = gz - tanZ * halfSpan;
+        const rightX = gx + tanX * halfSpan;
+        const rightZ = gz + tanZ * halfSpan;
+
+        // Register collision only on the left & right gate pillars, leaving the center gate passage open
+        this.obstacles.push(
+          { x: leftX, z: leftZ, radius: 0.72, height: 4.5 },
+          { x: rightX, z: rightZ, radius: 0.72, height: 4.5 }
+        );
+
+        const gateGroup = new THREE.Group();
+        gateGroup.position.set(gx, gy, gz);
+        gateGroup.rotation.y = -gateAngle;
+
+        for (const side of [-1, 1]) {
+          const zOff = side * halfSpan;
+          // Stone plinth base
+          const plinth = new THREE.Mesh(
+            new THREE.BoxGeometry(0.95, 0.85, 0.95),
+            stoneMat
+          );
+          plinth.position.set(0, 0.42, zOff);
+          plinth.castShadow = true;
+          plinth.receiveShadow = true;
+
+          // Heavy timber gate pillar
+          const pillar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.32, 0.38, 4.2, 8),
+            woodMat
+          );
+          pillar.position.set(0, 2.1, zOff);
+          pillar.castShadow = true;
+          pillar.receiveShadow = true;
+
+          // Swung-open wooden gate door leaf (angled outward so player can walk freely)
+          const doorLeaf = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 2.65, halfSpan * 0.78),
+            woodMat
+          );
+          doorLeaf.position.set(0.85, 1.4, zOff - side * 0.48);
+          doorLeaf.rotation.y = side * 1.12;
+          doorLeaf.castShadow = true;
+          doorLeaf.receiveShadow = true;
+
+          // Gate torch sconce & flame
+          const bracket = new THREE.Mesh(
+            new THREE.BoxGeometry(0.38, 0.12, 0.12),
+            steelMat
+          );
+          bracket.position.set(0.36, 2.75, zOff);
+          const flame = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.22, 1),
+            flameMat
+          );
+          flame.position.set(0.5, 2.95, zOff);
+
+          gateGroup.add(plinth, pillar, doorLeaf, bracket, flame);
+        }
+
+        // Overhead archway crossbeam & pitched gate lintel roof
+        const lintelBeam = new THREE.Mesh(
+          new THREE.BoxGeometry(0.65, 0.48, halfSpan * 2 + 1.4),
+          woodMat
+        );
+        lintelBeam.position.set(0, 4.05, 0);
+        lintelBeam.castShadow = true;
+        lintelBeam.receiveShadow = true;
+
+        const gateRoof = new THREE.Mesh(
+          new THREE.BoxGeometry(1.35, 0.35, halfSpan * 2 + 1.9),
+          stoneMat
+        );
+        gateRoof.position.set(0, 4.42, 0);
+        gateRoof.castShadow = true;
+        gateRoof.receiveShadow = true;
+
+        gateGroup.add(lintelBeam, gateRoof);
+        this.scene.add(gateGroup);
+
+        // Register a dynamic world light anchor at each village gate so gate torches cast real shadows
+        this.worldLightAnchors.push({
+          x: gx + radX * 0.6,
+          y: gy + 3.1,
+          z: gz + radZ * 0.6,
+          color: 0xf97316,
+          baseIntensity: 6.0,
+          distance: 23,
+        });
+      }
+    }
+  }
+
   public setWeather(weather: WeatherType, immediate = false): void {
     if (weather === this.weather && !immediate) return;
     this.previousWeather = immediate ? weather : this.weather;
@@ -1932,6 +2724,7 @@ export class SceneManager {
 
   public applySettings(settings: GraphicsSettings): void {
     this.weatherEffectsEnabled = settings.weatherEffects;
+    this.shadowsEnabled = settings.shadows;
     if (this.isHeadless) return;
     const scale =
       settings.quality === 'low' ? 0.75 : settings.quality === 'medium' ? 1.0 : 1.25;
@@ -1940,6 +2733,9 @@ export class SceneManager {
     );
     this.renderer.shadowMap.enabled = settings.shadows;
     this.sunLight.castShadow = settings.shadows;
+    for (const pt of this.torchLights) {
+      pt.castShadow = settings.shadows;
+    }
     if (!settings.weatherEffects) {
       if (this.rainSystem) this.rainSystem.visible = false;
       if (this.rainSplashSystem) this.rainSplashSystem.visible = false;
@@ -1948,8 +2744,8 @@ export class SceneManager {
   }
 
   public update(dt: number, elapsed: number, playerX: number, playerZ: number): void {
-    // Advance Day/Night slowly (1 game hour per 25 real seconds)
-    this.timeOfDay = (this.timeOfDay + dt * 0.04) % 24;
+    // Advance Day/Night cycle smoothly (full 24h cycle in ~8 minutes of real gameplay, or controllable via Meditation/Settings)
+    this.timeOfDay = (this.timeOfDay + dt * 0.055) % 24;
 
     // Advance smooth weather crossfade transition (~3.1 seconds full transition)
     if (this.weatherTransitionBlend < 1) {
@@ -1974,36 +2770,81 @@ export class SceneManager {
       this.lightningFlash = Math.max(0, this.lightningFlash - dt * 4.5);
     }
 
-    // Calculate Sun angle and atmospheric color
+    // Calculate Sun / Moon angle and atmospheric color across 24h cycle
     const sunAngle = ((this.timeOfDay - 6) / 24) * Math.PI * 2;
-    const sunElev = Math.sin(sunAngle);
+    const sunElev = Math.sin(sunAngle); // +1 at 12:00 Noon, -1 at 00:00 Midnight
     const sunHoriz = Math.cos(sunAngle);
 
+    // Position DirectionalLight (acts as Sun during day and Moon at night)
+    const isNight = sunElev < -0.05;
+    const lightDirX = isNight ? -sunHoriz : sunHoriz;
+    const lightElev = Math.max(0.22, Math.abs(sunElev));
+
     this.sunLight.position.set(
-      playerX + sunHoriz * 55,
-      Math.max(12, Math.abs(sunElev) * 65 + 15),
-      playerZ + 30
+      playerX + lightDirX * 60,
+      lightElev * 68 + 14,
+      playerZ + 32
     );
     this.sunLight.target.position.set(playerX, 0, playerZ);
     this.sunLight.target.updateMatrixWorld();
 
-    // Base Day / Dusk / Night sky color and light intensities
-    let baseSunIntensity = 2.2;
-    let baseHemiIntensity = 1.05;
-    if (sunElev > 0.25) {
-      _color.copy(_skyDay);
-      baseSunIntensity = 2.2;
-      baseHemiIntensity = 1.05;
-    } else if (sunElev > -0.15) {
-      const t = (sunElev + 0.15) / 0.4;
-      _color.copy(_skyNight).lerp(_skyDusk, Math.sin(t * Math.PI)).lerp(_skyDay, t);
-      baseSunIntensity = 1.15 + t * 1.05;
-      baseHemiIntensity = 0.8 + t * 0.25;
-    } else {
-      _color.copy(_skyNight);
-      baseSunIntensity = 0.9; // Clear moonlight
-      baseHemiIntensity = 0.72;
+    // Update Celestial Sun/Moon Orb in the sky
+    if (this.celestialOrb) {
+      this.celestialOrb.position.set(
+        playerX + lightDirX * 115,
+        Math.max(16, Math.abs(sunElev) * 92 + 12),
+        playerZ - 75
+      );
+      const orbMat = this.celestialOrb.material as THREE.MeshBasicMaterial;
+      if (isNight) {
+        orbMat.color.setHex(0xcbd5e1); // Pale silver full moon
+        this.celestialOrb.scale.setScalar(0.85);
+      } else if (sunElev < 0.28) {
+        orbMat.color.setHex(0xf97316); // Fiery dawn/dusk sun
+        this.celestialOrb.scale.setScalar(1.25);
+      } else {
+        orbMat.color.setHex(0xfef08a); // Golden midday sun
+        this.celestialOrb.scale.setScalar(1.0);
+      }
     }
+
+    // Base Dawn / Day / Dusk / Night sky color, sun color, and light intensities
+    let baseSunIntensity = 2.25;
+    let baseHemiIntensity = 1.05;
+    const targetSunColor = new THREE.Color();
+
+    if (sunElev > 0.28) {
+      // Midday (08:00 - 16:00)
+      _color.copy(_skyDay);
+      targetSunColor.copy(_sunNoon);
+      baseSunIntensity = 2.35;
+      baseHemiIntensity = 1.1;
+      this.hemiLight.color.setHex(0x9bb8d3);
+      this.hemiLight.groundColor.setHex(0x2d2820);
+    } else if (sunElev >= -0.08) {
+      // Dawn (05:30 - 08:00) or Dusk (16:00 - 19:00)
+      const t = (sunElev + 0.08) / 0.36; // 0 at night edge, 1 at day edge
+      const isDawn = this.timeOfDay < 12;
+      const horizonSky = isDawn ? _skyDawn : _skyDusk;
+      const horizonSun = isDawn ? _sunDawn : _sunDusk;
+
+      _color.copy(_skyNight).lerp(horizonSky, Math.sin(t * Math.PI)).lerp(_skyDay, t);
+      targetSunColor.copy(_moonNight).lerp(horizonSun, Math.sin(t * Math.PI)).lerp(_sunNoon, t);
+      baseSunIntensity = 0.85 + t * 1.5;
+      baseHemiIntensity = 0.62 + t * 0.48;
+      this.hemiLight.color.setHex(isDawn ? 0xd99b78 : 0xc2784e);
+      this.hemiLight.groundColor.setHex(0x211b15);
+    } else {
+      // Night (19:00 - 05:30)
+      _color.copy(_skyNight);
+      targetSunColor.copy(_moonNight);
+      baseSunIntensity = 0.68; // Atmospheric moonlight
+      baseHemiIntensity = 0.48;
+      this.hemiLight.color.setHex(0x3b5278);
+      this.hemiLight.groundColor.setHex(0x111318);
+    }
+
+    this.sunLight.color.lerp(targetSunColor, Math.min(1, dt * 3.0));
 
     // Blend sky color with weather atmospheric tint
     const prevTint = WEATHER_PRESETS[this.previousWeather]?.skyTintHex ?? 0x3b526b;
@@ -2012,30 +2853,35 @@ export class SceneManager {
       new THREE.Color(targetTint),
       this.weatherTransitionBlend
     );
-    _color.lerp(_weatherTint, 0.48);
+    _color.lerp(_weatherTint, isNight ? 0.28 : 0.48);
 
-    // Smoothly blend biome-specific fog & sky atmosphere as player marches North
+    // Smoothly blend biome-specific fog & sky atmosphere across all 12 biomes
     let targetBiomeFogHex = 0x1e242b;
     let mistParticleHex = 0x94a3b8;
-    if (playerZ <= -435) {
-      // Biome 4: Eclipse Crater — crimson-obsidian void atmosphere
+    if (playerZ <= -550) {
+      targetBiomeFogHex = 0x0c192c;
+      mistParticleHex = 0x38bdf8;
+    } else if (playerZ <= -435) {
       targetBiomeFogHex = 0x260b16;
       mistParticleHex = 0xf43f5e;
     } else if (playerZ <= -325) {
-      // Biome 3: Black Bastion of Ash — smoky amber-ash atmosphere
       targetBiomeFogHex = 0x271e17;
       mistParticleHex = 0xf59e0b;
     } else if (playerZ <= -215) {
-      // Biome 2: Silvertooth Pass — freezing pale-blue blizzard atmosphere
       targetBiomeFogHex = 0x1e2f42;
       mistParticleHex = 0xe0f2fe;
     } else if (playerZ <= -105) {
-      // Biome 1: Gallows Swamp — toxic greenish bog mist
       targetBiomeFogHex = 0x11281d;
       mistParticleHex = 0x4ade80;
+    } else if (playerX < -105) {
+      targetBiomeFogHex = 0x0f2937;
+      mistParticleHex = 0x2dd4bf;
+    } else if (playerX > 105) {
+      targetBiomeFogHex = 0x1e293b;
+      mistParticleHex = 0xfef08a;
     }
     this.biomeFogTint.lerp(new THREE.Color(targetBiomeFogHex), Math.min(1, dt * 1.8));
-    if (playerZ <= -105) {
+    if (playerZ <= -105 || Math.abs(playerX) > 105) {
       _color.lerp(this.biomeFogTint, 0.62);
     }
 
@@ -2047,6 +2893,38 @@ export class SceneManager {
       baseSunIntensity * wMetrics.sunIntensityMultiplier + this.lightningFlash * 2.2;
     this.hemiLight.intensity =
       baseHemiIntensity * wMetrics.hemiIntensityMultiplier + this.lightningFlash * 0.9;
+
+    // Update Dynamic World Light Sources (Torches, Campfires, Braziers, Sanctuary Altar)
+    // Light sources shine brighter at Dusk/Night and during gloomy Fog/Rain weather
+    if (this.torchLights.length > 0 && this.worldLightAnchors.length > 0) {
+      const darknessBoost = sunElev < 0.15 ? 1.45 + Math.max(0, -sunElev) * 0.65 : 0.72;
+      const weatherBoost = this.weather === 'rain' ? 1.2 : this.weather === 'fog' ? 1.12 : 1.0;
+
+      // Sort anchors by squared distance to player and bind the closest 4 to the pooled PointLights
+      const sorted = [...this.worldLightAnchors].sort(
+        (a, b) =>
+          (a.x - playerX) * (a.x - playerX) +
+          (a.z - playerZ) * (a.z - playerZ) -
+          ((b.x - playerX) * (b.x - playerX) + (b.z - playerZ) * (b.z - playerZ))
+      );
+
+      for (let i = 0; i < this.torchLights.length; i++) {
+        const pt = this.torchLights[i];
+        const anchor = sorted[i];
+        if (!anchor) {
+          pt.intensity = 0;
+          continue;
+        }
+        pt.position.set(anchor.x, anchor.y, anchor.z);
+        pt.color.setHex(anchor.color);
+        pt.distance = anchor.distance * (sunElev < 0 ? 1.25 : 1.0);
+        const flicker =
+          1.0 +
+          Math.sin(elapsed * 11.5 + i * 2.1) * 0.12 +
+          Math.cos(elapsed * 19.3 + i * 3.7) * 0.07;
+        pt.intensity = anchor.baseIntensity * darknessBoost * weatherBoost * flicker;
+      }
+    }
 
     this.scene.background = _color;
     if (this.scene.fog instanceof THREE.FogExp2) {
@@ -2065,6 +2943,22 @@ export class SceneManager {
       this.cursedCrystalMesh.rotation.y = elapsed * 1.4;
       this.cursedCrystalMesh.position.y =
         getGroundHeight(-65, -55) + 2.3 + Math.sin(elapsed * 2.5) * 0.15;
+    }
+
+    // Rotate Crow Hollow Windmill Sails, Solheim Lighthouse Beacon, Sun Monastery Astrolabe & Starfall Core
+    if (this.windmillSailsMesh) {
+      this.windmillSailsMesh.rotation.z = elapsed * 0.75;
+    }
+    if (this.lighthouseBeamMesh) {
+      this.lighthouseBeamMesh.rotation.y = elapsed * 0.65;
+    }
+    if (this.monasteryAstrolabeMesh) {
+      this.monasteryAstrolabeMesh.rotation.y = elapsed * 0.55;
+      this.monasteryAstrolabeMesh.rotation.z = Math.sin(elapsed * 0.8) * 0.25;
+    }
+    if (this.starfallCoreMesh) {
+      this.starfallCoreMesh.rotation.y = elapsed * 0.9;
+      this.starfallCoreMesh.rotation.x = Math.sin(elapsed * 1.1) * 0.35;
     }
 
     // Animate Toxic Swamp Water Bubbles (Biome 1)

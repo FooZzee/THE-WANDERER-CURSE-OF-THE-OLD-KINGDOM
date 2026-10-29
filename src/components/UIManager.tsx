@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Backpack,
   BookOpen,
@@ -11,6 +11,8 @@ import {
   Hammer,
   Heart,
   Map as MapIcon,
+  Moon,
+  Music,
   Pause,
   RotateCcw,
   Save,
@@ -18,8 +20,12 @@ import {
   Shield,
   ShoppingBag,
   Skull,
+  Sliders,
   Snowflake,
   Sparkles,
+  Sun,
+  Sunrise,
+  Sunset,
   Sword,
   Trophy,
   Volume2,
@@ -31,18 +37,38 @@ import {
 } from 'lucide-react';
 import type { Game } from '../game/Game';
 import {
+  localizeBiomeName,
+  localizeDialogueNode,
+  localizeItem,
+  localizeQuest,
+  localizeSkill,
+  SIGN_TRANSLATIONS_EN,
+  t,
+} from '../game/i18n';
+import {
   ALCHEMY_RECIPES,
   calculateMerchantPrice,
   COMPANION_PROFILES,
   computeEffectivePlayerStats,
+  getBrowserDeviceSnapshot,
   getCompanionCommandLabel,
   getItemEquipSlot,
   getSwordEffectiveness,
   getUpgradeCost,
   MAGIC_SIGNS,
+  resolveControlPlatform,
 } from '../game/rules';
 import { SaveSystem } from '../game/SaveSystem';
-import type { CompanionId, HUDState, SignType } from '../game/types';
+import type {
+  CompanionId,
+  ControlModeSetting,
+  ControlPlatform,
+  GameLanguage,
+  HUDState,
+  HudVisibilitySettings,
+  SignType,
+} from '../game/types';
+import { ItemIcon } from './ItemIcon';
 
 interface UIManagerProps {
   hud: HUDState;
@@ -80,6 +106,84 @@ export const UIManager: React.FC<UIManagerProps> = ({
     'history' | 'brotherhood' | 'factions' | 'bestiary' | 'notes'
   >('history');
   const [selectedCodexId, setSelectedCodexId] = useState<string>('history_valdmark');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'hud'>('general');
+  const [typedDialogueText, setTypedDialogueText] = useState<string>('');
+  const [isDialogueTyping, setIsDialogueTyping] = useState<boolean>(false);
+  const [joyState, setJoyState] = useState<{
+    x: number;
+    y: number;
+    active: boolean;
+    sprinting: boolean;
+  }>({ x: 0, y: 0, active: false, sprinting: false });
+  const joyBaseRef = useRef<HTMLDivElement | null>(null);
+  const joyPointerIdRef = useRef<number | null>(null);
+  const lookPointerRef = useRef<{ id: number; lastX: number; lastY: number } | null>(null);
+
+  const lang: GameLanguage = hud.settings?.language ?? 'ru';
+  const controlMode: ControlModeSetting = hud.settings?.controlMode ?? 'auto';
+  const activePlatform: ControlPlatform =
+    hud.detectedPlatform ??
+    resolveControlPlatform(controlMode, getBrowserDeviceSnapshot());
+  const isMobile = activePlatform === 'mobile';
+
+  const defaultHudVis: HudVisibilitySettings = {
+    minimapRadar: true,
+    clockWeather: true,
+    questTracker: true,
+    companionPanel: true,
+    reputationBar: true,
+    combatLog: true,
+    controlsDock: true,
+  };
+  const hudVis: HudVisibilitySettings = {
+    ...defaultHudVis,
+    ...(hud.settings?.hudVisibility ?? {}),
+  };
+
+  const localizedDialogue =
+    hud.activeDialogueNode ? localizeDialogueNode(hud.activeDialogueNode, lang) : null;
+
+  // Typewriter effect when dialogue node opens or changes
+  useEffect(() => {
+    if (hud.activeModal !== 'dialogue' || !localizedDialogue) {
+      setTypedDialogueText('');
+      setIsDialogueTyping(false);
+      return;
+    }
+
+    const fullText = localizedDialogue.text;
+    setTypedDialogueText('');
+    setIsDialogueTyping(true);
+    let idx = 0;
+
+    const timer = window.setInterval(() => {
+      idx += 1;
+      setTypedDialogueText(fullText.slice(0, idx));
+      if (idx % 3 === 1) {
+        game?.audio.playTypewriterTick();
+      }
+      if (idx >= fullText.length) {
+        setIsDialogueTyping(false);
+        window.clearInterval(timer);
+      }
+    }, 18);
+
+    const onSkipKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && idx < fullText.length) {
+        e.preventDefault();
+        idx = fullText.length;
+        setTypedDialogueText(fullText);
+        setIsDialogueTyping(false);
+        window.clearInterval(timer);
+      }
+    };
+    window.addEventListener('keydown', onSkipKey);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('keydown', onSkipKey);
+    };
+  }, [hud.activeModal, localizedDialogue?.id, localizedDialogue?.text, game]);
 
   if (!game) return null;
 
@@ -164,6 +268,24 @@ export const UIManager: React.FC<UIManagerProps> = ({
   const availableRunes = inventory.filter((i) => i.category === 'rune' && i.quantity > 0);
 
   const getSetDisplayName = (setId?: string | null) => {
+    if (lang === 'en') {
+      switch (setId) {
+        case 'raven':
+          return 'Raven School';
+        case 'bear':
+          return 'Bear School';
+        case 'flame':
+          return 'Flame School';
+        case 'frost_warden':
+          return 'Frost Warden (T4)';
+        case 'grandmaster':
+          return 'Ash Grandmaster (T5)';
+        case 'obsidian':
+          return 'Obsidian King (T5)';
+        default:
+          return 'Ash Brotherhood';
+      }
+    }
     switch (setId) {
       case 'raven':
         return 'Школа Ворона';
@@ -182,8 +304,118 @@ export const UIManager: React.FC<UIManagerProps> = ({
     }
   };
 
+  const getDayPhaseInfo = (hourVal: number) => {
+    const h = ((hourVal % 24) + 24) % 24;
+    if (h >= 5 && h < 8.5) {
+      return {
+        label: t(lang, 'hud.phase.dawn'),
+        icon: <Sunrise className="w-3.5 h-3.5 text-amber-400" />,
+        color: 'text-amber-300',
+      };
+    }
+    if (h >= 8.5 && h < 17.5) {
+      return {
+        label: t(lang, 'hud.phase.day'),
+        icon: <Sun className="w-3.5 h-3.5 text-yellow-400" />,
+        color: 'text-yellow-200',
+      };
+    }
+    if (h >= 17.5 && h < 21) {
+      return {
+        label: t(lang, 'hud.phase.dusk'),
+        icon: <Sunset className="w-3.5 h-3.5 text-orange-400" />,
+        color: 'text-orange-300',
+      };
+    }
+    return {
+      label: t(lang, 'hud.phase.night'),
+      icon: <Moon className="w-3.5 h-3.5 text-sky-300" />,
+      color: 'text-sky-200',
+    };
+  };
+
+  const dayPhase = getDayPhaseInfo(timeOfDay);
+  const localizedActiveQuest = activeQuest ? localizeQuest(activeQuest, lang) : null;
+  const localizedStage =
+    localizedActiveQuest && localizedActiveQuest.status === 'active'
+      ? localizedActiveQuest.stages[localizedActiveQuest.currentStageIndex]
+      : null;
+  const localizedSignName =
+    lang === 'en'
+      ? SIGN_TRANSLATIONS_EN[player.activeSign]?.name ?? currentSignInfo.name
+      : currentSignInfo.name;
+
+  const updateJoystickFromClientPoint = (clientX: number, clientY: number) => {
+    const el = joyBaseRef.current;
+    if (!el || !game) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const maxRadius = Math.max(28, rect.width * 0.42);
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    const clampedDist = Math.min(dist, maxRadius);
+    const angle = Math.atan2(dy, dx);
+    const normX = (Math.cos(angle) * clampedDist) / maxRadius;
+    const normY = (Math.sin(angle) * clampedDist) / maxRadius;
+    const isSprint = clampedDist / maxRadius > 0.82;
+    setJoyState({
+      x: normX * (rect.width * 0.34),
+      y: normY * (rect.height * 0.34),
+      active: true,
+      sprinting: isSprint,
+    });
+    game.setJoystickInput(normX, normY, isSprint);
+  };
+
+  const resetJoystick = () => {
+    joyPointerIdRef.current = null;
+    setJoyState({ x: 0, y: 0, active: false, sprinting: false });
+    game?.setJoystickInput(0, 0, false);
+  };
+
   return (
-    <div className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-4 md:p-6">
+    <div
+      data-platform={activePlatform}
+      className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-2.5 sm:p-4 md:p-6"
+    >
+      {/* MOBILE TOUCH CAMERA LOOK LAYER (Swipe anywhere not covered by HUD buttons to rotate camera) */}
+      {isMobile && activeModal === 'none' && (
+        <div
+          data-testid="mobile-camera-look-zone"
+          className="fixed inset-0 pointer-events-auto z-0 touch-none"
+          onPointerDown={(e) => {
+            if (lookPointerRef.current === null) {
+              lookPointerRef.current = {
+                id: e.pointerId,
+                lastX: e.clientX,
+                lastY: e.clientY,
+              };
+            }
+          }}
+          onPointerMove={(e) => {
+            if (lookPointerRef.current && lookPointerRef.current.id === e.pointerId) {
+              const dx = e.clientX - lookPointerRef.current.lastX;
+              const dy = e.clientY - lookPointerRef.current.lastY;
+              lookPointerRef.current.lastX = e.clientX;
+              lookPointerRef.current.lastY = e.clientY;
+              game.rotateCameraByTouch(dx, dy);
+            }
+          }}
+          onPointerUp={(e) => {
+            if (lookPointerRef.current && lookPointerRef.current.id === e.pointerId) {
+              lookPointerRef.current = null;
+            }
+          }}
+          onPointerCancel={(e) => {
+            if (lookPointerRef.current && lookPointerRef.current.id === e.pointerId) {
+              lookPointerRef.current = null;
+            }
+          }}
+        />
+      )}
+
       {/* HUNTER'S SENSES (ЧУТЬЁ ОХОТНИКА [V]) OVERLAY */}
       {(hunterVisionActive || (player.catElixirTimer ?? 0) > 0) && (
         <div className="fixed inset-0 pointer-events-none z-10 border-4 border-amber-500/40 bg-amber-950/15 shadow-[inset_0_0_90px_rgba(245,158,11,0.35)] transition-opacity">
@@ -253,23 +485,27 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
       {/* TOP BAR: Left Hero Status + Center Boss/Target Bar + Right Quest Tracker */}
       <div
-        className={`flex items-start justify-between gap-4 w-full transition-opacity ${
+        className={`relative z-10 flex items-start justify-between gap-2 sm:gap-4 w-full transition-opacity ${
           activeModal === 'prologue' ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       >
-        {/* Top-Left: Medallion & Vital Bars */}
-        <div className="pointer-events-auto bg-stone-950/90 border border-stone-800 rounded-lg p-3.5 w-72 sm:w-80 shadow-xl">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded bg-stone-900 border border-amber-700/60 flex items-center justify-center text-amber-500 font-display font-bold text-sm">
-                УР.{player.level}
+        {/* Top-Left: Medallion & Vital Bars (Compact on Mobile, Full on Desktop) */}
+        <div
+          className={`pointer-events-auto medieval-panel rounded-xl shrink-0 ${
+            isMobile ? 'p-2 w-[178px] sm:w-56' : 'p-3.5 w-72 md:w-80'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-1 mb-1.5 sm:mb-2">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-stone-900/90 border border-amber-600/70 flex items-center justify-center text-amber-400 font-display font-bold text-[10px] sm:text-xs shadow-inner shrink-0">
+                {t(lang, 'hud.level')}.{player.level}
               </div>
-              <div>
-                <div className="text-xs font-display font-bold tracking-wider text-stone-200">
-                  КОРВУС · БРАТСТВО ПЕПЛА
+              <div className="min-w-0">
+                <div className="text-[11px] sm:text-xs font-display font-bold tracking-wider text-amber-200 truncate">
+                  {t(lang, 'hud.corvusTitle')}
                 </div>
-                <div className="text-[11px] text-stone-400 font-mono-tabular">
-                  Опыт: {player.xp}/{player.xpToNext} · Золото: {player.gold}
+                <div className="text-[10px] sm:text-[11px] text-stone-400 font-mono-tabular truncate">
+                  {player.xp}/{player.xpToNext} XP · {player.gold}🪙
                 </div>
               </div>
             </div>
@@ -279,32 +515,32 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   setInvTab('skills');
                   game.openModal('inventory');
                 }}
-                className="px-2 py-0.5 text-[11px] font-medium bg-amber-700/30 border border-amber-500/50 text-amber-300 rounded hover:bg-amber-700/50 transition-colors whitespace-nowrap"
+                className="px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium bg-amber-700/30 border border-amber-500/60 text-amber-300 rounded hover:bg-amber-700/50 transition-colors whitespace-nowrap shrink-0"
               >
-                +{player.skillPoints} Навык
+                +{player.skillPoints}
               </button>
             )}
           </div>
 
           {/* Health Bar */}
-          <div className="space-y-1.5">
+          <div className="space-y-1 sm:space-y-1.5">
             <div>
-              <div className="flex justify-between text-[11px] text-stone-300 mb-0.5 font-mono-tabular">
-                <span className="flex items-center gap-1 text-red-400 font-medium">
-                  <Heart className="w-3 h-3" /> Здоровье
+              <div className="flex justify-between items-center gap-1 text-[10px] sm:text-[11px] text-stone-300 mb-0.5 font-mono-tabular">
+                <span className="flex items-center gap-1 text-red-400 font-medium truncate">
+                  <Heart className="w-3 h-3 shrink-0" /> {t(lang, 'hud.health')}
                 </span>
-                <span>
-                  {Math.ceil(player.hp)} / {effStats.maxHp}
+                <span className="whitespace-nowrap shrink-0">
+                  {Math.ceil(player.hp)}/{effStats.maxHp}
                   {player.barrierShield > 0 && (
                     <span className="text-amber-400 ml-1">
-                      (+{player.barrierShield} Щит)
+                      (+{player.barrierShield})
                     </span>
                   )}
                 </span>
               </div>
-              <div className="w-full h-2.5 bg-stone-900 rounded overflow-hidden border border-stone-800">
+              <div className="w-full h-2.5 bg-stone-950 rounded overflow-hidden border border-amber-900/40">
                 <div
-                  className="h-full bg-red-600 transition-all duration-150"
+                  className="h-full bg-gradient-to-r from-red-800 via-red-600 to-red-500 transition-all duration-150"
                   style={{
                     width: `${Math.max(0, Math.min(100, (player.hp / effStats.maxHp) * 100))}%`,
                   }}
@@ -314,17 +550,17 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
             {/* Stamina Bar */}
             <div>
-              <div className="flex justify-between text-[11px] text-stone-300 mb-0.5 font-mono-tabular">
-                <span className="flex items-center gap-1 text-amber-400 font-medium">
-                  <Zap className="w-3 h-3" /> Выносливость
+              <div className="flex justify-between items-center gap-1 text-[10px] sm:text-[11px] text-stone-300 mb-0.5 font-mono-tabular">
+                <span className="flex items-center gap-1 text-amber-400 font-medium truncate">
+                  <Zap className="w-3 h-3 shrink-0" /> {t(lang, 'hud.stamina')}
                 </span>
-                <span>
-                  {Math.floor(player.stamina)} / {player.maxStamina}
+                <span className="whitespace-nowrap shrink-0">
+                  {Math.floor(player.stamina)}/{player.maxStamina}
                 </span>
               </div>
-              <div className="w-full h-2 bg-stone-900 rounded overflow-hidden border border-stone-800">
+              <div className="w-full h-2 bg-stone-950 rounded overflow-hidden border border-amber-900/40">
                 <div
-                  className="h-full bg-amber-500 transition-all duration-100"
+                  className="h-full bg-gradient-to-r from-amber-700 via-amber-500 to-yellow-400 transition-all duration-100"
                   style={{
                     width: `${Math.max(0, Math.min(100, (player.stamina / player.maxStamina) * 100))}%`,
                   }}
@@ -334,15 +570,15 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
             {/* Toxicity Bar */}
             <div>
-              <div className="flex justify-between text-[10px] text-stone-400 mb-0.5 font-mono-tabular">
-                <span className="flex items-center gap-1 text-lime-400 font-medium">
-                  <FlaskConical className="w-3 h-3" /> Токсичность
+              <div className="flex justify-between items-center gap-1 text-[10px] text-stone-400 mb-0.5 font-mono-tabular">
+                <span className="flex items-center gap-1 text-lime-400 font-medium truncate">
+                  <FlaskConical className="w-3 h-3 shrink-0" /> {t(lang, 'hud.toxicity')}
                 </span>
-                <span>
-                  {Math.floor(player.toxicity || 0)} / {player.maxToxicity || 100}
+                <span className="whitespace-nowrap shrink-0">
+                  {Math.floor(player.toxicity || 0)}/{player.maxToxicity || 100}
                 </span>
               </div>
-              <div className="w-full h-1.5 bg-stone-900 rounded overflow-hidden border border-stone-800">
+              <div className="w-full h-1.5 bg-stone-950 rounded overflow-hidden border border-stone-800">
                 <div
                   className="h-full bg-lime-500 transition-all duration-150"
                   style={{
@@ -352,8 +588,8 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </div>
             </div>
 
-            {/* Reputation & Morality Scale */}
-            {reputationInfo && (
+            {/* Reputation & Morality Scale (Shown on PC, hidden on Mobile to keep HUD compact) */}
+            {!isMobile && hudVis.reputationBar && reputationInfo && (
               <div className="pt-1">
                 <div className="flex items-center justify-between text-[10px] font-mono-tabular mb-0.5">
                   <span
@@ -368,10 +604,10 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     ⚖️ {reputationInfo.title} ({reputationInfo.value > 0 ? `+${reputationInfo.value}` : reputationInfo.value})
                   </span>
                   <span className="text-stone-400">
-                    Цены: {Math.round(reputationInfo.priceMultiplier * 100)}%
+                    {t(lang, 'hud.prices')}: {Math.round(reputationInfo.priceMultiplier * 100)}%
                   </span>
                 </div>
-                <div className="relative w-full h-1.5 bg-stone-900 rounded overflow-hidden border border-stone-800">
+                <div className="relative w-full h-1.5 bg-stone-950 rounded overflow-hidden border border-stone-800">
                   <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-stone-500 z-10" />
                   <div
                     className={`h-full transition-all duration-200 ${
@@ -388,15 +624,15 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 </div>
                 {reputationInfo.bountyHuntersActive && (
                   <div className="mt-1 text-[10px] text-red-400 font-semibold">
-                    ⚠️ На трактах за вами охотятся Наёмные Каратели!
+                    ⚠️ {t(lang, 'hud.bountyWarning')}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Active Combat Companion HUD Card */}
-            {activeCompanion && (
-              <div className="mt-2 p-2 rounded-lg bg-stone-900/95 border border-sky-700/60 space-y-1">
+            {/* Active Combat Companion HUD Card (Toggled via settings.hudVisibility.companionPanel) */}
+            {hudVis.companionPanel && activeCompanion && (
+              <div className="mt-2 p-2 rounded-lg bg-stone-950/90 border border-sky-700/60 space-y-1">
                 <div className="flex items-center justify-between gap-1.5">
                   <div className="min-w-0">
                     <div className="text-[11px] font-display font-bold text-sky-300 truncate">
@@ -475,26 +711,27 @@ export const UIManager: React.FC<UIManagerProps> = ({
             </div>
           )}
 
-          {/* Active Sword Switcher: [1] Steel Sword vs [2] Silver Sword */}
-          <div className="mt-2.5 pt-2 border-t border-stone-800/80">
+          {/* Active Sword Switcher: [1] Steel Sword vs [2] Silver Sword (Shown on PC; Mobile has right-thumb switcher) */}
+          {!isMobile && (
+          <div className="mt-2.5 pt-2 border-t border-amber-900/35">
             <div className="flex items-center justify-between text-[10px] text-stone-400 mb-1 font-mono-tabular">
-              <span>ОРУЖИЕ В РУКЕ [1 / 2]</span>
-              <span className={activeSword === 'silver' ? 'text-sky-300 font-semibold' : 'text-stone-200 font-semibold'}>
-                {activeSword === 'silver' ? '🗡️ Серебро (Чудовища)' : '⚔️ Сталь (Люди/Звери)'}
+              <span>{t(lang, 'hud.activeWeapon')}</span>
+              <span className={activeSword === 'silver' ? 'text-sky-300 font-semibold' : 'text-amber-200 font-semibold'}>
+                {activeSword === 'silver' ? `🗡️ ${t(lang, 'hud.silverSword')}` : `⚔️ ${t(lang, 'hud.steelSword')}`}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 onClick={() => game.switchPlayerSword('steel')}
-                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between gap-1.5 ${
                   activeSword === 'steel'
-                    ? 'bg-stone-800 border-amber-500/90 text-stone-100 shadow-md'
-                    : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-stone-200'
+                    ? 'bg-stone-800/95 border-amber-500/90 text-stone-100 shadow-md'
+                    : 'bg-stone-950/70 border-stone-800 text-stone-400 hover:text-stone-200'
                 }`}
-                title="Выхватить Стальной меч [Клавиша 1] — 100% урона по людям, зверям и наёмникам"
               >
-                <span className="text-[11px] font-medium truncate">
-                  [1] ⚔️ Сталь
+                <span className="flex items-center gap-1 text-[11px] font-medium truncate">
+                  <ItemIcon item={equippedSteelSword ?? { id: 'steel_sword', category: 'weapon' }} size={16} />
+                  <span>[1] {t(lang, 'hud.steelShort')}</span>
                 </span>
                 <span className="text-[11px] font-mono-tabular font-bold text-amber-300">
                   {effStats.steelAttack}
@@ -502,15 +739,15 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </button>
               <button
                 onClick={() => game.switchPlayerSword('silver')}
-                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between gap-1.5 ${
                   activeSword === 'silver'
                     ? 'bg-sky-950/90 border-sky-400 text-sky-100 shadow-md'
-                    : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:text-stone-200'
+                    : 'bg-stone-950/70 border-stone-800 text-stone-400 hover:text-stone-200'
                 }`}
-                title="Выхватить Серебряный меч [Клавиша 2] — 100% урона по монстрам, призракам и боссам"
               >
-                <span className="text-[11px] font-medium truncate">
-                  [2] 🗡️ Серебро
+                <span className="flex items-center gap-1 text-[11px] font-medium truncate">
+                  <ItemIcon item={equippedSilverSword ?? { id: 'silver_sword', category: 'weapon' }} size={16} />
+                  <span>[2] {t(lang, 'hud.silverShort')}</span>
                 </span>
                 <span className="text-[11px] font-mono-tabular font-bold text-sky-300">
                   {effStats.silverAttack}
@@ -518,17 +755,18 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </button>
             </div>
           </div>
+          )}
 
-          {/* Active Sign & Quick Potion Row */}
-          <div className="mt-2 pt-2 border-t border-stone-800/80 space-y-2">
+          {/* Active Sign & Quick Potion Row (Shown on PC; Mobile has right-thumb buttons) */}
+          {!isMobile && (
+          <div className="mt-2 pt-2 border-t border-amber-900/35 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <button
                 onClick={() => game.triggerMagicSign()}
                 className="flex items-center gap-2 text-left group flex-1 min-w-0"
-                title={`${currentSignInfo.description} (Клавиша [Q] / [1-5] — смена, [R] — каст)`}
               >
                 <div
-                  className="w-8 h-8 rounded-lg bg-stone-900 border flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
+                  className="w-8 h-8 rounded-lg bg-stone-950 border flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
                   style={{ borderColor: currentSignInfo.color }}
                 >
                   {renderSignIcon(player.activeSign, 'w-4 h-4', currentSignInfo.color)}
@@ -536,19 +774,19 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-semibold text-stone-100 truncate">
-                      {currentSignInfo.name}
+                      {localizedSignName}
                     </span>
                   </div>
                   <div className="text-[11px] font-mono-tabular flex items-center gap-2">
                     <span className="text-amber-400/90">
-                      -{currentSignInfo.staminaCost} Вын.
+                      -{currentSignInfo.staminaCost}
                     </span>
                     {signCooldowns[player.activeSign] > 0 ? (
                       <span className="text-red-400 font-semibold">
-                        КД: {signCooldowns[player.activeSign].toFixed(1)}с
+                        {signCooldowns[player.activeSign].toFixed(1)}s
                       </span>
                     ) : (
-                      <span className="text-emerald-400">[R] Готов</span>
+                      <span className="text-emerald-400">{t(lang, 'hud.signReady')}</span>
                     )}
                   </div>
                 </div>
@@ -556,9 +794,12 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
               <button
                 onClick={() => game.useQuickPotion()}
-                className="px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-emerald-400 hover:border-emerald-500/60 transition-colors font-mono-tabular text-[11px] whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 rounded-lg bg-stone-950 border border-emerald-700/60 text-emerald-300 hover:border-emerald-400 transition-colors font-mono-tabular text-[11px] whitespace-nowrap shrink-0 flex items-center gap-1.5"
               >
-                [F] Зелье ({potionCount})
+                <ItemIcon item={{ id: 'potion_swallow', category: 'potion' }} size={16} />
+                <span>
+                  {t(lang, 'hud.potion')} ({potionCount})
+                </span>
               </button>
             </div>
 
@@ -584,6 +825,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Top-Center: Boss Bar or Targeted Enemy Health + Notification Banner */}
@@ -707,87 +949,252 @@ export const UIManager: React.FC<UIManagerProps> = ({
           )}
         </div>
 
-        {/* Top-Right: Region Info & Active Quest Tracker */}
-        <div className="pointer-events-auto hidden sm:flex flex-col items-end gap-2 w-72">
-          <div className="bg-stone-950/90 border border-stone-800 rounded-lg px-3.5 py-2 text-right w-full">
-            <div className="text-xs font-display font-bold text-amber-400">
-              {currentBiomeName}
-            </div>
-            <div className="flex items-center justify-end gap-2 text-[11px] text-stone-400 font-mono-tabular mt-1">
-              <span>Время: {formatTime(timeOfDay)}</span>
-              <span>·</span>
-              <button
-                onClick={() => game.cycleWeather()}
-                title="Переключить погоду (Ясно / Туман / Дождь) [Клавиша T]"
-                className="px-2 py-0.5 rounded bg-stone-900 hover:bg-stone-800 border border-stone-700 hover:border-amber-500/60 text-stone-200 transition-colors flex items-center gap-1"
-              >
-                <span>
-                  {weather === 'clear'
-                    ? '☀️ Ясно'
-                    : weather === 'fog'
-                    ? '🌫️ Туман'
-                    : '🌧️ Дождь'}
+        {/* Top-Right: Region, Day/Night Clock, Minimap Radar & Active Quest Tracker (PC Mode) */}
+        {!isMobile && (
+        <div
+          data-testid="pc-top-right-hud"
+          className="pointer-events-auto flex flex-col items-end gap-2 w-72"
+        >
+          {hudVis.clockWeather && (
+            <div className="medieval-panel rounded-xl px-3.5 py-2.5 text-right w-full">
+              <div className="text-xs font-display font-bold text-amber-400">
+                {localizeBiomeName(currentBiomeName, lang)}
+              </div>
+              <div className="flex items-center justify-end gap-2 text-[11px] text-stone-300 font-mono-tabular mt-1">
+                <span className={`flex items-center gap-1 font-medium ${dayPhase.color}`}>
+                  {dayPhase.icon}
+                  <span>{formatTime(timeOfDay)}</span>
+                  <span className="text-[10px] opacity-85">({dayPhase.label})</span>
                 </span>
-                <span className="text-[10px] text-amber-400/90">[T]</span>
-              </button>
+                <span>·</span>
+                <button
+                  onClick={() => game.cycleWeather()}
+                  title="Переключить погоду (Ясно / Туман / Дождь) [Клавиша T]"
+                  className="px-2 py-0.5 rounded bg-stone-900/90 hover:bg-stone-800 border border-amber-700/50 hover:border-amber-500 text-stone-200 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span>
+                    {weather === 'clear'
+                      ? `☀️ ${t(lang, 'hud.weather.clear')}`
+                      : weather === 'fog'
+                      ? `🌫️ ${t(lang, 'hud.weather.fog')}`
+                      : `🌧️ ${t(lang, 'hud.weather.rain')}`}
+                  </span>
+                  <span className="text-[10px] text-amber-400/90">[T]</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {activeQuest && (
+          {/* Compact Medieval Minimap Radar (Toggled via settings.hudVisibility.minimapRadar) */}
+          {hudVis.minimapRadar && (
+            <div
+              onClick={() => game.openModal('map')}
+              title={lang === 'en' ? 'Open World Map [M]' : 'Открыть карту королевства [M]'}
+              className="medieval-panel rounded-xl p-2 w-full cursor-pointer hover:border-amber-500/70 transition-colors"
+            >
+              <div className="flex items-center justify-between text-[10px] text-stone-400 mb-1 px-1">
+                <span className="flex items-center gap-1 font-semibold text-amber-300">
+                  <Compass className="w-3 h-3" />
+                  {lang === 'en' ? 'Radar [M]' : 'Радар окрестностей [M]'}
+                </span>
+                <span className="font-mono-tabular">
+                  {Math.round(player.x)}, {Math.round(player.z)}
+                </span>
+              </div>
+              <div className="relative h-20 w-full rounded-lg bg-stone-950/90 border border-amber-900/40 overflow-hidden">
+                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.35),transparent_70%)]" />
+                {/* Nearby Enemies on Radar */}
+                {hud.enemies
+                  .filter((e) => e.state !== 'DEAD' && Math.hypot(e.x - player.x, e.z - player.z) < 48)
+                  .map((e) => {
+                    const rx = 50 + ((e.x - player.x) / 48) * 45;
+                    const rz = 50 + ((e.z - player.z) / 48) * 45;
+                    return (
+                      <span
+                        key={e.id}
+                        style={{ left: `${rx}%`, top: `${rz}%` }}
+                        className="absolute w-2 h-2 -ml-1 -mt-1 rounded-full bg-red-500 border border-stone-950"
+                      />
+                    );
+                  })}
+                {/* Active Quest Target on Radar */}
+                {currentStage && (
+                  <span
+                    style={{
+                      left: `${Math.max(8, Math.min(92, 50 + ((currentStage.targetX - player.x) / 60) * 45))}%`,
+                      top: `${Math.max(8, Math.min(92, 50 + ((currentStage.targetZ - player.z) / 60) * 45))}%`,
+                    }}
+                    className="absolute w-2.5 h-2.5 -ml-1 -mt-1 rounded-full bg-amber-400 border border-stone-950 animate-pulse"
+                  />
+                )}
+                {/* Player Center Dot */}
+                <span className="absolute left-1/2 top-1/2 w-2.5 h-2.5 -ml-1 -mt-1 rounded-full bg-white border-2 border-emerald-500 shadow" />
+              </div>
+            </div>
+          )}
+
+          {hudVis.questTracker && localizedActiveQuest && (
             <div
               onClick={() => game.openModal('quests')}
-              className="bg-stone-950/90 border border-stone-800 hover:border-amber-700/60 cursor-pointer rounded-lg p-3 w-full transition-colors"
+              className="medieval-panel hover:border-amber-500/70 cursor-pointer rounded-xl p-3 w-full transition-colors"
             >
-              <div className="flex items-center justify-between text-xs font-display font-bold text-amber-500 mb-1">
-                <span>{activeQuest.title}</span>
+              <div className="flex items-center justify-between text-xs font-display font-bold text-amber-400 mb-1">
+                <span>{localizedActiveQuest.title}</span>
                 {distToQuest !== null && (
                   <span className="font-mono-tabular text-stone-300">
-                    {distToQuest} м
+                    {distToQuest} {lang === 'en' ? 'm' : 'м'}
                   </span>
                 )}
               </div>
-              <div className="text-xs text-stone-300 leading-snug">
-                {currentStage
-                  ? currentStage.description
-                  : 'Задание завершено'}
+              <div className="text-xs text-stone-200 leading-snug">
+                {localizedStage
+                  ? localizedStage.description
+                  : t(lang, 'hud.questCompleted')}
               </div>
-              <div className="mt-2 pt-1.5 border-t border-stone-800/80 flex justify-between items-center text-[11px] text-stone-400">
-                <span>[J] Журнал заданий</span>
-                <span className="text-amber-400/90">[M] Карта и переход</span>
+              <div className="mt-2 pt-1.5 border-t border-amber-900/35 flex justify-between items-center text-[11px] text-stone-400">
+                <span>{t(lang, 'hud.questLogBtn')}</span>
+                <span className="text-amber-400/90">{t(lang, 'hud.mapBtn')}</span>
               </div>
             </div>
           )}
         </div>
+        )}
+
+        {/* MOBILE TOP-RIGHT QUICK STATUS & MENU BAR (Shown when detected platform is Mobile) */}
+        {isMobile && (
+        <div
+          data-testid="mobile-top-right-hud"
+          className="pointer-events-auto flex flex-col items-end gap-1.5 max-w-[172px] min-w-0 shrink-0"
+        >
+          <div className="flex items-center gap-1 medieval-panel rounded-lg px-2 py-1 text-[10px] font-mono-tabular">
+            <span className={`flex items-center gap-1 ${dayPhase.color}`}>
+              {dayPhase.icon}
+              <span>{formatTime(timeOfDay)}</span>
+            </span>
+            <button
+              onClick={() => game.cycleWeather()}
+              className="px-1 text-stone-300"
+              title="Погода"
+            >
+              {weather === 'clear' ? '☀️' : weather === 'fog' ? '🌫️' : '🌧️'}
+            </button>
+            <button
+              onClick={() => game.openModal('pause')}
+              aria-label="Меню паузы и настроек"
+              className="p-1 rounded bg-stone-900 border border-amber-700/60 text-amber-300"
+            >
+              <Pause className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {hudVis.questTracker && localizedActiveQuest && (
+            <button
+              onClick={() => game.openModal('quests')}
+              className="medieval-panel rounded-lg px-2 py-1.5 text-right w-full"
+            >
+              <div className="flex items-center justify-between gap-1 text-[10px] font-display font-bold text-amber-400">
+                <span className="truncate">{localizedActiveQuest.title}</span>
+                {distToQuest !== null && (
+                  <span className="font-mono-tabular text-stone-300 shrink-0">
+                    {distToQuest}{lang === 'en' ? 'm' : 'м'}
+                  </span>
+                )}
+              </div>
+              {localizedStage && (
+                <div className="text-[10px] text-stone-200 truncate mt-0.5">
+                  {localizedStage.description}
+                </div>
+              )}
+            </button>
+          )}
+
+          {/* Mobile Quick Menu Strip */}
+          <div className="flex items-center gap-1 medieval-panel rounded-lg p-1">
+            <button
+              onClick={() => game.openModal('inventory')}
+              className="p-1.5 rounded bg-stone-900/90 border border-stone-700 text-amber-300"
+              title={t(lang, 'dock.inventory')}
+            >
+              <Backpack className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => game.openModal('map')}
+              className="p-1.5 rounded bg-stone-900/90 border border-stone-700 text-sky-300"
+              title={t(lang, 'dock.map')}
+            >
+              <MapIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => game.openModal('alchemy')}
+              className="p-1.5 rounded bg-stone-900/90 border border-stone-700 text-lime-300"
+              title={t(lang, 'dock.alchemy')}
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => game.openModal('codex')}
+              className="p-1.5 rounded bg-stone-900/90 border border-stone-700 text-amber-200"
+              title={t(lang, 'dock.codex')}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => game.toggleHunterVision()}
+              className={`p-1.5 rounded border ${
+                hunterVisionActive
+                  ? 'bg-amber-600 text-stone-950 border-amber-300'
+                  : 'bg-stone-900/90 border-stone-700 text-amber-400'
+              }`}
+              title={t(lang, 'mobile.senses')}
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+        )}
       </div>
 
-      {/* CENTER-BOTTOM INTERACTION PROMPT & COMBAT LOG */}
-      <div className="flex flex-col items-center gap-3 w-full">
+      {/* CENTER-BOTTOM INTERACTION PROMPT, COMBAT LOG & MOBILE/DESKTOP CONTROLS */}
+      <div className="relative z-10 flex flex-col items-center gap-1.5 w-full">
         {nearbyInteractable && activeModal === 'none' && (
           <button
             onClick={() => game.triggerInteract()}
-            className="pointer-events-auto flex items-center gap-2.5 bg-stone-950/95 border border-amber-500/80 text-stone-100 px-5 py-2.5 rounded-lg shadow-2xl hover:bg-stone-900 transition-colors"
+            className="pointer-events-auto flex items-center gap-2 sm:gap-3 medieval-panel-ornate text-stone-100 px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-xl shadow-2xl hover:border-amber-400 transition-colors cursor-pointer max-w-[92vw]"
           >
-            <span className="px-2 py-0.5 bg-amber-600 text-stone-950 font-mono-tabular font-bold text-xs rounded">
-              E
+            <ItemIcon
+              item={{
+                id: nearbyInteractable.lootItems?.[0]?.itemId ?? nearbyInteractable.id,
+                name: nearbyInteractable.name,
+                category:
+                  nearbyInteractable.type === 'herb'
+                    ? 'resource'
+                    : nearbyInteractable.type === 'chest' || nearbyInteractable.type === 'loot'
+                    ? 'quest'
+                    : 'quest',
+              }}
+              size={24}
+            />
+            <span className="px-2 py-0.5 bg-amber-600 text-stone-950 font-mono-tabular font-bold text-[11px] rounded shrink-0">
+              {isMobile ? (lang === 'en' ? 'TAP' : 'ТАП') : 'E'}
             </span>
-            <div className="text-left">
-              <div className="text-xs font-semibold text-amber-300">
+            <div className="text-left min-w-0">
+              <div className="text-xs font-semibold text-amber-300 truncate">
                 {nearbyInteractable.name}
               </div>
-              <div className="text-xs text-stone-300">
+              <div className="text-[11px] sm:text-xs text-stone-300 truncate">
                 {nearbyInteractable.promptText}
               </div>
             </div>
           </button>
         )}
 
-        {/* Subtle Combat Log */}
-        {combatLog.length > 0 && activeModal === 'none' && (
+        {/* Subtle Combat Log (Toggled via settings.hudVisibility.combatLog) */}
+        {hudVis.combatLog && combatLog.length > 0 && activeModal === 'none' && (
           <div className="w-full max-w-md flex flex-col items-center gap-0.5 pointer-events-none">
-            {combatLog.slice(0, 3).map((entry) => (
+            {combatLog.slice(0, 2).map((entry) => (
               <div
                 key={entry.id}
-                className={`text-xs px-2.5 py-0.5 rounded bg-stone-950/80 ${
+                className={`text-[11px] sm:text-xs px-2.5 sm:px-3 py-0.5 rounded-md medieval-panel truncate max-w-[92vw] ${
                   entry.type === 'damage'
                     ? 'text-red-300'
                     : entry.type === 'quest'
@@ -803,263 +1210,436 @@ export const UIManager: React.FC<UIManagerProps> = ({
           </div>
         )}
 
-        {/* MOBILE TOUCH CONTROLS (Shown on touch/small screens) */}
-        <div className="flex md:hidden items-center justify-between w-full px-2 pointer-events-auto">
-          <div className="grid grid-cols-3 gap-1 w-28 h-28 bg-stone-950/85 border border-stone-800 rounded-xl p-1.5">
-            <div />
-            <button
-              onTouchStart={() => (game.player.joystickY = -1)}
-              onTouchEnd={() => (game.player.joystickY = 0)}
-              className="bg-stone-800 rounded text-xs font-bold text-stone-200 flex items-center justify-center"
-            >
-              W
-            </button>
-            <div />
-            <button
-              onTouchStart={() => (game.player.joystickX = -1)}
-              onTouchEnd={() => (game.player.joystickX = 0)}
-              className="bg-stone-800 rounded text-xs font-bold text-stone-200 flex items-center justify-center"
-            >
-              A
-            </button>
-            <button
-              onTouchStart={() => (game.player.joystickY = 1)}
-              onTouchEnd={() => (game.player.joystickY = 0)}
-              className="bg-stone-800 rounded text-xs font-bold text-stone-200 flex items-center justify-center"
-            >
-              S
-            </button>
-            <button
-              onTouchStart={() => (game.player.joystickX = 1)}
-              onTouchEnd={() => (game.player.joystickX = 0)}
-              className="bg-stone-800 rounded text-xs font-bold text-stone-200 flex items-center justify-center"
-            >
-              D
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-2 justify-end max-w-[210px]">
-            <button
-              onClick={() => game.performSwordAttack(false)}
-              className="px-3.5 py-2.5 bg-red-900/90 border border-red-600 rounded-lg text-xs font-semibold text-white"
-            >
-              Удар
-            </button>
-            <button
-              onClick={() => game.performSwordAttack(true)}
-              className="px-3 py-2.5 bg-amber-900/90 border border-amber-600 rounded-lg text-xs font-semibold text-white"
-            >
-              Тяж.
-            </button>
-            <button
-              onClick={() => game.triggerDodge()}
-              className="px-3 py-2 bg-stone-800 border border-stone-600 rounded-lg text-xs text-stone-200"
-            >
-              Рывок
-            </button>
-            <button
-              onClick={() => game.triggerMagicSign()}
-              className="px-3 py-2 bg-purple-900/90 border border-purple-500 rounded-lg text-xs text-purple-100"
-            >
-              Знак
-            </button>
-          </div>
-        </div>
-
-        {/* UNIFIED COLLAPSIBLE BOTTOM CONTROL DOCK */}
-        <div
-          className={`pointer-events-auto flex flex-col items-center w-full max-w-4xl transition-opacity ${
-            activeModal === 'prologue' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          <button
-            onClick={() => setDockCollapsed((prev) => !prev)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-stone-950/90 border border-b-0 border-stone-800 rounded-t-lg text-[11px] text-stone-400 hover:text-stone-200 transition-colors"
+        {/* MOBILE VIRTUAL ANALOG JOYSTICK & ERGONOMIC COMBAT CLUSTER (Shown when detected platform is Mobile) */}
+        {isMobile && activeModal === 'none' && (
+          <div
+            data-testid="mobile-controls"
+            className="flex items-end justify-between gap-2 w-full pt-0.5 pointer-events-auto select-none"
           >
-            {dockCollapsed ? (
-              <>
-                <ChevronUp className="w-3.5 h-3.5" /> Показать панель управления
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-3.5 h-3.5" /> Скрыть панель
-              </>
-            )}
-          </button>
+            {/* Left Thumb: Virtual Analog Touch Joystick */}
+            <div className="flex flex-col items-center gap-0.5 shrink-0">
+              <div
+                ref={joyBaseRef}
+                data-testid="virtual-joystick"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  joyPointerIdRef.current = e.pointerId;
+                  updateJoystickFromClientPoint(e.clientX, e.clientY);
+                }}
+                onPointerMove={(e) => {
+                  if (joyPointerIdRef.current === e.pointerId) {
+                    e.stopPropagation();
+                    updateJoystickFromClientPoint(e.clientX, e.clientY);
+                  }
+                }}
+                onPointerUp={(e) => {
+                  if (joyPointerIdRef.current === e.pointerId) {
+                    e.stopPropagation();
+                    resetJoystick();
+                  }
+                }}
+                onPointerCancel={(e) => {
+                  if (joyPointerIdRef.current === e.pointerId) {
+                    resetJoystick();
+                  }
+                }}
+                className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-full medieval-panel flex items-center justify-center touch-none transition-colors ${
+                  joyState.sprinting
+                    ? 'border-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.45)]'
+                    : 'border-amber-700/60'
+                }`}
+              >
+                {/* Outer directional crosshair ticks */}
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[8px] text-amber-400/70 font-bold pointer-events-none">
+                  ▲
+                </div>
+                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-amber-400/70 font-bold pointer-events-none">
+                  ▼
+                </div>
+                <div className="absolute left-1 top-1/2 -translate-y-1/2 text-[8px] text-amber-400/70 font-bold pointer-events-none">
+                  ◀
+                </div>
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[8px] text-amber-400/70 font-bold pointer-events-none">
+                  ▶
+                </div>
+                <div className="absolute w-14 h-14 sm:w-16 sm:h-16 rounded-full border border-amber-600/25 pointer-events-none" />
 
-          {!dockCollapsed && (
-            <div className="w-full bg-stone-950/95 border border-stone-800 rounded-xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-3">
-              {/* 5 Magic Signs Selector */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] text-stone-400 mr-1 hidden sm:inline">
-                  Знаки [Q / 3-7 / R]:
-                </span>
-                {SIGN_LIST.map((signId, idx) => {
-                  const s = MAGIC_SIGNS[signId];
-                  const isSelected = player.activeSign === signId;
-                  const cd = signCooldowns[signId];
-                  return (
-                    <button
-                      key={signId}
-                      onClick={() => {
-                        game.player.selectSign(signId);
-                        game.triggerMagicSign();
-                      }}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                        isSelected
-                          ? 'bg-stone-800 text-amber-300 border border-amber-600/80 shadow'
-                          : 'bg-stone-900/80 text-stone-400 border border-stone-800 hover:text-stone-200'
-                      }`}
-                      title={`${s.name}: ${s.description} (${s.staminaCost} Вын., КД ${s.cooldown}с)`}
-                    >
-                      <span className="text-[10px] font-mono-tabular text-stone-500">
-                        {idx + 3}
-                      </span>
-                      {renderSignIcon(signId, 'w-3.5 h-3.5 shrink-0', s.color)}
-                      <span>{s.name.split(' (')[0]}</span>
-                      {cd > 0 && (
-                        <span className="text-[10px] font-mono-tabular text-red-400 font-semibold">
-                          {cd.toFixed(1)}с
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                {/* Movable Thumb Stick Knob */}
+                <div
+                  style={{
+                    transform: `translate(${joyState.x}px, ${joyState.y}px)`,
+                  }}
+                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 flex items-center justify-center pointer-events-none transition-transform duration-75 shadow-lg ${
+                    joyState.sprinting
+                      ? 'bg-amber-500/90 border-amber-200 text-stone-950'
+                      : joyState.active
+                      ? 'bg-amber-700/85 border-amber-300 text-amber-100'
+                      : 'bg-stone-800/90 border-amber-500/70 text-amber-300'
+                  }`}
+                >
+                  <Compass className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+              </div>
+              <span className="text-[9px] text-stone-400 font-mono-tabular">
+                {t(lang, 'mobile.lookHint')}
+              </span>
+            </div>
+
+            {/* Right Thumb: Combat & Utility Action Cluster */}
+            <div className="flex flex-col items-end gap-1.5 min-w-0">
+              {/* Top utility row: Sword Switch + Quick Potion + Cycle Sign */}
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                {nearbyInteractable && (
+                  <button
+                    onClick={() => game.triggerInteract()}
+                    className="px-2 py-1 rounded-lg bg-amber-600 border border-amber-300 text-stone-950 text-[10px] font-bold flex items-center gap-1 shadow"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>{t(lang, 'mobile.interact')}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() =>
+                    game.switchPlayerSword(activeSword === 'steel' ? 'silver' : 'steel')
+                  }
+                  className={`px-2 py-1 rounded-lg border text-[10px] font-semibold flex items-center gap-1 shadow ${
+                    activeSword === 'silver'
+                      ? 'bg-sky-950/95 border-sky-400 text-sky-200'
+                      : 'bg-stone-900/95 border-amber-500/80 text-amber-200'
+                  }`}
+                >
+                  <Sword className="w-3 h-3" />
+                  <span>
+                    {activeSword === 'silver'
+                      ? t(lang, 'hud.silverShort')
+                      : t(lang, 'hud.steelShort')}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => game.useQuickPotion()}
+                  className="px-2 py-1 rounded-lg bg-stone-900/95 border border-emerald-600/70 text-emerald-300 text-[10px] font-mono-tabular font-semibold flex items-center gap-1 shadow"
+                >
+                  <FlaskConical className="w-3 h-3" />
+                  <span>{potionCount}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    game.player.cycleActiveSign();
+                    game.syncHUD();
+                  }}
+                  className="px-2 py-1 rounded-lg bg-stone-900/95 border border-amber-700/60 text-amber-200 text-[10px] flex items-center gap-1 shadow"
+                  title="Сменить активный Знак"
+                >
+                  {renderSignIcon(player.activeSign, 'w-3 h-3', currentSignInfo.color)}
+                  <span className="max-w-[50px] truncate">{localizedSignName.split(' (')[0]}</span>
+                </button>
               </div>
 
-              {/* Action & Menu Buttons */}
-              <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Main Combat Action Buttons Row */}
+              <div className="grid grid-cols-3 gap-1 sm:gap-1.5 items-center">
+                {/* Block (Hold) */}
                 <button
-                  onClick={() => game.openModal('inventory')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'inventory'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-stone-200 border border-stone-800 hover:border-stone-600'
-                  }`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    game.player.isBlocking = true;
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    game.player.isBlocking = false;
+                  }}
+                  onPointerCancel={() => {
+                    game.player.isBlocking = false;
+                  }}
+                  onPointerLeave={() => {
+                    game.player.isBlocking = false;
+                  }}
+                  className="w-12 h-11 sm:w-14 sm:h-12 rounded-xl bg-stone-900/95 border border-stone-600 active:border-amber-400 text-[10px] sm:text-[11px] font-semibold text-stone-200 flex flex-col items-center justify-center gap-0.5 shadow-lg touch-none"
                 >
-                  <Backpack className="w-3.5 h-3.5" /> Инвентарь [I]
+                  <Shield className="w-3.5 h-3.5 text-sky-300" />
+                  <span>{t(lang, 'mobile.block')}</span>
                 </button>
+
+                {/* Cast Active Sign */}
                 <button
-                  onClick={() => game.openModal('quests')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'quests'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-stone-200 border border-stone-800 hover:border-stone-600'
-                  }`}
+                  onClick={() => game.triggerMagicSign()}
+                  className="w-12 h-11 sm:w-14 sm:h-12 rounded-xl bg-purple-950/95 border border-purple-500/80 active:scale-95 text-[10px] sm:text-[11px] font-semibold text-purple-100 flex flex-col items-center justify-center gap-0.5 shadow-lg"
                 >
-                  <ScrollText className="w-3.5 h-3.5" /> Задания [J]
+                  {renderSignIcon(player.activeSign, 'w-3.5 h-3.5', currentSignInfo.color)}
+                  <span>
+                    {signCooldowns[player.activeSign] > 0
+                      ? `${signCooldowns[player.activeSign].toFixed(1)}s`
+                      : t(lang, 'mobile.sign')}
+                  </span>
                 </button>
+
+                {/* Heavy Attack */}
                 <button
-                  onClick={() => game.openModal('map')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'map'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-stone-200 border border-stone-800 hover:border-stone-600'
-                  }`}
+                  onClick={() => game.performSwordAttack(true)}
+                  className="w-12 h-11 sm:w-14 sm:h-12 rounded-xl bg-amber-950/95 border border-amber-500/90 active:scale-95 text-[10px] sm:text-[11px] font-bold text-amber-200 flex flex-col items-center justify-center gap-0.5 shadow-lg"
                 >
-                  <MapIcon className="w-3.5 h-3.5" /> Карта [M]
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{t(lang, 'mobile.heavy')}</span>
                 </button>
+
+                {/* Dodge / Roll */}
                 <button
-                  onClick={() => game.openModal('notice_board')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'notice_board'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-amber-300 border border-amber-800/60 hover:border-amber-500'
-                  }`}
+                  onClick={() => game.triggerDodge()}
+                  className="w-12 h-11 sm:w-14 sm:h-12 rounded-xl bg-stone-800/95 border border-amber-700/60 active:scale-95 text-[10px] sm:text-[11px] font-semibold text-stone-100 flex flex-col items-center justify-center gap-0.5 shadow-lg"
                 >
-                  <Trophy className="w-3.5 h-3.5" /> Контракты
+                  <Wind className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>{t(lang, 'mobile.dodge')}</span>
                 </button>
+
+                {/* Primary Light Attack (Spans 2 columns for easy thumb tapping) */}
                 <button
-                  onClick={() => game.openModal('alchemy')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'alchemy'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-lime-300 border border-lime-800/60 hover:border-lime-500'
-                  }`}
+                  onClick={() => game.performSwordAttack(false)}
+                  className="col-span-2 h-11 sm:h-12 rounded-xl bg-gradient-to-r from-red-900/95 to-amber-800/95 border-2 border-amber-400/90 active:scale-95 text-xs font-display font-bold text-white flex items-center justify-center gap-1.5 shadow-xl"
                 >
-                  <FlaskConical className="w-3.5 h-3.5" /> Алхимия
-                </button>
-                <button
-                  onClick={() => game.openModal('codex')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'codex'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-amber-300 border border-amber-700/70 hover:border-amber-400'
-                  }`}
-                  title="Хроники Вальдмарка и найденные записки [Клавиша L]"
-                >
-                  <BookOpen className="w-3.5 h-3.5" /> Кодекс [L] ({discoveredLoreIds.length}/{totalLoreNotes})
-                </button>
-                <button
-                  onClick={() => game.openModal('bestiary')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                    activeModal === 'bestiary'
-                      ? 'bg-amber-600 text-stone-950'
-                      : 'bg-stone-900 text-stone-200 border border-stone-800 hover:border-stone-600'
-                  }`}
-                >
-                  <Skull className="w-3.5 h-3.5" /> Бестиарий [B]
-                </button>
-                <button
-                  onClick={() => game.saveGame()}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-stone-900 text-stone-200 border border-stone-800 hover:border-amber-600/60 flex items-center gap-1 transition-colors whitespace-nowrap"
-                  title="Сохранить игру"
-                >
-                  <Save className="w-3.5 h-3.5 text-amber-400" /> Сохр.
-                </button>
-                <button
-                  onClick={() => game.openModal('pause')}
-                  aria-label="Меню паузы и настроек"
-                  className="p-1.5 rounded-lg bg-stone-900 text-stone-200 border border-stone-800 hover:border-stone-600 transition-colors"
-                >
-                  <Pause className="w-4 h-4" />
+                  <Sword className="w-4 h-4 text-amber-300" />
+                  <span>{t(lang, 'mobile.attack')}</span>
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* UNIFIED COLLAPSIBLE BOTTOM CONTROL DOCK (Shown on PC Mode, Toggled via settings.hudVisibility.controlsDock) */}
+        {!isMobile && (
+          hudVis.controlsDock ? (
+            <div
+              data-testid="pc-controls-dock"
+              className={`pointer-events-auto flex flex-col items-center w-full max-w-4xl transition-opacity ${
+                activeModal === 'prologue' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+              }`}
+            >
+            <button
+              onClick={() => setDockCollapsed((prev) => !prev)}
+              className="flex items-center gap-1.5 px-3 py-1 medieval-panel border-b-0 rounded-t-lg text-[11px] text-amber-300/90 hover:text-amber-200 transition-colors cursor-pointer"
+            >
+              {dockCollapsed ? (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5" /> {t(lang, 'dock.show')}
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5" /> {t(lang, 'dock.hide')}
+                </>
+              )}
+            </button>
+
+            {!dockCollapsed && (
+              <div className="w-full medieval-panel rounded-xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-3">
+                {/* 5 Magic Signs Selector */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-stone-400 mr-1 hidden sm:inline">
+                    {t(lang, 'dock.signs')}:
+                  </span>
+                  {SIGN_LIST.map((signId, idx) => {
+                    const s = MAGIC_SIGNS[signId];
+                    const sName =
+                      lang === 'en'
+                        ? SIGN_TRANSLATIONS_EN[signId]?.name.split(' (')[0] ?? s.name.split(' (')[0]
+                        : s.name.split(' (')[0];
+                    const isSelected = player.activeSign === signId;
+                    const cd = signCooldowns[signId];
+                    return (
+                      <button
+                        key={signId}
+                        onClick={() => {
+                          game.player.selectSign(signId);
+                          game.triggerMagicSign();
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                          isSelected
+                            ? 'bg-stone-800/95 text-amber-300 border border-amber-500/80 shadow'
+                            : 'bg-stone-950/80 text-stone-400 border border-stone-800 hover:text-stone-200'
+                        }`}
+                      >
+                        <span className="text-[10px] font-mono-tabular text-stone-500">
+                          {idx + 3}
+                        </span>
+                        {renderSignIcon(signId, 'w-3.5 h-3.5 shrink-0', s.color)}
+                        <span>{sName}</span>
+                        {cd > 0 && (
+                          <span className="text-[10px] font-mono-tabular text-red-400 font-semibold">
+                            {cd.toFixed(1)}s
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Action & Menu Buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => game.openModal('inventory')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'inventory'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button'
+                    }`}
+                  >
+                    <Backpack className="w-3.5 h-3.5" /> {t(lang, 'dock.inventory')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('quests')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'quests'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button'
+                    }`}
+                  >
+                    <ScrollText className="w-3.5 h-3.5" /> {t(lang, 'dock.quests')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('map')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'map'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button'
+                    }`}
+                  >
+                    <MapIcon className="w-3.5 h-3.5" /> {t(lang, 'dock.map')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('notice_board')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'notice_board'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button text-amber-300'
+                    }`}
+                  >
+                    <Trophy className="w-3.5 h-3.5" /> {t(lang, 'dock.contracts')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('alchemy')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'alchemy'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button text-lime-300'
+                    }`}
+                  >
+                    <FlaskConical className="w-3.5 h-3.5" /> {t(lang, 'dock.alchemy')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('codex')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'codex'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button text-amber-300'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" /> {t(lang, 'dock.codex')} ({discoveredLoreIds.length}/{totalLoreNotes})
+                  </button>
+                  <button
+                    onClick={() => game.openModal('bestiary')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      activeModal === 'bestiary'
+                        ? 'medieval-button-primary'
+                        : 'medieval-button'
+                    }`}
+                  >
+                    <Skull className="w-3.5 h-3.5" /> {t(lang, 'dock.bestiary')}
+                  </button>
+                  <button
+                    onClick={() => game.saveGame()}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium medieval-button flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5 text-amber-400" /> {t(lang, 'dock.save')}
+                  </button>
+                  <button
+                    onClick={() => game.openModal('pause')}
+                    aria-label="Меню паузы и настроек"
+                    className="p-1.5 rounded-lg medieval-button transition-colors cursor-pointer"
+                  >
+                    <Pause className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="pointer-events-auto flex justify-end w-full">
+            <button
+              onClick={() => game.openModal('pause')}
+              aria-label="Меню паузы и настроек"
+              className="px-3 py-1.5 rounded-lg medieval-button flex items-center gap-1.5 text-xs cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5 text-amber-400" />
+              <span>{t(lang, 'pause.title')} [Esc]</span>
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* ===================================================================== */}
       {/* MODAL WINDOWS */}
       {/* ===================================================================== */}
 
-      {/* 1. DIALOGUE MODAL */}
-      {activeModal === 'dialogue' && activeDialogueNode && (
-        <div className="fixed inset-0 bg-black/45 backdrop-blur-[2px] pointer-events-auto flex items-end justify-center p-4 md:p-8 z-30 transition-all duration-300">
-          <div className="w-full max-w-2xl bg-stone-950/95 border-2 border-stone-700/80 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,0,0,0.9)] ring-1 ring-amber-600/30">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-stone-900 border border-amber-600/60 flex items-center justify-center text-amber-400 font-serif font-bold text-sm shadow-inner">
-                  {activeDialogueNode.speaker.charAt(0)}
+      {/* 1. DIALOGUE MODAL (Enhanced Legibility + Typewriter Effect) */}
+      {activeModal === 'dialogue' && localizedDialogue && (
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-[3px] pointer-events-auto flex items-end justify-center p-4 md:p-8 z-30 transition-all duration-300">
+          <div className="w-full max-w-3xl medieval-dialogue-box rounded-2xl p-6 md:p-7">
+            <div className="flex items-center justify-between border-b border-amber-700/40 pb-3.5 mb-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-stone-900 border-2 border-amber-500/70 flex items-center justify-center text-amber-300 font-display font-bold text-base shadow-inner">
+                  {localizedDialogue.speaker.charAt(0)}
                 </div>
                 <div>
-                  <h2 className="text-lg font-display font-bold text-amber-400 tracking-wide">
-                    {activeDialogueNode.speaker}
+                  <h2 className="text-lg md:text-xl font-display font-bold text-amber-300 tracking-wide">
+                    {localizedDialogue.speaker}
                   </h2>
-                  <div className="text-xs text-stone-400 font-serif italic">
-                    {activeDialogueNode.role}
+                  <div className="text-xs md:text-sm text-stone-300/90">
+                    {localizedDialogue.role}
                   </div>
                 </div>
               </div>
-              <div className="text-[11px] uppercase tracking-wider font-mono text-stone-500 border border-stone-800 px-2.5 py-0.5 rounded-full bg-stone-900/60">
-                Диалог
+              <div className="flex items-center gap-2">
+                {isDialogueTyping && (
+                  <span className="text-[11px] text-amber-300/80 animate-pulse hidden sm:inline">
+                    {t(lang, 'dialogue.skipTypewriter')}
+                  </span>
+                )}
+                <div className="text-[11px] uppercase tracking-wider font-mono text-amber-300/90 border border-amber-700/50 px-3 py-1 rounded-full bg-stone-950/80">
+                  {t(lang, 'dialogue.badge')}
+                </div>
               </div>
             </div>
-            <p className="text-stone-200 text-sm md:text-base leading-relaxed mb-6 font-serif italic bg-stone-900/50 p-4 rounded-xl border border-stone-800/80 shadow-inner">
-              «{activeDialogueNode.text}»
-            </p>
-            <div className="flex flex-col gap-2">
-              {activeDialogueNode.options.map((opt, idx) => (
+
+            <div
+              onClick={() => {
+                if (isDialogueTyping) {
+                  setTypedDialogueText(localizedDialogue.text);
+                  setIsDialogueTyping(false);
+                }
+              }}
+              className="cursor-pointer text-stone-100 text-base md:text-lg leading-relaxed mb-6 bg-stone-950/75 p-5 rounded-xl border border-amber-800/45 shadow-inner min-h-[5.5rem] flex items-center"
+            >
+              <p className="font-normal tracking-normal">
+                «{typedDialogueText || localizedDialogue.text}»
+                {isDialogueTyping && (
+                  <span className="inline-block w-2 h-4 ml-1 bg-amber-400 animate-pulse align-middle" />
+                )}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              {localizedDialogue.options.map((opt, idx) => (
                 <button
                   key={opt.id}
                   onClick={() => game.selectDialogueOption(opt)}
-                  className="w-full text-left px-4 py-3 rounded-xl bg-stone-900/90 hover:bg-stone-800/95 border border-stone-700/70 hover:border-amber-500/80 text-sm text-stone-100 transition-all duration-150 flex items-center gap-3 group shadow-md"
+                  className="w-full text-left px-4 py-3.5 rounded-xl medieval-button text-sm md:text-base text-stone-100 transition-all duration-150 flex items-center gap-3.5 group cursor-pointer"
                 >
-                  <span className="w-6 h-6 rounded bg-amber-950/80 border border-amber-600/60 text-amber-400 font-mono-tabular font-bold text-xs flex items-center justify-center group-hover:bg-amber-600 group-hover:text-stone-950 transition-colors">
+                  <span className="w-6 h-6 rounded-md bg-amber-950/90 border border-amber-500/70 text-amber-300 font-mono-tabular font-bold text-xs flex items-center justify-center group-hover:bg-amber-500 group-hover:text-stone-950 transition-colors shrink-0">
                     {idx + 1}
                   </span>
-                  <span className="group-hover:text-amber-200 transition-colors">{opt.text}</span>
+                  <span className="group-hover:text-amber-200 transition-colors font-medium">
+                    {opt.text}
+                  </span>
                 </button>
               ))}
             </div>
@@ -1070,134 +1650,160 @@ export const UIManager: React.FC<UIManagerProps> = ({
       {/* 2. INVENTORY, RUNES, TROPHIES & SKILL TREE MODAL */}
       {activeModal === 'inventory' && (
         <div className="fixed inset-0 bg-black/75 pointer-events-auto flex items-center justify-center p-4 z-30">
-          <div className="w-full max-w-4xl bg-stone-950 border border-stone-800 rounded-xl p-6 shadow-2xl max-h-[88vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+          <div className="w-full max-w-4xl medieval-panel-ornate rounded-2xl p-6 shadow-2xl max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-amber-900/40 pb-4 mb-4">
               <div className="flex items-center gap-4 flex-wrap">
                 <h2 className="text-xl font-display font-bold text-amber-400">
-                  Снаряжение, Трофеи и Навыки
+                  {t(lang, 'inv.title')}
                 </h2>
-                <div className="flex bg-stone-900 p-1 rounded-lg border border-stone-800">
+                <div className="flex bg-stone-950/90 p-1 rounded-lg border border-amber-800/40">
                   <button
                     onClick={() => setInvTab('items')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                       invTab === 'items'
                         ? 'bg-amber-600 text-stone-950 font-semibold'
                         : 'text-stone-400 hover:text-stone-200'
                     }`}
                   >
-                    Инвентарь ({inventory.length})
+                    {t(lang, 'inv.tab.items')} ({inventory.length})
                   </button>
                   <button
                     onClick={() => setInvTab('skills')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                       invTab === 'skills'
                         ? 'bg-amber-600 text-stone-950 font-semibold'
                         : 'text-stone-400 hover:text-stone-200'
                     }`}
                   >
-                    Древо навыков (Очков: {player.skillPoints})
+                    {t(lang, 'inv.tab.skills')} ({player.skillPoints})
                   </button>
                 </div>
               </div>
               <button
                 onClick={() => game.openModal('none')}
-                className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs rounded-lg border border-stone-700"
+                className="px-3 py-1.5 medieval-button text-xs rounded-lg cursor-pointer"
               >
-                Закрыть [Esc]
+                {t(lang, 'inv.close')}
               </button>
             </div>
 
             {/* Stats Summary Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-4 bg-stone-900/70 border border-stone-800/90 rounded-lg p-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-4 bg-stone-950/80 border border-amber-900/40 rounded-xl p-3 text-xs">
               <div>
-                <div className="text-stone-400">Стальной урон</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.steelDmg')}</div>
                 <div className="text-base font-mono-tabular font-bold text-stone-100">
                   {effStats.steelAttack}
                 </div>
               </div>
               <div>
-                <div className="text-stone-400">Серебряный урон</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.silverDmg')}</div>
                 <div className="text-base font-mono-tabular font-bold text-sky-400">
                   {effStats.silverAttack}
                 </div>
               </div>
               <div>
-                <div className="text-stone-400">Защита брони</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.defense')}</div>
                 <div className="text-base font-mono-tabular font-bold text-amber-400">
                   {effStats.defense}
                 </div>
               </div>
               <div>
-                <div className="text-stone-400">Шанс крита</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.crit')}</div>
                 <div className="text-base font-mono-tabular font-bold text-red-400">
                   {Math.round(effStats.critChance * 100)}%
                 </div>
               </div>
               <div>
-                <div className="text-stone-400">Сила Знаков</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.signPower')}</div>
                 <div className="text-base font-mono-tabular font-bold text-purple-400">
                   {effStats.signIntensity}%
                 </div>
               </div>
               <div>
-                <div className="text-stone-400">Золотые кроны</div>
+                <div className="text-stone-400">{t(lang, 'inv.stat.gold')}</div>
                 <div className="text-base font-mono-tabular font-bold text-yellow-400">
                   {player.gold}
                 </div>
               </div>
             </div>
 
-            {/* 4 Exclusive Equipment Slots Overview */}
+            {/* 4 Exclusive Equipment Slots Overview with Visual Icons */}
             {invTab === 'items' && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
-                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-amber-700/50">
-                  <div className="text-[10px] uppercase tracking-wider text-amber-400 font-display font-bold">
-                    Слот 1 · Стальной меч [1]
-                  </div>
-                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
-                    {equippedSteelSword
-                      ? `${equippedSteelSword.name}${
-                          equippedSteelSword.upgradeLevel
-                            ? ` +${equippedSteelSword.upgradeLevel}`
-                            : ''
-                        }`
-                      : 'Не экипировано'}
-                  </div>
-                </div>
-                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-sky-700/50">
-                  <div className="text-[10px] uppercase tracking-wider text-sky-400 font-display font-bold">
-                    Слот 2 · Серебряный меч [2]
-                  </div>
-                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
-                    {equippedSilverSword
-                      ? `${equippedSilverSword.name}${
-                          equippedSilverSword.upgradeLevel
-                            ? ` +${equippedSilverSword.upgradeLevel}`
-                            : ''
-                        }`
-                      : 'Не экипировано'}
+                <div className="p-2.5 rounded-xl bg-stone-900/90 border border-amber-700/50 flex items-center gap-2.5">
+                  <ItemIcon
+                    item={equippedSteelSword ?? { id: 'steel_sword', category: 'weapon' }}
+                    size={28}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider text-amber-400 font-display font-bold truncate">
+                      {t(lang, 'inv.slot.steel')}
+                    </div>
+                    <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                      {equippedSteelSword
+                        ? `${localizeItem(equippedSteelSword, lang).name}${
+                            equippedSteelSword.upgradeLevel
+                              ? ` +${equippedSteelSword.upgradeLevel}`
+                              : ''
+                          }`
+                        : t(lang, 'inv.notEquipped')}
+                    </div>
                   </div>
                 </div>
-                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-emerald-700/50">
-                  <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-display font-bold">
-                    Слот 3 · Доспех
-                  </div>
-                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
-                    {equippedArmorItem
-                      ? `${equippedArmorItem.name}${
-                          equippedArmorItem.upgradeLevel
-                            ? ` +${equippedArmorItem.upgradeLevel}`
-                            : ''
-                        }`
-                      : 'Не экипировано'}
+                <div className="p-2.5 rounded-xl bg-stone-900/90 border border-sky-700/50 flex items-center gap-2.5">
+                  <ItemIcon
+                    item={equippedSilverSword ?? { id: 'silver_sword', category: 'weapon' }}
+                    size={28}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider text-sky-400 font-display font-bold truncate">
+                      {t(lang, 'inv.slot.silver')}
+                    </div>
+                    <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                      {equippedSilverSword
+                        ? `${localizeItem(equippedSilverSword, lang).name}${
+                            equippedSilverSword.upgradeLevel
+                              ? ` +${equippedSilverSword.upgradeLevel}`
+                              : ''
+                          }`
+                        : t(lang, 'inv.notEquipped')}
+                    </div>
                   </div>
                 </div>
-                <div className="p-2.5 rounded-lg bg-stone-900/90 border border-purple-700/50">
-                  <div className="text-[10px] uppercase tracking-wider text-purple-400 font-display font-bold">
-                    Слот 4 · Охотничий Трофей
+                <div className="p-2.5 rounded-xl bg-stone-900/90 border border-emerald-700/50 flex items-center gap-2.5">
+                  <ItemIcon
+                    item={equippedArmorItem ?? { id: 'armor_raven', category: 'armor' }}
+                    size={28}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-display font-bold truncate">
+                      {t(lang, 'inv.slot.armor')}
+                    </div>
+                    <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                      {equippedArmorItem
+                        ? `${localizeItem(equippedArmorItem, lang).name}${
+                            equippedArmorItem.upgradeLevel
+                              ? ` +${equippedArmorItem.upgradeLevel}`
+                              : ''
+                          }`
+                        : t(lang, 'inv.notEquipped')}
+                    </div>
                   </div>
-                  <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
-                    {equippedTrophy ? equippedTrophy.name : 'Не экипировано'}
+                </div>
+                <div className="p-2.5 rounded-xl bg-stone-900/90 border border-purple-700/50 flex items-center gap-2.5">
+                  <ItemIcon
+                    item={equippedTrophy ?? { id: 'trophy_werewolf', category: 'trophy' }}
+                    size={28}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider text-purple-400 font-display font-bold truncate">
+                      {t(lang, 'inv.slot.trophy')}
+                    </div>
+                    <div className="text-xs font-semibold text-stone-100 truncate mt-0.5">
+                      {equippedTrophy
+                        ? localizeItem(equippedTrophy, lang).name
+                        : t(lang, 'inv.notEquipped')}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1205,124 +1811,127 @@ export const UIManager: React.FC<UIManagerProps> = ({
 
             {invTab === 'items' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto pr-1">
-                {inventory.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-3.5 rounded-lg border flex items-start justify-between gap-3 ${
-                      item.equipped
-                        ? 'bg-stone-900 border-amber-600/60'
-                        : 'bg-stone-900/50 border-stone-800'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm text-stone-100">
-                          {item.name}
-                          {item.upgradeLevel ? ` +${item.upgradeLevel}` : ''}
-                        </span>
-                        <span className="text-xs text-stone-400 font-mono-tabular">
-                          x{item.quantity}
-                        </span>
-                        {item.setId && (
-                          <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-950/80 border border-amber-600/50 text-amber-300">
-                            Школа{' '}
-                            {item.setId === 'raven'
-                              ? 'Ворона'
-                              : item.setId === 'bear'
-                              ? 'Медведя'
-                              : 'Пламени'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-stone-400 mt-1">
-                        {item.description}
-                      </p>
-                      {(item.category === 'weapon' || item.category === 'armor') && (
-                        <div className="text-[11px] text-purple-300 mt-1 font-mono-tabular">
-                          Ячейка руны:{' '}
-                          {item.socketedRuneId ? item.socketedRuneId : 'Свободно'}
+                {inventory.map((rawItem) => {
+                  const item = localizeItem(rawItem, lang);
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 ${
+                        item.equipped
+                          ? 'bg-stone-900/95 border-amber-500/80 shadow-md'
+                          : 'bg-stone-900/60 border-stone-800/90'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <ItemIcon item={rawItem} size={36} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm text-stone-100">
+                              {item.name}
+                              {item.upgradeLevel ? ` +${item.upgradeLevel}` : ''}
+                            </span>
+                            <span className="text-xs text-stone-400 font-mono-tabular">
+                              x{item.quantity}
+                            </span>
+                            {item.setId && (
+                              <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-950/80 border border-amber-600/50 text-amber-300">
+                                {getSetDisplayName(item.setId)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-stone-400 mt-1">
+                            {item.description}
+                          </p>
+                          {(item.category === 'weapon' || item.category === 'armor') && (
+                            <div className="text-[11px] text-purple-300 mt-1 font-mono-tabular">
+                              {t(lang, 'inv.runeSocket')}:{' '}
+                              {item.socketedRuneId ? item.socketedRuneId : t(lang, 'inv.emptySocket')}
+                            </div>
+                          )}
+                          <div className="text-[11px] text-amber-400/90 mt-1.5">
+                            {t(lang, 'inv.value')}: {item.value} {t(lang, 'inv.goldShort')}
+                            {item.equipped ? ` · ${t(lang, 'inv.equipped')}` : ''}
+                          </div>
                         </div>
-                      )}
-                      <div className="text-[11px] text-amber-400/90 mt-1.5">
-                        Ценность: {item.value} зол.
-                        {item.equipped ? ' · Экипировано' : ''}
                       </div>
-                    </div>
 
-                    <div className="flex flex-col gap-1.5 shrink-0">
-                      {(item.category === 'weapon' ||
-                        item.category === 'armor' ||
-                        item.category === 'trophy') && (
-                        <button
-                          onClick={() => game.useInventoryItem(item.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700"
-                        >
-                          {item.equipped ? 'Снять' : 'Надеть'}
-                        </button>
-                      )}
-                      {item.category === 'blueprint' && (
-                        <button
-                          onClick={() => game.craftSchoolBlueprint(item.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded bg-amber-900/70 hover:bg-amber-800 text-amber-200 border border-amber-700"
-                        >
-                          Выковать
-                        </button>
-                      )}
-                      {item.category === 'potion' && item.quantity > 0 && (
-                        <button
-                          onClick={() => game.useInventoryItem(item.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-700"
-                        >
-                          Выпить
-                        </button>
-                      )}
-                      {/* Socket Rune button if item is weapon/armor without a rune and player has a rune */}
-                      {(item.category === 'weapon' || item.category === 'armor') &&
-                        !item.socketedRuneId &&
-                        availableRunes.length > 0 && (
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        {(item.category === 'weapon' ||
+                          item.category === 'armor' ||
+                          item.category === 'trophy') && (
                           <button
-                            onClick={() =>
-                              game.socketRune(availableRunes[0].id, item.id)
-                            }
-                            className="px-2.5 py-1 text-[11px] font-medium rounded bg-purple-900/70 hover:bg-purple-800 text-purple-200 border border-purple-600"
-                            title={`Инкрустировать ${availableRunes[0].name}`}
+                            onClick={() => game.useInventoryItem(item.id)}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg medieval-button cursor-pointer"
                           >
-                            + Руна
+                            {item.equipped ? t(lang, 'inv.unequip') : t(lang, 'inv.equip')}
                           </button>
                         )}
+                        {item.category === 'blueprint' && (
+                          <button
+                            onClick={() => game.craftSchoolBlueprint(item.id)}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg medieval-button-primary cursor-pointer"
+                          >
+                            {t(lang, 'inv.forge')}
+                          </button>
+                        )}
+                        {item.category === 'potion' && item.quantity > 0 && (
+                          <button
+                            onClick={() => game.useInventoryItem(item.id)}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 border border-emerald-600 cursor-pointer"
+                          >
+                            {t(lang, 'inv.drink')}
+                          </button>
+                        )}
+                        {(item.category === 'weapon' || item.category === 'armor') &&
+                          !item.socketedRuneId &&
+                          availableRunes.length > 0 && (
+                            <button
+                              onClick={() =>
+                                game.socketRune(availableRunes[0].id, item.id)
+                              }
+                              className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-500 cursor-pointer"
+                              title={`Инкрустировать ${availableRunes[0].name}`}
+                            >
+                              {t(lang, 'inv.addRune')}
+                            </button>
+                          )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto pr-1">
-                {skills.map((sk) => (
-                  <div
-                    key={sk.id}
-                    className="p-4 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-between gap-4"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-amber-400">
-                        {sk.name} (Ур. {sk.level}/{sk.maxLevel})
-                      </div>
-                      <p className="text-xs text-stone-300 mt-1">
-                        {sk.description}
-                      </p>
-                    </div>
-                    <button
-                      disabled={
-                        sk.level >= sk.maxLevel || player.skillPoints < sk.cost
-                      }
-                      onClick={() => {
-                        game.inventorySystem.unlockSkill(sk.id, game.player.stats);
-                        game.syncHUD();
-                      }}
-                      className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 transition-colors shrink-0"
+                {skills.map((rawSk) => {
+                  const sk = localizeSkill(rawSk, lang);
+                  return (
+                    <div
+                      key={sk.id}
+                      className="p-4 rounded-xl bg-stone-900/90 border border-amber-900/40 flex items-center justify-between gap-4"
                     >
-                      {sk.level >= sk.maxLevel ? 'Макс.' : 'Изучить (1 очко)'}
-                    </button>
-                  </div>
-                ))}
+                      <div>
+                        <div className="text-sm font-semibold text-amber-400">
+                          {sk.name} ({t(lang, 'hud.level')}. {sk.level}/{sk.maxLevel})
+                        </div>
+                        <p className="text-xs text-stone-300 mt-1">
+                          {sk.description}
+                        </p>
+                      </div>
+                      <button
+                        disabled={
+                          sk.level >= sk.maxLevel || player.skillPoints < sk.cost
+                        }
+                        onClick={() => {
+                          game.inventorySystem.unlockSkill(sk.id, game.player.stats);
+                          game.syncHUD();
+                        }}
+                        className="px-3.5 py-2 rounded-lg text-xs font-semibold medieval-button-primary disabled:opacity-40 transition-colors shrink-0 cursor-pointer"
+                      >
+                        {sk.level >= sk.maxLevel ? t(lang, 'inv.maxSkill') : t(lang, 'inv.learnSkill')}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1622,6 +2231,15 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   <div className="absolute top-[33%] left-[8%] z-10 px-2 py-0.5 rounded bg-stone-950/90 border border-emerald-600/60 text-[10px] font-display font-semibold text-emerald-200 pointer-events-none whitespace-nowrap shadow">
                     Старый лес
                   </div>
+                  <div className="absolute top-[50%] left-[2%] z-10 px-2 py-0.5 rounded bg-stone-950/90 border border-teal-500/60 text-[10px] font-display font-semibold text-teal-200 pointer-events-none whitespace-nowrap shadow">
+                    Затонувший Порт Сольхейм
+                  </div>
+                  <div className="absolute top-[42%] right-[2%] z-10 px-2 py-0.5 rounded bg-stone-950/90 border border-yellow-500/60 text-[10px] font-display font-semibold text-yellow-200 pointer-events-none whitespace-nowrap shadow">
+                    Монастырь Солнечных Клятв
+                  </div>
+                  <div className="absolute top-[1%] left-1/2 -translate-x-1/2 z-10 px-2 py-0.5 rounded bg-stone-950/90 border border-cyan-400/70 text-[10px] font-display font-semibold text-cyan-200 pointer-events-none whitespace-nowrap shadow">
+                    Акт III: Долина Звёздного Пепла
+                  </div>
                   <div className="absolute bottom-[10%] right-[6%] z-10 px-2 py-0.5 rounded bg-stone-950/90 border border-sky-500/60 text-[10px] font-display font-semibold text-sky-200 pointer-events-none whitespace-nowrap shadow">
                     Пепельное кладбище (Акт II)
                   </div>
@@ -1739,28 +2357,22 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </div>
 
               {/* Fast Travel Signposts List */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5 max-h-[380px] overflow-y-auto pr-1">
                 <div className="text-xs font-semibold text-stone-300 mb-1">
-                  Путевые указатели:
+                  Путевые указатели (12 биомов):
                 </div>
                 {[
                   {
                     name: 'Деревня Воронья Падь',
-                    sub: 'Доска заказов, Кузнец, Трактир',
+                    sub: 'Доска заказов, Кузнец, Трактир, Мельница',
                     x: 0,
                     z: 4,
                   },
                   {
-                    name: 'Старый лес (Логово Волколака)',
-                    sub: 'Зона охоты и Место Силы',
+                    name: 'Старый лес и Кордон Егерей',
+                    sub: 'Логово Волколака, Лесопилка и Место Силы',
                     x: -36,
                     z: -2,
-                  },
-                  {
-                    name: 'Заброшенный хутор (Колодец)',
-                    sub: 'Контракт «Невеста у колодца»',
-                    x: -18,
-                    z: -32,
                   },
                   {
                     name: 'Проклятое святилище и Катакомбы',
@@ -1770,21 +2382,63 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   },
                   {
                     name: 'Врата Разрушенной крепости',
-                    sub: 'Горгулья, Демон и Древний Хранитель',
+                    sub: 'Осадный двор, Горгулья и Древний Хранитель',
                     x: 48,
                     z: -44,
                   },
                   {
-                    name: 'Акт II: Лагерь Ордена и Кладбище',
-                    sub: 'Инквизитор Лазарь и Король-Лич Малакор',
+                    name: 'Затонувший Порт Сольхейм (Западное море)',
+                    sub: 'Маяк Бездны, Смотритель Хальвар и Сирена Никса',
+                    x: -118,
+                    z: 2,
+                  },
+                  {
+                    name: 'Лазурный Монастырь Солнечных Клятв (Восток)',
+                    sub: 'Обсерватория, Аббат Аврелий и Колосс Гелиос',
+                    x: 118,
+                    z: -15,
+                  },
+                  {
+                    name: 'Акт II: Лагерь Ордена и Пепельное кладбище',
+                    sub: 'Часовня, Инквизитор Лазарь и Король-Лич Малакор',
                     x: 24,
                     z: 32,
+                  },
+                  {
+                    name: 'Северный Поход: Тракт Висельников и Топи',
+                    sub: 'Деревня на сваях, Поместье Вейнов и Болотная Гидра',
+                    x: 0,
+                    z: -115,
+                  },
+                  {
+                    name: 'Среброзубый Перевал и Мёртвые Шахты',
+                    sub: 'Плавильня Чёрной Руды, Штольни и Ледяной Колосс',
+                    x: 0,
+                    z: -222,
+                  },
+                  {
+                    name: 'Чёрный Бастион Братства Пепла',
+                    sub: 'Цитадель Странников, Алхимический цех и Магистр Веспер',
+                    x: 0,
+                    z: -332,
+                  },
+                  {
+                    name: 'Кратер Затмения и Зал Трона Пустоты',
+                    sub: 'Обсидиановые острова и Аватар Чёрного Солнца',
+                    x: 0,
+                    z: -442,
+                  },
+                  {
+                    name: 'Акт III: Долина Звёздного Пепла и Кузница Предтеч',
+                    sub: 'Зодчий Астрарион, Наковальня Света и Архонт Солярис',
+                    x: 0,
+                    z: -565,
                   },
                 ].map((loc) => (
                   <button
                     key={loc.name}
                     onClick={() => game.fastTravelTo(loc.x, loc.z, loc.name)}
-                    className="text-left p-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-amber-600/60 transition-colors"
+                    className="text-left p-2 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-amber-600/60 transition-colors"
                   >
                     <div className="text-xs font-semibold text-amber-400">
                       {loc.name}
@@ -1801,8 +2455,8 @@ export const UIManager: React.FC<UIManagerProps> = ({
       {/* 5. MERCHANT SHOP MODAL */}
       {activeModal === 'shop' && (
         <div className="fixed inset-0 bg-black/75 pointer-events-auto flex items-center justify-center p-4 z-30">
-          <div className="w-full max-w-4xl bg-stone-950 border border-stone-800 rounded-xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+          <div className="w-full max-w-4xl medieval-panel-ornate rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-amber-900/40 pb-4 mb-4">
               <div>
                 <h2 className="text-xl font-display font-bold text-amber-400">
                   {game.isFenceShop
@@ -1810,10 +2464,10 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     : 'Лавка купца и каравана'}
                 </h2>
                 <div className="text-xs text-stone-300 font-mono-tabular flex flex-wrap items-center gap-3 mt-0.5">
-                  <span>Ваше золото: {player.gold} крон</span>
+                  <span>{t(lang, 'hud.gold')}: {player.gold}</span>
                   {hud.reputationInfo && (
                     <span className="text-amber-300/90">
-                      · Репутация «{hud.reputationInfo.title}» (модификатор цен:{' '}
+                      · «{hud.reputationInfo.title}» ({t(lang, 'hud.prices')}:{' '}
                       {Math.round(
                         (game.isFenceShop
                           ? 0.9
@@ -1829,9 +2483,9 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   game.isFenceShop = false;
                   game.openModal('none');
                 }}
-                className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs rounded-lg border border-stone-700"
+                className="px-3 py-1.5 medieval-button text-xs rounded-lg cursor-pointer"
               >
-                Закрыть
+                {t(lang, 'inv.close')}
               </button>
             </div>
 
@@ -1842,7 +2496,8 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   Товары торговца (Купить)
                 </h3>
                 <div className="space-y-2.5">
-                  {game.inventorySystem.shopCatalog.map((item) => {
+                  {game.inventorySystem.shopCatalog.map((rawItem) => {
+                    const item = localizeItem(rawItem, lang);
                     const effectivePrice = calculateMerchantPrice(
                       item.value,
                       player.reputation ?? 0,
@@ -1851,14 +2506,17 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     return (
                       <div
                         key={item.id}
-                        className="p-3 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-between gap-3"
+                        className="p-3 rounded-xl bg-stone-900/90 border border-stone-800 flex items-center justify-between gap-3"
                       >
-                        <div>
-                          <div className="text-xs font-semibold text-stone-100">
-                            {item.name}
-                          </div>
-                          <div className="text-[11px] text-stone-400">
-                            {item.description}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ItemIcon item={rawItem} size={32} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-stone-100 truncate">
+                              {item.name}
+                            </div>
+                            <div className="text-[11px] text-stone-400">
+                              {item.description}
+                            </div>
                           </div>
                         </div>
                         <button
@@ -1871,9 +2529,9 @@ export const UIManager: React.FC<UIManagerProps> = ({
                             );
                             game.syncHUD();
                           }}
-                          className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs whitespace-nowrap"
+                          className="px-3 py-1.5 rounded-lg medieval-button-primary disabled:opacity-40 text-xs whitespace-nowrap cursor-pointer"
                         >
-                          Купить ({effectivePrice} зол.)
+                          Купить ({effectivePrice})
                         </button>
                       </div>
                     );
@@ -1887,33 +2545,39 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   Ваш инвентарь (Продать трофеи и ресурсы)
                 </h3>
                 <div className="space-y-2.5">
-                  {inventory.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 rounded-lg bg-stone-900/60 border border-stone-800 flex items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="text-xs font-semibold text-stone-100">
-                          {item.name} (x{item.quantity})
-                        </div>
-                        <div className="text-[11px] text-stone-400">
-                          Цена скупки: {Math.max(5, Math.round(item.value * 0.6))} зол.
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          game.inventorySystem.sellInventoryItem(
-                            item.id,
-                            game.player.stats
-                          );
-                          game.syncHUD();
-                        }}
-                        className="px-3 py-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs whitespace-nowrap"
+                  {inventory.map((rawItem) => {
+                    const item = localizeItem(rawItem, lang);
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 flex items-center justify-between gap-3"
                       >
-                        Продать
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ItemIcon item={rawItem} size={32} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-stone-100 truncate">
+                              {item.name} (x{item.quantity})
+                            </div>
+                            <div className="text-[11px] text-stone-400">
+                              Цена скупки: {Math.max(5, Math.round(item.value * 0.6))} {t(lang, 'inv.goldShort')}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            game.inventorySystem.sellInventoryItem(
+                              item.id,
+                              game.player.stats
+                            );
+                            game.syncHUD();
+                          }}
+                          className="px-3 py-1.5 rounded-lg medieval-button text-xs whitespace-nowrap cursor-pointer"
+                        >
+                          Продать
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1924,21 +2588,26 @@ export const UIManager: React.FC<UIManagerProps> = ({
       {/* 6. BLACKSMITH FORGE & SCHOOL BLUEPRINTS MODAL */}
       {activeModal === 'blacksmith' && (
         <div className="fixed inset-0 bg-black/75 pointer-events-auto flex items-center justify-center p-4 z-30">
-          <div className="w-full max-w-3xl bg-stone-950 border border-stone-800 rounded-xl p-6 shadow-2xl max-h-[88vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+          <div className="w-full max-w-3xl medieval-panel-ornate rounded-2xl p-6 shadow-2xl max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-amber-900/40 pb-4 mb-4">
               <div>
                 <h2 className="text-xl font-display font-bold text-amber-400">
                   Кузница Мастера Грома: Заточка и Доспехи Школ
                 </h2>
-                <div className="text-xs text-stone-300 font-mono-tabular mt-0.5">
-                  Золото: {player.gold} · Железная руда: {oreCount} шт.
+                <div className="text-xs text-stone-300 font-mono-tabular mt-0.5 flex items-center gap-3">
+                  <span>{t(lang, 'hud.gold')}: {player.gold}</span>
+                  <span>·</span>
+                  <span className="flex items-center gap-1">
+                    <ItemIcon item={{ id: 'iron_ore', category: 'material' }} size={16} />
+                    Железная руда: {oreCount} шт.
+                  </span>
                 </div>
               </div>
               <button
                 onClick={() => game.openModal('none')}
-                className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-stone-300 text-xs rounded-lg border border-stone-700"
+                className="px-3 py-1.5 medieval-button text-xs rounded-lg cursor-pointer"
               >
-                Закрыть
+                {t(lang, 'inv.close')}
               </button>
             </div>
 
@@ -1952,21 +2621,25 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   .filter(
                     (i) => i.category === 'weapon' || i.category === 'armor'
                   )
-                  .map((item) => {
-                    const cost = getUpgradeCost(item);
+                  .map((rawItem) => {
+                    const item = localizeItem(rawItem, lang);
+                    const cost = getUpgradeCost(rawItem);
                     const canAfford =
                       player.gold >= cost.gold && oreCount >= cost.oreCount;
                     return (
                       <div
                         key={item.id}
-                        className="p-3.5 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-between gap-3"
+                        className="p-3.5 rounded-xl bg-stone-900/90 border border-stone-800 flex items-center justify-between gap-3"
                       >
-                        <div>
-                          <div className="text-xs font-semibold text-stone-100">
-                            {item.name} (Ур. +{item.upgradeLevel ?? 0})
-                          </div>
-                          <div className="text-[11px] text-stone-400 mt-0.5">
-                            Цена: {cost.gold} зол. и {cost.oreCount} руды
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ItemIcon item={rawItem} size={32} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-stone-100 truncate">
+                              {item.name} (+{item.upgradeLevel ?? 0})
+                            </div>
+                            <div className="text-[11px] text-stone-400 mt-0.5">
+                              Цена: {cost.gold} зол. и {cost.oreCount} руды
+                            </div>
                           </div>
                         </div>
                         <button
@@ -1979,7 +2652,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                             game.audio.playHitImpact(true);
                             game.syncHUD();
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs flex items-center gap-1 shrink-0"
+                          className="px-3 py-1.5 rounded-lg medieval-button-primary disabled:opacity-40 text-xs flex items-center gap-1 shrink-0 cursor-pointer"
                         >
                           <Hammer className="w-3.5 h-3.5" /> Улучшить
                         </button>
@@ -1995,25 +2668,29 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 </h3>
                 {inventory
                   .filter((i) => i.category === 'blueprint')
-                  .map((bp) => {
+                  .map((rawBp) => {
+                    const bp = localizeItem(rawBp, lang);
                     return (
                       <div
                         key={bp.id}
-                        className="p-3.5 rounded-lg bg-stone-900/80 border border-stone-800 flex items-center justify-between gap-3"
+                        className="p-3.5 rounded-xl bg-stone-900/80 border border-stone-800 flex items-center justify-between gap-3"
                       >
-                        <div>
-                          <div className="text-xs font-semibold text-amber-200">
-                            {bp.name}
-                          </div>
-                          <div className="text-[11px] text-stone-400 mt-0.5">
-                            {bp.description}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ItemIcon item={rawBp} size={32} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-amber-200 truncate">
+                              {bp.name}
+                            </div>
+                            <div className="text-[11px] text-stone-400 mt-0.5">
+                              {bp.description}
+                            </div>
                           </div>
                         </div>
                         <button
                           onClick={() => game.craftSchoolBlueprint(bp.id)}
-                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-stone-950 font-semibold text-xs whitespace-nowrap shrink-0"
+                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-stone-950 font-semibold text-xs whitespace-nowrap shrink-0 cursor-pointer"
                         >
-                          Выковать
+                          {t(lang, 'inv.forge')}
                         </button>
                       </div>
                     );
@@ -2227,30 +2904,40 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 return (
                   <div
                     key={rec.id}
-                    className="p-3.5 rounded-lg bg-stone-900/80 border border-stone-800 flex items-center justify-between gap-4"
+                    className="p-3.5 rounded-xl bg-stone-900/85 border border-stone-800 flex items-center justify-between gap-4"
                   >
-                    <div>
-                      <div className="text-sm font-semibold text-stone-100">
-                        {rec.name}
-                      </div>
-                      <div className="text-xs text-stone-400 mt-0.5">
-                        {rec.description}
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-1.5 text-[11px] font-mono-tabular">
-                        {ingStatus.map((s) => (
-                          <span
-                            key={s.itemId}
-                            className={s.ok ? 'text-emerald-400' : 'text-red-400'}
-                          >
-                            {s.name}: {s.have}/{s.count}
-                          </span>
-                        ))}
+                    <div className="flex items-start gap-3 min-w-0">
+                      <ItemIcon item={{ id: rec.id, name: rec.name, category: 'potion' }} size={36} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-stone-100">
+                          {rec.name}
+                        </div>
+                        <div className="text-xs text-stone-400 mt-0.5">
+                          {rec.description}
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2 text-[11px] font-mono-tabular">
+                          {ingStatus.map((s) => (
+                            <span
+                              key={s.itemId}
+                              className={`flex items-center gap-1 px-2 py-0.5 rounded bg-stone-950/90 border ${
+                                s.ok
+                                  ? 'text-emerald-300 border-emerald-700/50'
+                                  : 'text-red-300 border-red-800/50'
+                              }`}
+                            >
+                              <ItemIcon item={{ id: s.itemId, name: s.name, category: 'material' }} size={14} />
+                              <span>
+                                {s.name}: {s.have}/{s.count}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <button
                       disabled={!canBrew}
                       onClick={() => game.brewAlchemyRecipe(rec.id)}
-                      className="px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs shrink-0"
+                      className="px-4 py-2 rounded-lg bg-lime-600 hover:bg-lime-500 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-semibold text-xs shrink-0 cursor-pointer"
                     >
                       Сварить
                     </button>
@@ -2517,105 +3204,361 @@ export const UIManager: React.FC<UIManagerProps> = ({
         </div>
       )}
 
-      {/* 12. PAUSE & SETTINGS MODAL */}
+      {/* 12. PAUSE & SETTINGS MODAL (Audio/Music Sliders, RU/EN Language, Day/Night & HUD Customization) */}
       {activeModal === 'pause' && (
         <div className="fixed inset-0 bg-black/80 pointer-events-auto flex items-center justify-center p-4 z-30">
-          <div className="w-full max-w-md bg-stone-950 border border-stone-800 rounded-xl p-6 shadow-2xl space-y-4">
-            <h2 className="text-xl font-display font-bold text-amber-400 text-center">
-              Пауза и Настройки
-            </h2>
-
-            <div className="space-y-3 bg-stone-900/70 p-4 rounded-lg border border-stone-800 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-stone-300">Качество графики</span>
-                <div className="flex gap-1">
-                  {(['low', 'medium', 'high'] as const).map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => game.updateSettings({ quality: q })}
-                      className={`px-2.5 py-1 rounded ${
-                        settings.quality === q
-                          ? 'bg-amber-600 text-stone-950 font-semibold'
-                          : 'bg-stone-800 text-stone-300'
-                      }`}
-                    >
-                      {q === 'low' ? 'Низк.' : q === 'medium' ? 'Сред.' : 'Выс.'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-stone-300">Погода в регионе</span>
-                <div className="flex gap-1">
-                  {(['clear', 'fog', 'rain'] as const).map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => game.setWeather(w)}
-                      className={`px-2.5 py-1 rounded ${
-                        weather === w
-                          ? 'bg-amber-600 text-stone-950 font-semibold'
-                          : 'bg-stone-800 text-stone-300'
-                      }`}
-                    >
-                      {w === 'clear' ? 'Ясно' : w === 'fog' ? 'Туман' : 'Дождь'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-stone-300">Звуковое сопровождение</span>
+          <div className="w-full max-w-xl medieval-panel-ornate rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-amber-900/40 pb-3">
+              <h2 className="text-xl font-display font-bold text-amber-400">
+                {t(lang, 'pause.title')}
+              </h2>
+              <div className="flex bg-stone-950 p-1 rounded-lg border border-amber-800/40">
                 <button
-                  onClick={() =>
-                    game.updateSettings({
-                      audioEnabled: !settings.audioEnabled,
-                    })
-                  }
-                  className="px-3 py-1 rounded bg-stone-800 text-stone-200 flex items-center gap-1.5"
+                  onClick={() => setSettingsTab('general')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                    settingsTab === 'general'
+                      ? 'bg-amber-600 text-stone-950'
+                      : 'text-stone-300 hover:text-amber-300'
+                  }`}
                 >
-                  {settings.audioEnabled ? (
-                    <>
-                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> Вкл.
-                    </>
-                  ) : (
-                    <>
-                      <VolumeX className="w-3.5 h-3.5 text-red-400" /> Выкл.
-                    </>
-                  )}
+                  {t(lang, 'pause.tab.general')}
+                </button>
+                <button
+                  onClick={() => setSettingsTab('hud')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                    settingsTab === 'hud'
+                      ? 'bg-amber-600 text-stone-950'
+                      : 'text-stone-300 hover:text-amber-300'
+                  }`}
+                >
+                  {t(lang, 'pause.tab.hud')}
                 </button>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
+            {settingsTab === 'general' ? (
+              <div className="space-y-3.5 bg-stone-950/75 p-4 rounded-xl border border-amber-900/35 text-xs overflow-y-auto pr-1">
+                {/* Language Switcher (Default: Russian) */}
+                <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
+                  <span className="text-stone-200 font-medium">{t(lang, 'pause.language')}</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => game.updateSettings({ language: 'ru' })}
+                      className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
+                        lang === 'ru'
+                          ? 'bg-amber-600 text-stone-950'
+                          : 'bg-stone-900 text-stone-300 border border-stone-700'
+                      }`}
+                    >
+                      Русский
+                    </button>
+                    <button
+                      onClick={() => game.updateSettings({ language: 'en' })}
+                      className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
+                        lang === 'en'
+                          ? 'bg-amber-600 text-stone-950'
+                          : 'bg-stone-900 text-stone-300 border border-stone-700'
+                      }`}
+                    >
+                      English
+                    </button>
+                  </div>
+                </div>
+
+                {/* Control Mode & Detected Platform Switcher */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
+                  <div>
+                    <div className="text-stone-200 font-medium">{t(lang, 'pause.controlMode')}</div>
+                    <div className="text-[10px] text-amber-400/90 mt-0.5">
+                      {activePlatform === 'mobile'
+                        ? lang === 'en'
+                          ? 'Active: Phone (Touch Controls)'
+                          : 'Активно: Телефон (Сенсорное управление)'
+                        : lang === 'en'
+                        ? 'Active: PC (Keyboard & Mouse)'
+                        : 'Активно: ПК (Клавиатура и Мышь)'}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        { id: 'auto', label: t(lang, 'pause.controlMode.auto') },
+                        { id: 'pc', label: t(lang, 'pause.controlMode.pc') },
+                        { id: 'mobile', label: t(lang, 'pause.controlMode.mobile') },
+                      ] as { id: ControlModeSetting; label: string }[]
+                    ).map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => game.updateSettings({ controlMode: m.id })}
+                        className={`px-2.5 py-1.5 rounded-lg font-semibold cursor-pointer ${
+                          controlMode === m.id
+                            ? 'bg-amber-600 text-stone-950'
+                            : 'bg-stone-900 text-stone-300 border border-stone-700'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sound & Music Toggle Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pb-2.5 border-b border-stone-800">
+                  <div className="flex items-center justify-between bg-stone-900/80 p-2.5 rounded-lg border border-stone-800">
+                    <span className="text-stone-300">{t(lang, 'pause.sfxEnabled')}</span>
+                    <button
+                      onClick={() =>
+                        game.updateSettings({
+                          audioEnabled: !settings.audioEnabled,
+                        })
+                      }
+                      className="px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {settings.audioEnabled ? (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> {t(lang, 'pause.on')}
+                        </>
+                      ) : (
+                        <>
+                          <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-stone-900/80 p-2.5 rounded-lg border border-stone-800">
+                    <span className="text-stone-300">{t(lang, 'pause.musicEnabled')}</span>
+                    <button
+                      onClick={() =>
+                        game.updateSettings({
+                          musicEnabled: !(settings.musicEnabled ?? true),
+                        })
+                      }
+                      className="px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {(settings.musicEnabled ?? true) ? (
+                        <>
+                          <Music className="w-3.5 h-3.5 text-amber-400" /> {t(lang, 'pause.on')}
+                        </>
+                      ) : (
+                        <>
+                          <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Volume Sliders: Master, SFX, Music */}
+                <div className="space-y-2.5 pb-2.5 border-b border-stone-800">
+                  <div>
+                    <div className="flex justify-between text-stone-300 mb-1">
+                      <span>{t(lang, 'pause.masterVolume')}</span>
+                      <span className="font-mono-tabular text-amber-300">
+                        {Math.round((settings.masterVolume ?? 0.6) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round((settings.masterVolume ?? 0.6) * 100)}
+                      onChange={(e) =>
+                        game.updateSettings({
+                          masterVolume: Number(e.target.value) / 100,
+                        })
+                      }
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between text-stone-300 mb-1">
+                        <span>{t(lang, 'pause.sfxVolume')}</span>
+                        <span className="font-mono-tabular text-amber-300">
+                          {Math.round((settings.sfxVolume ?? 0.85) * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round((settings.sfxVolume ?? 0.85) * 100)}
+                        onChange={(e) =>
+                          game.updateSettings({
+                            sfxVolume: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-stone-300 mb-1">
+                        <span>{t(lang, 'pause.musicVolume')}</span>
+                        <span className="font-mono-tabular text-amber-300">
+                          {Math.round((settings.musicVolume ?? 0.65) * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round((settings.musicVolume ?? 0.65) * 100)}
+                        onChange={(e) =>
+                          game.updateSettings({
+                            musicVolume: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Day/Night Cycle Preset Selector */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
+                  <span className="text-stone-300">
+                    {lang === 'en' ? 'Time of Day & Lighting' : 'Время суток и освещение'} ({formatTime(timeOfDay)})
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { h: 6.5, label: t(lang, 'hud.phase.dawn') },
+                      { h: 13.0, label: t(lang, 'hud.phase.day') },
+                      { h: 19.0, label: t(lang, 'hud.phase.dusk') },
+                      { h: 0.5, label: t(lang, 'hud.phase.night') },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => game.setTimeOfDayPreset(preset.h)}
+                        className="px-2.5 py-1 rounded bg-stone-900 hover:bg-stone-800 border border-stone-700 hover:border-amber-500 text-stone-200 cursor-pointer"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Graphics & Weather */}
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-300">{t(lang, 'pause.graphics')}</span>
+                  <div className="flex gap-1">
+                    {(['low', 'medium', 'high'] as const).map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => game.updateSettings({ quality: q })}
+                        className={`px-2.5 py-1 rounded cursor-pointer ${
+                          settings.quality === q
+                            ? 'bg-amber-600 text-stone-950 font-semibold'
+                            : 'bg-stone-800 text-stone-300'
+                        }`}
+                      >
+                        {q === 'low'
+                          ? t(lang, 'pause.quality.low')
+                          : q === 'medium'
+                          ? t(lang, 'pause.quality.medium')
+                          : t(lang, 'pause.quality.high')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-300">{t(lang, 'pause.weather')}</span>
+                  <div className="flex gap-1">
+                    {(['clear', 'fog', 'rain'] as const).map((w) => (
+                      <button
+                        key={w}
+                        onClick={() => game.setWeather(w)}
+                        className={`px-2.5 py-1 rounded cursor-pointer ${
+                          weather === w
+                            ? 'bg-amber-600 text-stone-950 font-semibold'
+                            : 'bg-stone-800 text-stone-300'
+                        }`}
+                      >
+                        {w === 'clear'
+                          ? t(lang, 'hud.weather.clear')
+                          : w === 'fog'
+                          ? t(lang, 'hud.weather.fog')
+                          : t(lang, 'hud.weather.rain')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* HUD Customization Tab */
+              <div className="space-y-2.5 bg-stone-950/75 p-4 rounded-xl border border-amber-900/35 text-xs overflow-y-auto pr-1">
+                <p className="text-stone-400 mb-2">
+                  {t(lang, 'pause.hudHint')}
+                </p>
+                {(
+                  [
+                    { key: 'minimapRadar', label: t(lang, 'pause.hud.minimapRadar') },
+                    { key: 'clockWeather', label: t(lang, 'pause.hud.clockWeather') },
+                    { key: 'questTracker', label: t(lang, 'pause.hud.questTracker') },
+                    { key: 'companionPanel', label: t(lang, 'pause.hud.companionPanel') },
+                    { key: 'reputationBar', label: t(lang, 'pause.hud.reputationBar') },
+                    { key: 'combatLog', label: t(lang, 'pause.hud.combatLog') },
+                    { key: 'controlsDock', label: t(lang, 'pause.hud.controlsDock') },
+                  ] as { key: keyof HudVisibilitySettings; label: string }[]
+                ).map((item) => {
+                  const enabled = hudVis[item.key];
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex items-center justify-between p-2.5 rounded-lg bg-stone-900/80 border border-stone-800 hover:border-amber-700/50 cursor-pointer"
+                    >
+                      <span className="text-stone-200 font-medium">{item.label}</span>
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={(e) =>
+                          game.updateSettings({
+                            hudVisibility: {
+                              ...hudVis,
+                              [item.key]: e.target.checked,
+                            },
+                          })
+                        }
+                        className="w-4 h-4 accent-amber-500 cursor-pointer"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
               <button
                 onClick={() => game.openModal('none')}
-                className="w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold text-sm"
+                className="sm:col-span-2 w-full py-2.5 rounded-xl medieval-button-primary font-semibold text-sm cursor-pointer"
               >
-                Продолжить игру
+                {t(lang, 'pause.resume')}
               </button>
               <button
                 onClick={() => {
                   game.saveGame();
                   game.openModal('none');
                 }}
-                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-700 text-sm"
+                className="w-full py-2 rounded-xl medieval-button text-xs cursor-pointer"
               >
-                Сохранить прогресс
+                {t(lang, 'pause.save')}
               </button>
               {SaveSystem.hasSave() && (
                 <button
                   onClick={() => game.loadGame()}
-                  className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-700 text-sm"
+                  className="w-full py-2 rounded-xl medieval-button text-xs cursor-pointer"
                 >
-                  Загрузить последнее сохранение
+                  {t(lang, 'pause.load')}
                 </button>
               )}
               <button
                 onClick={onReturnToTitle}
-                className="w-full py-2 rounded-lg bg-stone-950 hover:bg-stone-900 text-stone-400 text-xs"
+                className="sm:col-span-2 w-full py-2 rounded-xl bg-stone-950 hover:bg-stone-900 border border-stone-800 text-stone-400 text-xs cursor-pointer"
               >
-                Выйти в главное меню
+                {t(lang, 'pause.exitTitle')}
               </button>
             </div>
           </div>

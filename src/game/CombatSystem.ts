@@ -155,7 +155,7 @@ export class CombatSystem {
     if (player.getAttackPhase() === 'active' && !player.attackHitRegistered) {
       player.attackHitRegistered = true;
 
-      // Mythic Weapon: Sun Eater ('sun_eater') releases a fire wave on Heavy Attacks
+      // Mythic Weapon: Sun Eater ('sun_eater') releases a fire wave on Heavy Attacks with dynamic fire lighting
       if (player.isHeavyAttack && effectiveStats.mythicPassive === 'sun_eater') {
         this.spawnDirectionalConeParticles(
           player.stats.x,
@@ -163,9 +163,19 @@ export class CombatSystem {
           player.stats.z,
           player.stats.rotationY,
           0xf97316,
-          42,
+          48,
           Math.PI * 0.42
         );
+        const fireWaveLight = new THREE.PointLight(0xff6a00, 5.2, 14, 1.5);
+        fireWaveLight.position.set(
+          player.stats.x + Math.sin(player.stats.rotationY) * 2.2,
+          player.stats.y + 1.35,
+          player.stats.z + Math.cos(player.stats.rotationY) * 2.2
+        );
+        this.scene.add(fireWaveLight);
+        setTimeout(() => {
+          this.scene.remove(fireWaveLight);
+        }, 420);
       }
 
       const reach = player.isHeavyAttack ? 3.5 : 3.0;

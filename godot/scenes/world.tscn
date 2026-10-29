@@ -1,0 +1,115 @@
+[gd_scene load_steps=11 format=3 uid="uid://wanderer_world_scene"]
+
+[ext_resource type="Script" path="res://scripts/world/world_manager.gd" id="1_world"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/npc.tscn" id="3_npc"]
+[ext_resource type="PackedScene" path="res://scenes/enemy.tscn" id="4_enemy"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="5_hud"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_world"]
+sky_top_color = Color(0.18, 0.24, 0.36, 1)
+sky_horizon_color = Color(0.45, 0.52, 0.62, 1)
+
+[sub_resource type="Sky" id="Sky_world"]
+sky_material = SubResource("ProceduralSkyMaterial_world")
+
+[sub_resource type="Environment" id="Environment_world"]
+background_mode = 2
+sky = SubResource("Sky_world")
+ambient_light_source = 2
+ambient_light_color = Color(0.35, 0.42, 0.52, 1)
+fog_enabled = true
+fog_density = 0.006
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(240, 1, 240)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(240, 240)
+
+[node name="World" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_world")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.848048, -0.383022, 0.366025, 0, 0.690983, 0.722871, -0.529919, -0.613029, 0.585591, 0, 25, 0)
+shadow_enabled = true
+
+[node name="RainParticles" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 18, 0)
+emitting = false
+amount = 600
+
+[node name="Ground" type="StaticBody3D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_ground")
+
+[node name="GroundMesh" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 8)
+
+[node name="HUD" parent="." instance=ExtResource("5_hud")]
+
+[node name="NPCs" type="Node3D" parent="."]
+
+[node name="ElderBran" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -6)
+actor_id = "npc_elder"
+actor_type = "npc"
+
+[node name="HerbalistMarfa" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0, -4)
+actor_id = "npc_herbalist"
+actor_type = "npc"
+
+[node name="BlacksmithThorn" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0, -4)
+actor_id = "npc_blacksmith"
+actor_type = "npc"
+
+[node name="WatchmanGleb" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0, 12)
+actor_id = "npc_watchman"
+actor_type = "npc"
+
+[node name="InnkeeperHelga" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 6)
+actor_id = "npc_innkeeper"
+actor_type = "npc"
+
+[node name="NoticeBoard" parent="NPCs" instance=ExtResource("3_npc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, 0)
+actor_id = "notice_board"
+actor_type = "notice_board"
+
+[node name="Enemies" type="Node3D" parent="."]
+
+[node name="GhoulPack1" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0, -28)
+enemy_type = "ghoul"
+quest_id = "quest_missing_hunters"
+stage_id = "q1_kill_ghouls"
+
+[node name="SwampHagBoss" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 36, 0, -34)
+enemy_type = "swamp_hag"
+max_hp = 260.0
+attack_damage = 26.0
+quest_id = "quest_swamp_whisper"
+stage_id = "q2_kill_hag"
+
+[node name="LeshenBoss" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -48, 0, -52)
+enemy_type = "leshen"
+max_hp = 340.0
+attack_damage = 32.0
+quest_id = "quest_missing_hunters"
+stage_id = "q1_kill_leshen"

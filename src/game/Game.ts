@@ -24,6 +24,7 @@ import {
   discoverLoreEntry,
   evaluateDiceHand,
   getBiomeAt,
+  getBrowserDeviceSnapshot,
   getCompanionCommandLabel,
   getGroundHeight,
   getItemEquipSlot,
@@ -32,6 +33,7 @@ import {
   getReputationInfo,
   MAGIC_SIGNS,
   pickNpcRerollIndices,
+  resolveControlPlatform,
   resolveDicePokerOutcome,
   resolveInvestigationQuestChoice,
   rollDiceArray,
@@ -49,6 +51,7 @@ import type {
   CodexArticle,
   CompanionId,
   CompanionState,
+  ControlPlatform,
   DicePokerState,
   DialogueNode,
   DialogueOption,
@@ -109,6 +112,7 @@ export class Game {
   private weatherCycleTimer = 45;
   private lastBiomeId = 'crows_hollow';
   private triggeredRoadEventIds: Set<string> = new Set();
+  private defeatedQuestTags: Set<string> = new Set();
 
   public settings: GraphicsSettings = {
     quality: 'high',
@@ -116,9 +120,24 @@ export class Game {
     shadows: true,
     weatherEffects: true,
     audioEnabled: true,
+    musicEnabled: true,
     masterVolume: 0.6,
+    sfxVolume: 0.85,
+    musicVolume: 0.65,
+    language: 'ru',
+    controlMode: 'auto',
+    hudVisibility: {
+      minimapRadar: true,
+      clockWeather: true,
+      questTracker: true,
+      companionPanel: true,
+      reputationBar: true,
+      combatLog: true,
+      controlsDock: true,
+    },
   };
 
+  private lastInputType: 'mouse_keyboard' | 'touch' | null = null;
   private clock = new THREE.Clock();
   private rafId = 0;
   private isRunning = false;
@@ -135,6 +154,13 @@ export class Game {
   private lastMouseY = 0;
   private lmbDownTime = 0;
   private heavyAttackTriggeredOnHold = false;
+
+  public getResolvedPlatform(): ControlPlatform {
+    return resolveControlPlatform(
+      this.settings.controlMode ?? 'auto',
+      getBrowserDeviceSnapshot(this.lastInputType)
+    );
+  }
 
   constructor(container: HTMLElement, onHUDUpdate: (state: HUDState) => void) {
     this.onHUDUpdate = onHUDUpdate;
@@ -160,7 +186,8 @@ export class Game {
     this.inventorySystem = this.inventory;
     this.world = new WorldSystem(
       this.sceneManager.scene,
-      this.sceneManager.getAssetManager()
+      this.sceneManager.getAssetManager(),
+      this.sceneManager.colliderMeshes
     );
 
     // Pre-compile shaders once on hardware GPU
@@ -173,7 +200,11 @@ export class Game {
 
     this.cameraController.attachPointerLock(
       this.sceneManager.renderer.domElement,
-      () => this.isRunning && !this.isPaused && this.activeModal === 'none'
+      () =>
+        this.isRunning &&
+        !this.isPaused &&
+        this.activeModal === 'none' &&
+        this.getResolvedPlatform() === 'pc'
     );
 
     this.bindEvents();
@@ -184,6 +215,7 @@ export class Game {
     );
     this.player.stats.hp = initialEff.maxHp;
     this.syncHeroVisuals();
+    this.world.syncQuestIndicators(this.quests.quests, this.quests.contracts);
     this.addLog('Добро пожаловать в Воронью Падь, Странник.', 'info');
     this.emitHUD();
   }
@@ -204,7 +236,9 @@ export class Game {
       this.player.rig,
       equippedArmor?.setId ?? null,
       equippedActiveWeapon?.stats?.runeEffect ?? null,
-      activeSword
+      activeSword,
+      equippedArmor?.id ?? undefined,
+      equippedActiveWeapon?.id ?? undefined
     );
   }
 
@@ -294,6 +328,10 @@ export class Game {
     canvas.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
+    canvas.addEventListener('touchstart', this.onTouchStart, { passive: true });
+    window.addEventListener('touchmove', this.onTouchMove, { passive: true });
+    window.addEventListener('touchend', this.onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
@@ -302,9 +340,17 @@ export class Game {
     const h = window.innerHeight;
     this.sceneManager.handleResize(w, h);
     this.cameraController.handleResize(w, h);
+    this.emitHUD();
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (this.lastInputType !== 'mouse_keyboard') {
+      const prevPlatform = this.getResolvedPlatform();
+      this.lastInputType = 'mouse_keyboard';
+      if (this.getResolvedPlatform() !== prevPlatform) {
+        this.emitHUD();
+      }
+    }
     if (this.isPaused) return;
     this.player.keys[e.code] = true;
 
@@ -643,6 +689,72 @@ export class Game {
       }
     }
   };
+
+  private cameraTouchId: number | null = null;
+  private lastTouchX = 0;
+  private lastTouchY = 0;
+
+  private onTouchStart = (e: TouchEvent): void => {
+    if (this.lastInputType !== 'touch') {
+      this.lastInputType = 'touch';
+      this.emitHUD();
+    }
+    if (this.isPaused || this.activeModal !== 'none') return;
+    this.audio.startAmbient();
+    if (this.cameraTouchId === null && e.changedTouches.length > 0) {
+      const t = e.changedTouches[0];
+      this.cameraTouchId = t.identifier;
+      this.lastTouchX = t.clientX;
+      this.lastTouchY = t.clientY;
+    }
+  };
+
+  private onTouchMove = (e: TouchEvent): void => {
+    if (this.isPaused || this.activeModal !== 'none' || this.cameraTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === this.cameraTouchId) {
+        const dx = t.clientX - this.lastTouchX;
+        const dy = t.clientY - this.lastTouchY;
+        this.lastTouchX = t.clientX;
+        this.lastTouchY = t.clientY;
+        this.cameraController.rotate(dx * 2.1, dy * 1.9);
+        break;
+      }
+    }
+  };
+
+  private onTouchEnd = (e: TouchEvent): void => {
+    if (this.cameraTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === this.cameraTouchId) {
+        this.cameraTouchId = null;
+        break;
+      }
+    }
+  };
+
+  public rotateCameraByTouch(dx: number, dy: number): void {
+    if (this.lastInputType !== 'touch') {
+      this.lastInputType = 'touch';
+    }
+    if (this.isPaused || this.activeModal !== 'none') return;
+    this.cameraController.rotate(dx * 2.1, dy * 1.9);
+  }
+
+  public setJoystickInput(x: number, y: number, sprinting = false): void {
+    if (this.lastInputType !== 'touch' && (Math.abs(x) > 0.01 || Math.abs(y) > 0.01)) {
+      this.lastInputType = 'touch';
+    }
+    this.player.joystickX = Math.max(-1, Math.min(1, x));
+    this.player.joystickY = Math.max(-1, Math.min(1, y));
+    this.player.keys['MobileSprint'] = sprinting;
+  }
+
+  public toggleHunterVision(): void {
+    this.hunterVisionActive = !this.hunterVisionActive;
+    this.emitHUD();
+  }
 
   public triggerDodge(): void {
     const eff = computeEffectivePlayerStats(
@@ -1339,6 +1451,21 @@ export class Game {
 
     // 5.8 Northern March Obstacle Clearings (Ferry Winch, Mine Lift, Three Seals Gate)
     if (nearest.type === 'obstacle_clearing') {
+      if (nearest.questId && nearest.questStageId) {
+        const q = this.quests.getQuestById(nearest.questId);
+        const curStage = q?.stages[q.currentStageIndex];
+        if (!q || q.status !== 'active' || curStage?.id !== nearest.questStageId) {
+          this.addLog(
+            `Преграда запечатана (${nearest.name}): сначала поговорите с хранителем региона и выполните предыдущий этап задания!`,
+            'info'
+          );
+          this.showBanner(
+            nearest.name,
+            'Сначала поговорите с хранителем региона и получите задание'
+          );
+          return;
+        }
+      }
       this.audio.playQuestChime();
       this.world.markInteracted(nearest.id);
       if (nearest.loreText) {
@@ -1354,6 +1481,54 @@ export class Game {
 
     // 6. NPCs & Shrines
     if (nearest.type === 'npc' || nearest.type === 'shrine') {
+      if (nearest.id === 'shrine_cursed_altar') {
+        const q2 = this.quests.getQuestById('quest_swamp_whisper');
+        const curStage = q2?.stages[q2.currentStageIndex];
+        if (!q2 || q2.status !== 'active' || curStage?.id !== 'q2_artifact_choice') {
+          this.addLog(
+            'Алтарь скован проклятием: сначала изучите рунный обелиск, жертвенные скрижали и победите Болотную ведьму!',
+            'info'
+          );
+          this.showBanner(
+            nearest.name,
+            'Сначала изучите обелиск, скрижали и победите Болотную ведьму'
+          );
+          return;
+        }
+      } else if (nearest.id === 'clue_bastion_ritual_table') {
+        const qExam = this.quests.getQuestById('quest_last_ash_exam');
+        const curStage = qExam?.stages[qExam.currentStageIndex];
+        if (
+          !qExam ||
+          qExam.status !== 'active' ||
+          (curStage?.id !== 'q_exam_ritual_choice' && curStage?.id !== 'q_exam_ritual_verdict')
+        ) {
+          this.addLog(
+            'Для проведения ритуала сначала поговорите с адептом Эрианом и соберите фиалы Тлеющей Крови в реликвариуме!',
+            'info'
+          );
+          this.showBanner(
+            nearest.name,
+            'Сначала поговорите с Эрианом и соберите мутагены в реликвариуме'
+          );
+          return;
+        }
+      } else if (nearest.id === 'shrine_eclipse_altar') {
+        const q8 = this.quests.getQuestById('quest_dawn_valdmark');
+        const curStage = q8?.stages[q8.currentStageIndex];
+        if (!q8 || q8.status !== 'active' || curStage?.id !== 'q8_final_choice') {
+          this.addLog(
+            'Сердце Пустоты защищено бронёй Затмения: сначала сразите Аватара Сердца Пустоты!',
+            'info'
+          );
+          this.showBanner(
+            nearest.name,
+            'Сначала победите Аватара Сердца Пустоты в Кратере Затмения'
+          );
+          return;
+        }
+      }
+
       this.world.markInteracted(nearest.id);
       if (nearest.dialogueRootId) {
         const canTriggerSecretEnding =
@@ -1449,6 +1624,18 @@ export class Game {
 
     // 10. Contract Clues (Улики для выслеживания Именного Монстра)
     if (nearest.type === 'clue' && nearest.contractId) {
+      const targetContract = this.quests.contracts.find((c) => c.id === nearest.contractId);
+      if (!targetContract || targetContract.status === 'available') {
+        this.addLog(
+          'Сначала возьмите этот охотничий заказ на Доске объявлений в Вороньей Пади!',
+          'info'
+        );
+        this.showBanner(
+          nearest.name,
+          'Сначала примите контракт на Доске объявлений в Вороньей Пади'
+        );
+        return;
+      }
       this.world.markInteracted(nearest.id);
       this.audio.playQuestChime();
       const clueRes = this.quests.advanceContractClue(nearest.contractId);
@@ -1472,6 +1659,23 @@ export class Game {
       }
       this.emitHUD();
       return;
+    }
+
+    // Check if this is a quest-specific clue and ensure the quest is at that stage
+    if (nearest.questId && nearest.questStageId) {
+      const q = this.quests.getQuestById(nearest.questId);
+      const curStage = q?.stages[q.currentStageIndex];
+      if (!q || (q.status !== 'active' && !(q.status === 'available' && q.currentStageIndex === 0 && q.stages[0]?.id === nearest.questStageId)) || curStage?.id !== nearest.questStageId) {
+        this.addLog(
+          `Улика (${nearest.name}): сначала выполните предыдущий этап задания «${q?.title ?? ''}»!`,
+          'info'
+        );
+        this.showBanner(
+          nearest.name,
+          `Сначала выполните текущий этап задания: ${curStage?.description ?? 'Возьмите задание у NPC'}`
+        );
+        return;
+      }
     }
 
     // Standard Chest / Clue / Loot Pouch / Herb
@@ -1532,15 +1736,17 @@ export class Game {
     } else if (option.action === 'start_quest_3') {
       this.quests.activateQuest('quest_ancient_king');
       this.showBanner('Новое задание', 'Сердце древнего короля');
-    } else if (option.action === 'start_quest_5') {
+    } else if (option.action === 'start_quest_5' || option.action === 'accept_quest_drowned') {
       this.quests.activateQuest('quest_drowned_path');
       this.advanceQuestAndReward('quest_drowned_path', 'q5_talk_charon');
       this.showBanner(
         'Северный поход: Дорога Утопленников',
         'Расчистите паромную переправу и одолейте Болотную Гидру'
       );
-      this.setModal('none');
-      return;
+      if (!option.nextNodeId) {
+        this.setModal('none');
+        return;
+      }
     } else if (option.action === 'complete_quest_5') {
       this.advanceQuestAndReward('quest_drowned_path', 'q5_kill_hydra');
       this.quests.activateQuest('quest_mountain_blood');
@@ -1550,15 +1756,17 @@ export class Game {
       );
       this.setModal('none');
       return;
-    } else if (option.action === 'start_quest_6') {
+    } else if (option.action === 'start_quest_6' || option.action === 'accept_quest_mountain') {
       this.quests.activateQuest('quest_mountain_blood');
       this.advanceQuestAndReward('quest_mountain_blood', 'q6_talk_brom');
       this.showBanner(
         'Задание: Кровь Горы',
         'Почините подъёмник Мёртвых Шахт и сокрушите Кристального Колосса'
       );
-      this.setModal('none');
-      return;
+      if (!option.nextNodeId) {
+        this.setModal('none');
+        return;
+      }
     } else if (option.action === 'complete_quest_6') {
       this.advanceQuestAndReward('quest_mountain_blood', 'q6_kill_colossus');
       this.quests.activateQuest('quest_ash_brotherhood');
@@ -1568,15 +1776,17 @@ export class Game {
       );
       this.setModal('none');
       return;
-    } else if (option.action === 'start_quest_7') {
+    } else if (option.action === 'start_quest_7' || option.action === 'accept_quest_bastion') {
       this.quests.activateQuest('quest_ash_brotherhood');
       this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_talk_kael');
       this.showBanner(
         'Задание: Пепел Братства',
         'Пройдите Испытание Трёх Печатей и сразитесь с Великим Магистром Веспером'
       );
-      this.setModal('none');
-      return;
+      if (!option.nextNodeId) {
+        this.setModal('none');
+        return;
+      }
     } else if (option.action === 'spare_vesper') {
       this.player.stats.vesperFate = 'spared';
       const unlocked = new Set<CompanionId>(
@@ -1589,7 +1799,9 @@ export class Game {
       this.inventory.addItemById('bp_armor_grandmaster', 1);
       this.inventory.addItemById('mythic_dusk_fangs', 1);
       this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_vesper_choice');
       this.quests.activateQuest('quest_dawn_valdmark');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_enter_crater');
       this.showBanner(
         'Милосердие Зольника: Веспер пощажён и доступен как Напарник!',
         'Получены «Клыки Сумерек» и Чертёж Доспеха Великого Магистра · Врата Кратера открыты!'
@@ -1606,7 +1818,9 @@ export class Game {
       this.inventory.addItemById('bp_armor_obsidian', 1);
       this.inventory.addItemById('mythic_sun_eater', 1);
       this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_vesper_choice');
       this.quests.activateQuest('quest_dawn_valdmark');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_enter_crater');
       this.showBanner(
         'Правосудие Пепла: Приговор исполнен',
         'Получен двуручник «Пожиратель Солнца» и Чертёж Обсидианового Доспеха · Врата Кратера открыты!'
@@ -1686,11 +1900,12 @@ export class Game {
     } else if (option.action === 'companion_campfire_bond') {
       this.triggerCompanionCampfireTalk();
       return;
-    } else if (option.action === 'ending_seal_sacrifice') {
+    } else if (
+      option.action === 'ending_seal_sacrifice' ||
+      option.action === 'ending_faction_transfer'
+    ) {
       this.audio.playQuestChime();
       this.player.stats.eclipseEndingChoice = 'seal_sacrifice';
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
       this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
       this.showBanner(
         'Финал I: Страж Запечатанного Затмения',
@@ -1698,11 +1913,12 @@ export class Game {
       );
       this.setModal('victory');
       return;
-    } else if (option.action === 'ending_purge_magic') {
+    } else if (
+      option.action === 'ending_purge_magic' ||
+      option.action === 'ending_destroy_heart'
+    ) {
       this.audio.playQuestChime();
       this.player.stats.eclipseEndingChoice = 'purge_magic';
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
       this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
       this.showBanner(
         'Финал II: Рассвет Смертных',
@@ -1710,11 +1926,12 @@ export class Game {
       );
       this.setModal('victory');
       return;
-    } else if (option.action === 'ending_lord_of_ash') {
+    } else if (
+      option.action === 'ending_lord_of_ash' ||
+      option.action === 'ending_absorb_power'
+    ) {
       this.audio.playQuestChime();
       this.player.stats.eclipseEndingChoice = 'lord_of_ash';
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_defeat_avatar');
       this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_final_choice');
       this.showBanner(
         'Финал III: Владыка Пепельного Трона',
@@ -1924,6 +2141,72 @@ export class Game {
       this.executeInvestigationChoice(option.action);
       this.setModal('none');
       return;
+    } else if (option.action === 'start_quest_sunken_lighthouse') {
+      this.quests.activateQuest('quest_sunken_lighthouse');
+      this.advanceQuestAndReward('quest_sunken_lighthouse', 'q_port_talk_keeper');
+      this.showBanner(
+        'Задание гавани: «Маяк Затонувшей Гавани»',
+        'Заберите Звёздную Янтарную Линзу у обломков флагмана и сразите Сирену Прилива'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_sunken_lighthouse') {
+      this.advanceQuestAndReward('quest_sunken_lighthouse', 'q_port_reignite_beacon');
+      this.adjustReputation(15, 'Возвращён огонь Маяка Сольхейма');
+      this.showBanner(
+        'Маяк Сольхейма вновь пылает!',
+        '+520 Опыта · +360 Золота · +15 Репутации'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_monastery_chronicles') {
+      this.quests.activateQuest('quest_monastery_chronicles');
+      this.advanceQuestAndReward('quest_monastery_chronicles', 'q_mon_talk_abbot');
+      this.showBanner(
+        'Задание монастыря: «Хроники Солнечных Клятв»',
+        'Победите Стража Обсерватории и сфокусируйте Большую Астролябию Предтеч'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_monastery_chronicles') {
+      this.advanceQuestAndReward('quest_monastery_chronicles', 'q_mon_return_abbot');
+      this.adjustReputation(18, 'Восстановлена Обсерватория Лазурного Монастыря');
+      this.showBanner(
+        'Астролябия Предтеч настроена!',
+        '+640 Опыта · +420 Золота · Путь в Долину Звёздного Пепла открыт!'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_starfall_forge') {
+      this.quests.activateQuest('quest_act3_starfall_forge');
+      this.advanceQuestAndReward('quest_act3_starfall_forge', 'q_star_talk_herald');
+      this.showBanner(
+        'Акт III: «Кузница Предтеч и Падение Звезды»',
+        'Сразите Архонта Звёздного Пепла в центре Астральной Кузницы'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'starfall_reforge_crown') {
+      this.player.stats.maxHp += 35;
+      this.player.stats.hp = Math.min(this.player.stats.maxHp, this.player.stats.hp + 35);
+      this.player.stats.signIntensity += 20;
+      this.adjustReputation(25, 'Перекована Первая Корона Света в Кузнице Предтеч');
+      this.advanceQuestAndReward('quest_act3_starfall_forge', 'q_star_anvil_choice');
+      this.showBanner(
+        'Акт III Завершён: Корона Предтеч Перекована!',
+        '+35 Макс. ОЗ · +20% Мощь Знаков · +1800 Опыта · +1200 Золота'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'starfall_shatter_forge') {
+      this.adjustReputation(30, 'Запечатан Звёздный Горн Предтеч');
+      this.advanceQuestAndReward('quest_act3_starfall_forge', 'q_star_anvil_choice');
+      this.showBanner(
+        'Акт III Завершён: Звёздный Горн Запечатан Навеки!',
+        '+30 Репутации · +1800 Опыта · +1200 Золота'
+      );
+      this.setModal('none');
+      return;
     } else if (option.action === 'close') {
       this.setModal('none');
       return;
@@ -2012,7 +2295,27 @@ export class Game {
       const nextStage = res.quest.stages[res.quest.currentStageIndex];
       if (nextStage) {
         this.addLog(`Новая цель: ${nextStage.description}`, 'quest');
+        this.checkDeferredKillStage(res.quest.id, nextStage.id);
       }
+    }
+  }
+
+  private checkDeferredKillStage(questId: string, activeStageId: string): void {
+    const stageToTag: Record<string, string> = {
+      q1_kill_ghouls: 'q1_ghouls',
+      q2_kill_hag: 'q2_hag',
+      q3_kill_demon: 'q3_demon',
+      q3_kill_boss: 'q3_boss',
+      q4_kill_malakor: 'q4_malakor',
+      q5_kill_hydra: 'q5_hydra',
+      q6_kill_colossus: 'q6_colossus',
+      q7_duel_vesper: 'q7_vesper',
+      q8_kill_avatar: 'q8_avatar',
+      q_star_defeat_archon: 'q_star_archon',
+    };
+    const requiredTag = stageToTag[activeStageId];
+    if (requiredTag && this.defeatedQuestTags.has(requiredTag)) {
+      this.advanceQuestAndReward(questId, activeStageId);
     }
   }
 
@@ -2054,37 +2357,32 @@ export class Game {
         (e) => e.data.questTag === 'q1_ghouls' && e.data.state !== 'DEAD'
       );
       if (remainingGhouls.length === 0) {
-        this.quests.completeStage('quest_missing_hunters', 'q1_talk_elder');
-        this.quests.completeStage('quest_missing_hunters', 'q1_find_tracks');
-        this.quests.completeStage('quest_missing_hunters', 'q1_inspect_camp');
+        this.defeatedQuestTags.add('q1_ghouls');
         this.advanceQuestAndReward('quest_missing_hunters', 'q1_kill_ghouls');
       }
     }
 
     if (enemy.questTag === 'q2_hag') {
-      this.quests.activateQuest('quest_swamp_whisper');
-      this.quests.completeStage('quest_swamp_whisper', 'q2_inspect_clue_1');
-      this.quests.completeStage('quest_swamp_whisper', 'q2_inspect_clue_2');
+      this.defeatedQuestTags.add('q2_hag');
       this.advanceQuestAndReward('quest_swamp_whisper', 'q2_kill_hag');
     }
 
     if (enemy.questTag === 'q3_demon') {
-      this.quests.activateQuest('quest_ancient_king');
-      this.quests.completeStage('quest_ancient_king', 'q3_reach_fortress');
+      this.defeatedQuestTags.add('q3_demon');
       this.advanceQuestAndReward('quest_ancient_king', 'q3_kill_demon');
     }
 
     if (enemy.questTag === 'q3_boss') {
-      this.quests.activateQuest('quest_ancient_king');
-      this.quests.completeStage('quest_ancient_king', 'q3_reach_fortress');
-      this.quests.completeStage('quest_ancient_king', 'q3_kill_demon');
+      this.defeatedQuestTags.add('q3_boss');
       this.advanceQuestAndReward('quest_ancient_king', 'q3_kill_boss');
-      // Unlock Act II automatically!
-      this.quests.activateQuest('quest_act2_malakor');
-      this.showBanner(
-        'Акт I завершён · Начало Акта II: Пепел и Кровь',
-        'Отправляйтесь на юг в Лагерь Ордена к Инквизитору Лазарю'
-      );
+      const q3 = this.quests.getQuestById('quest_ancient_king');
+      if (q3?.status === 'completed') {
+        this.quests.activateQuest('quest_act2_malakor');
+        this.showBanner(
+          'Акт I завершён · Начало Акта II: Пепел и Кровь',
+          'Отправляйтесь на юг в Лагерь Ордена к Инквизитору Лазарю'
+        );
+      }
     }
 
     // Named Monster Contracts
@@ -2115,14 +2413,15 @@ export class Game {
 
     // Act II Final Boss: Lich King Malakor
     if (enemy.questTag === 'q4_malakor') {
-      this.quests.activateQuest('quest_act2_malakor');
-      this.quests.completeStage('quest_act2_malakor', 'q4_talk_inquisitor');
+      this.defeatedQuestTags.add('q4_malakor');
       this.advanceQuestAndReward('quest_act2_malakor', 'q4_kill_malakor');
-      this.quests.activateQuest('quest_drowned_path');
-      this.showBanner(
-        'Король-Лич Малакор повержен! Путь на Север открыт',
-        'Отправляйтесь на север в Затопленные Топи (z < -105) или примите эпилог'
-      );
+      const q4 = this.quests.getQuestById('quest_act2_malakor');
+      if (q4?.status === 'completed') {
+        this.showBanner(
+          'Король-Лич Малакор повержен! Путь на Север открыт',
+          'Отправляйтесь на север в Затопленные Топи и поговорите с Паромщиком Хароном'
+        );
+      }
     }
 
     // Northern March Quest 5: Gallows Swamp & Hydra
@@ -2131,22 +2430,17 @@ export class Game {
         (e) => e.data.questTag === 'q5_swamp_monsters' && e.data.state !== 'DEAD'
       );
       if (rem.length === 0) {
-        this.quests.activateQuest('quest_drowned_path');
-        this.quests.completeStage('quest_drowned_path', 'q5_talk_charon');
-        this.advanceQuestAndReward('quest_drowned_path', 'q5_clear_ferry');
+        this.advanceQuestAndReward('quest_drowned_path', 'q5_repair_ferry');
       }
     }
 
     if (enemy.questTag === 'q5_hydra') {
-      this.quests.activateQuest('quest_drowned_path');
-      this.quests.completeStage('quest_drowned_path', 'q5_talk_charon');
-      this.quests.completeStage('quest_drowned_path', 'q5_clear_ferry');
+      this.defeatedQuestTags.add('q5_hydra');
       this.advanceQuestAndReward('quest_drowned_path', 'q5_kill_hydra');
       this.inventory.addItemById('mythic_plague_scythe', 1);
-      this.quests.activateQuest('quest_mountain_blood');
       this.showBanner(
         'Тысячеглавая Гидра Топей повержена!',
-        'Получена мифическая «Коса Чумного Жнеца» · Открыт подъём в Среброзубый Перевал'
+        'Получена мифическая «Коса Чумного Жнеца» · Найдите рудокопа Брома в Среброзубом Перевале'
       );
     }
 
@@ -2156,22 +2450,17 @@ export class Game {
         (e) => e.data.questTag === 'q6_mine_monsters' && e.data.state !== 'DEAD'
       );
       if (rem.length === 0) {
-        this.quests.activateQuest('quest_mountain_blood');
-        this.quests.completeStage('quest_mountain_blood', 'q6_talk_brom');
-        this.advanceQuestAndReward('quest_mountain_blood', 'q6_repair_lift');
+        this.advanceQuestAndReward('quest_mountain_blood', 'q6_clear_mine_lift');
       }
     }
 
     if (enemy.questTag === 'q6_colossus') {
-      this.quests.activateQuest('quest_mountain_blood');
-      this.quests.completeStage('quest_mountain_blood', 'q6_talk_brom');
-      this.quests.completeStage('quest_mountain_blood', 'q6_repair_lift');
+      this.defeatedQuestTags.add('q6_colossus');
       this.advanceQuestAndReward('quest_mountain_blood', 'q6_kill_colossus');
       this.inventory.addItemById('mythic_black_cleaver', 1);
-      this.quests.activateQuest('quest_ash_brotherhood');
       this.showBanner(
         'Кристальный Колосс сокрушён!',
-        'Получен мифический «Колун Чёрной Руды» · Открыт мост к Чёрному Бастиону'
+        'Получен мифический «Колун Чёрной Руды» · Поговорите с Адептом Каэлем в Чёрном Бастионе'
       );
     }
 
@@ -2181,27 +2470,27 @@ export class Game {
         (e) => e.data.questTag === 'q7_fallen_ash' && e.data.state !== 'DEAD'
       );
       if (rem.length === 0) {
-        this.quests.activateQuest('quest_ash_brotherhood');
-        this.quests.completeStage('quest_ash_brotherhood', 'q7_talk_kael');
-        this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_three_seals_trial');
+        this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_trial_three_seals');
       }
     }
 
     if (enemy.questTag === 'q7_vesper') {
-      this.quests.activateQuest('quest_ash_brotherhood');
-      this.quests.completeStage('quest_ash_brotherhood', 'q7_talk_kael');
-      this.quests.completeStage('quest_ash_brotherhood', 'q7_three_seals_trial');
-      const choiceNode = this.dialogue.getDialogueNode(
-        'vesper_duel_choice',
-        this.quests.quests,
-        true
-      );
-      if (choiceNode) {
-        this.activeDialogueNode = choiceNode;
-        this.cameraController.setDialogueTarget(
-          new THREE.Vector3(enemy.x, (enemy.y ?? 0) + 1.2, enemy.z)
+      this.defeatedQuestTags.add('q7_vesper');
+      this.advanceQuestAndReward('quest_ash_brotherhood', 'q7_duel_vesper');
+      const q7 = this.quests.getQuestById('quest_ash_brotherhood');
+      if (q7?.status === 'active' && q7.stages[q7.currentStageIndex]?.id === 'q7_vesper_choice') {
+        const choiceNode = this.dialogue.getDialogueNode(
+          'vesper_duel_choice',
+          this.quests.quests,
+          true
         );
-        this.setModal('dialogue');
+        if (choiceNode) {
+          this.activeDialogueNode = choiceNode;
+          this.cameraController.setDialogueTarget(
+            new THREE.Vector3(enemy.x, (enemy.y ?? 0) + 1.2, enemy.z)
+          );
+          this.setModal('dialogue');
+        }
       }
     }
 
@@ -2211,19 +2500,29 @@ export class Game {
         (e) => e.data.questTag === 'q8_void_knights' && e.data.state !== 'DEAD'
       );
       if (rem.length === 0) {
-        this.quests.activateQuest('quest_dawn_valdmark');
         this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_enter_crater');
       }
     }
 
     if (enemy.questTag === 'q8_avatar') {
-      this.quests.activateQuest('quest_dawn_valdmark');
-      this.quests.completeStage('quest_dawn_valdmark', 'q8_enter_crater');
-      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_defeat_avatar');
+      this.defeatedQuestTags.add('q8_avatar');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_enter_crater');
+      this.advanceQuestAndReward('quest_dawn_valdmark', 'q8_kill_avatar');
       this.inventory.addItemById('mythic_void_voice', 1);
       this.showBanner(
         'Аватар Сердца Пустоты повержен!',
         'Получен клинок «Голос Пустоты» · Подойдите к Алтарю Затмения [E] для финального выбора судьбы мира'
+      );
+    }
+
+    if (enemy.questTag === 'q_star_archon') {
+      this.defeatedQuestTags.add('q_star_archon');
+      this.quests.activateQuest('quest_act3_starfall_forge');
+      this.advanceQuestAndReward('quest_act3_starfall_forge', 'q_star_talk_herald');
+      this.advanceQuestAndReward('quest_act3_starfall_forge', 'q_star_defeat_archon');
+      this.showBanner(
+        'Архонт Звёздного Пепла повержен!',
+        'Подойдите к Звёздной Наковальне Предтеч [E], чтобы решить судьбу Первой Короны'
       );
     }
 
@@ -2398,9 +2697,41 @@ export class Game {
   }
 
   public updateSettings(next: Partial<GraphicsSettings>): void {
-    this.settings = { ...this.settings, ...next };
+    const baseHud = {
+      minimapRadar: true,
+      clockWeather: true,
+      questTracker: true,
+      companionPanel: true,
+      reputationBar: true,
+      combatLog: true,
+      controlsDock: true,
+    };
+    const mergedHud = next.hudVisibility
+      ? {
+          ...baseHud,
+          ...(this.settings.hudVisibility ?? {}),
+          ...next.hudVisibility,
+        }
+      : this.settings.hudVisibility;
+
+    this.settings = {
+      ...this.settings,
+      ...next,
+      hudVisibility: mergedHud,
+    };
     this.sceneManager.applySettings(this.settings);
-    this.audio.setSettings(this.settings.audioEnabled, this.settings.masterVolume);
+    this.audio.applyAudioSettings({
+      audioEnabled: this.settings.audioEnabled,
+      musicEnabled: this.settings.musicEnabled ?? true,
+      masterVolume: this.settings.masterVolume,
+      sfxVolume: this.settings.sfxVolume ?? 0.85,
+      musicVolume: this.settings.musicVolume ?? 0.65,
+    });
+    this.emitHUD();
+  }
+
+  public setTimeOfDayPreset(hour: number): void {
+    this.sceneManager.setTimeOfDay(hour);
     this.emitHUD();
   }
 
@@ -2872,6 +3203,8 @@ export class Game {
           enemies: this.enemyAI.enemies.map((e) => e.data),
           activeCompanionId: this.player.stats.activeCompanionId ?? null,
           vesperSpared: this.player.stats.vesperFate === 'spared',
+          quests: this.quests.quests,
+          contracts: this.quests.contracts,
           onAnvilStrike: (distRatio) => {
             this.audio.playAnvilStrike(distRatio);
           },
@@ -3002,6 +3335,7 @@ export class Game {
   }
 
   public emitHUD(): void {
+    this.world.syncQuestIndicators(this.quests.quests, this.quests.contracts);
     const isCatacombs = this.player.stats.x > 75 && this.player.stats.z > 75;
     const biome = isCatacombs
       ? { id: 'catacombs' as const, name: 'Подземные Катакомбы Древних Королей' }
@@ -3103,17 +3437,23 @@ export class Game {
         priceMultiplier: repInfo.priceMultiplier,
         bountyHuntersActive: repInfo.bountyHuntersActive,
       },
+      detectedPlatform: this.getResolvedPlatform(),
     });
   }
 
   public dispose(): void {
     this.stop();
+    const canvas = this.sceneManager.renderer.domElement;
     window.removeEventListener('resize', this.onWindowResize);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('wheel', this.onMouseWheel);
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
+    canvas.removeEventListener('touchstart', this.onTouchStart);
+    canvas.removeEventListener('touchmove', this.onTouchMove);
+    canvas.removeEventListener('touchend', this.onTouchEnd);
+    canvas.removeEventListener('touchcancel', this.onTouchEnd);
     this.audio.dispose();
     this.sceneManager.dispose();
   }

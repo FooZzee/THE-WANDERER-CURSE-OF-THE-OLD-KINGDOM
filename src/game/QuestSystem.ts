@@ -599,6 +599,127 @@ export class QuestSystem {
         xpReward: 450,
         goldReward: 260,
       },
+      // =======================================================================
+      // НОВЫЕ БИОМЫ И АКТ III: ГАВАНЬ СОЛЬХЕЙМ, ЛАЗУРНЫЙ МОНАСТЫРЬ И КУЗНИЦА ПРЕДТЕЧ
+      // =======================================================================
+      {
+        id: 'quest_sunken_lighthouse',
+        title: 'Западный Берег: «Маяк Затонувшей Гавани»',
+        giver: 'Смотритель маяка Хендрик',
+        biome: 'Затонувший Порт Сольхейм и Маяк Бездны',
+        recommendedLevel: 5,
+        description:
+          'В затопленной Чёрным Приливом гавани Сольхейм на западном побережье погас древний Маяк Бездны, сдерживавший морских чудовищ и утопших корсаров. Помогите смотрителю Хендрику вернуть Звёздную Линзу с затонувшего флагмана и зажечь маяк.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_port_talk_keeper',
+            description: 'Поговорить со смотрителем маяка Хендриком на причале гавани Сольхейм',
+            completed: false,
+            targetX: -152,
+            targetZ: -8,
+            radius: 5,
+          },
+          {
+            id: 'q_port_find_amber_lens',
+            description: 'Забрать Звёздную Янтарную Линзу у обломков флагмана и сразить Сирену Чёрного Прилива',
+            completed: false,
+            targetX: -176,
+            targetZ: 12,
+            radius: 6,
+          },
+          {
+            id: 'q_port_reignite_beacon',
+            description: 'Зажечь сигнальный огонь Маяка Бездны и доложить смотрителю Хендрику',
+            completed: false,
+            targetX: -152,
+            targetZ: -8,
+            radius: 6,
+          },
+        ],
+        xpReward: 520,
+        goldReward: 360,
+      },
+      {
+        id: 'quest_monastery_chronicles',
+        title: 'Восточный Утёс: «Хроники Солнечных Клятв»',
+        giver: 'Аббат Каэлум',
+        biome: 'Лазурный Монастырь Солнечных Клятв',
+        recommendedLevel: 6,
+        description:
+          'В Лазурном Монастыре на восточных скалах монахи-звездочёты хранят звёздные таблицы Предтеч. Помогите Аббату Каэлуму очистить купол Астральной Обсерватории от каменного стража и настроить Большую Астролябию, указывающую путь в Долину Звёздного Пепла.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_mon_talk_abbot',
+            description: 'Поговорить с Аббатом Каэлумом во внутреннем дворе Лазурного Монастыря',
+            completed: false,
+            targetX: 152,
+            targetZ: -15,
+            radius: 5,
+          },
+          {
+            id: 'q_mon_align_astrolabe',
+            description: 'Победить Осквернённого Стража Обсерватории и сфокусировать Большую Астролябию',
+            completed: false,
+            targetX: 178,
+            targetZ: -15,
+            radius: 6,
+          },
+          {
+            id: 'q_mon_return_abbot',
+            description: 'Вернуться к Аббату Каэлуму за благословением и звёздным ключом Предтеч',
+            completed: false,
+            targetX: 152,
+            targetZ: -15,
+            radius: 6,
+          },
+        ],
+        xpReward: 640,
+        goldReward: 420,
+      },
+      {
+        id: 'quest_act3_starfall_forge',
+        title: 'Акт III: «Кузница Предтеч и Падение Звезды»',
+        giver: 'Хранитель Звёздного Горна Эландр',
+        biome: 'Долина Звёздного Пепла и Кузница Предтеч',
+        recommendedLevel: 9,
+        description:
+          'Продолжение лора за Кратером Затмения: в Долине Звёздного Пепла пробудилась тысячелетняя Кузница Предтеч, где из упавшего светила были выкованы Первая Корона Вальдмарка и серебряные клинки Братства. Победите Архонта Звёздного Пепла и решите судьбу наследия Предтеч.',
+        status: 'available',
+        currentStageIndex: 0,
+        stages: [
+          {
+            id: 'q_star_talk_herald',
+            description: 'Поговорить с Хранителем Звёздного Горна Эландром у врат Долины Звёздного Пепла',
+            completed: false,
+            targetX: 0,
+            targetZ: -598,
+            radius: 6,
+          },
+          {
+            id: 'q_star_defeat_archon',
+            description: 'Сокрушить стража Акта III — «Архонта Звёздного Пепла» в сердце Кузницы Предтеч',
+            completed: false,
+            targetX: 0,
+            targetZ: -635,
+            radius: 10,
+          },
+          {
+            id: 'q_star_anvil_choice',
+            description: 'Решить судьбу Звёздной Наковальни Предтеч: Перековать Корону Света или Запечатать Горн',
+            completed: false,
+            targetX: 0,
+            targetZ: -648,
+            radius: 6,
+          },
+        ],
+        xpReward: 1800,
+        goldReward: 1200,
+        itemReward: 'mythic_void_voice',
+      },
     ];
   }
 
@@ -618,6 +739,18 @@ export class QuestSystem {
     q.status = 'completed';
     q.stages = q.stages.map((s) => ({ ...s, completed: true }));
     return q;
+  }
+
+  public getQuestById(questId: string): Quest | undefined {
+    return this.quests.find((q) => q.id === questId);
+  }
+
+  public getQuest(questId: string): Quest | undefined {
+    return this.getQuestById(questId);
+  }
+
+  public getContractById(contractId: string): HunterContract | undefined {
+    return this.contracts.find((c) => c.id === contractId);
   }
 
   public getActiveQuest(): Quest | null {
@@ -654,11 +787,8 @@ export class QuestSystem {
     readyToSpawnBoss: boolean;
   } {
     const c = this.contracts.find((item) => item.id === contractId);
-    if (!c || c.status === 'completed') {
+    if (!c || c.status === 'completed' || c.status !== 'tracking') {
       return { contract: c ?? null, readyToSpawnBoss: false };
-    }
-    if (c.status === 'available') {
-      c.status = 'tracking';
     }
     if (c.cluesFound < c.cluesRequired) {
       c.cluesFound += 1;
@@ -694,7 +824,11 @@ export class QuestSystem {
     }
 
     const q = this.quests[idx];
-    if (q.status === 'available') {
+    if (
+      q.status === 'available' &&
+      q.currentStageIndex === 0 &&
+      q.stages[0]?.id === stageId
+    ) {
       q.status = 'active';
     }
 

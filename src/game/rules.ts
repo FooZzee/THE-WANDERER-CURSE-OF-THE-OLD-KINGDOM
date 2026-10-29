@@ -5,9 +5,14 @@ import type {
   CollisionBox,
   CompanionCommand,
   CompanionId,
+  ControlModeSetting,
+  ControlPlatform,
+  DeviceEnvironmentSnapshot,
   EnemyData,
   EquipmentSlot,
   GameItem,
+  GameLanguage,
+  HunterContract,
   MagicSignInfo,
   NpcActivityState,
   PlayerStats,
@@ -71,6 +76,27 @@ export const WAYSTONES: WaystoneData[] = [
     biomeName: 'Кратер Затмения и Зал Трона Пустоты',
     x: 0,
     z: -468,
+  },
+  {
+    id: 'waystone_sunken_port',
+    name: 'Камень Затонувшей Гавани Сольхейм',
+    biomeName: 'Затонувший Порт Сольхейм и Маяк Бездны',
+    x: -134,
+    z: 3,
+  },
+  {
+    id: 'waystone_sun_monastery',
+    name: 'Камень Лазурного Монастыря',
+    biomeName: 'Лазурный Монастырь Солнечных Клятв',
+    x: 146,
+    z: -15,
+  },
+  {
+    id: 'waystone_starfall_valley',
+    name: 'Камень Кузницы Предтеч (Акт III)',
+    biomeName: 'Долина Звёздного Пепла и Кузница Предтеч',
+    x: 0,
+    z: -605,
   },
 ];
 
@@ -379,8 +405,8 @@ export const BESTIARY_ENTRIES: BestiaryEntry[] = [
  * Seamless Northern Expansion extends from z = -105 to z = -550.
  */
 export function getGroundHeight(x: number, z: number): number {
-  // Underground Catacombs chamber at (x > 80, z > 80)
-  if (x > 75 && z > 75) {
+  // Underground Catacombs chamber at (x in [75, 128], z in [75, 128])
+  if (x > 75 && x < 128 && z > 75 && z < 128) {
     return 0;
   }
 
@@ -394,7 +420,7 @@ export function getGroundHeight(x: number, z: number): number {
       const distSwampArena = Math.hypot(x - 0, z - -190);
       const distCharonCamp = Math.hypot(x - -8, z - -145);
       const distManor = Math.hypot(x - 30, z - -166);
-      const distStiltVillage = Math.hypot(x - -46, z - -158);
+      const distStiltVillage = Math.hypot(x - -52, z - -152);
       const distMarauderIsle = Math.hypot(x - 52, z - -138);
       const arenaFlat = Math.min(1, Math.max(0, (distSwampArena - 20) / 10));
       const campFlat = Math.min(1, Math.max(0, (distCharonCamp - 12) / 8));
@@ -402,37 +428,37 @@ export function getGroundHeight(x: number, z: number): number {
       const stiltFlat = Math.min(1, Math.max(0, (distStiltVillage - 16) / 8));
       const isleFlat = Math.min(1, Math.max(0, (distMarauderIsle - 14) / 8));
 
-      // Main north-south boardwalk or east-west branch boardwalks
-      const onMainBoardwalk = Math.abs(x) < 3.8;
-      const onWestBranch = Math.abs(z - -158) < 2.6 && x >= -52 && x <= 0;
-      const onEastBranch = Math.abs(z - -166) < 2.6 && x >= 0 && x <= 38;
-      if (onMainBoardwalk || onWestBranch || onEastBranch) {
-        return -0.22 * northBlend;
-      }
+      // Smooth boardwalk blend for main N-S and E-W causeways
+      const mainBoardwalkDist = Math.abs(x);
+      const westBranchDist = x >= -64 && x <= 2 ? Math.abs(z - -152) : 99;
+      const eastBranchDist = x >= -2 && x <= 42 ? Math.abs(z - -166) : 99;
+      const minBoardwalkDist = Math.min(mainBoardwalkDist, westBranchDist, eastBranchDist);
+      const boardwalkBlend = 1 - Math.min(1, Math.max(0, (minBoardwalkDist - 3.2) / 3.0));
 
-      // Elevated dry hummocks for Manor & Marauder island
-      if (distManor < 14) {
-        return 0.45 * northBlend;
-      }
-      if (distMarauderIsle < 12) {
-        return 0.35 * northBlend;
-      }
+      // Smoothly elevated dry hummocks for Manor, Marauder island, Stilt Village, Charon Camp & Arena
+      const manorLift = (1 - Math.min(1, Math.max(0, (distManor - 12) / 8))) * 0.48;
+      const isleLift = (1 - Math.min(1, Math.max(0, (distMarauderIsle - 10) / 8))) * 0.38;
+      const stiltLift = (1 - Math.min(1, Math.max(0, (distStiltVillage - 13) / 8))) * 0.22;
+      const campLift = (1 - Math.min(1, Math.max(0, (distCharonCamp - 10) / 7))) * 0.2;
+      const arenaLift = (1 - Math.min(1, Math.max(0, (distSwampArena - 18) / 8))) * 0.16;
+      const hummockLift = Math.max(manorLift, isleLift, stiltLift, campLift, arenaLift, boardwalkBlend * 0.14);
 
-      // Deep toxic hollows in the bog vs undulating mire
-      const toxicHollow =
-        Math.hypot(x - -26, z - -134) < 12 || Math.hypot(x - 24, z - -182) < 12
-          ? -0.45
-          : 0;
+      // Deep toxic hollows in uninhabited bog pools
+      const hollow1 = Math.hypot(x - -34, z - -134);
+      const hollow2 = Math.hypot(x - 24, z - -182);
+      const minHollow = Math.min(hollow1, hollow2);
+      const toxicHollow = (1 - Math.min(1, Math.max(0, (minHollow - 6) / 6))) * -0.55;
 
       const swampWaves =
-        (Math.sin(x * 0.055) * Math.cos(z * 0.055) * 0.95 +
-          Math.sin(x * 0.14 - z * 0.11) * 0.35) *
+        (Math.sin(x * 0.055) * Math.cos(z * 0.055) * 0.28 +
+          Math.sin(x * 0.14 - z * 0.11) * 0.12) *
           arenaFlat *
           campFlat *
           manorFlat *
           stiltFlat *
           isleFlat -
-        0.65 +
+        0.04 +
+        hummockLift +
         toxicHollow;
       return swampWaves * northBlend;
     }
@@ -486,22 +512,71 @@ export function getGroundHeight(x: number, z: number): number {
       return basePlateau + ridges;
     }
 
-    // Biome 4: Eclipse Crater & Throne of the Void (z < -435, x in [-95, 95])
-    const craterProgress = Math.min(1, Math.max(0, (-435 - z) / 25));
-    const baseCrater = 6.5 - craterProgress * 3.0; // Settles at +3.5m
-    const distThrone = Math.hypot(x - 0, z - -505);
-    const distWestIsland = Math.hypot(x - -42, z - -482);
-    const distEastIsland = Math.hypot(x - 42, z - -482);
-    const flatThrone =
-      Math.min(1, Math.max(0, (distThrone - 30) / 12)) *
-      Math.min(1, Math.max(0, (distWestIsland - 16) / 8)) *
-      Math.min(1, Math.max(0, (distEastIsland - 16) / 8));
-    // Energy bridges linking side obsidian islands to the center at z = -482
-    if (Math.abs(z - -482) < 3.5 && Math.abs(x) <= 46) {
-      return baseCrater + 0.25;
+    // Biome 4: Eclipse Crater & Throne of the Void (z in [-550, -435], x in [-95, 95])
+    if (z >= -550) {
+      const craterProgress = Math.min(1, Math.max(0, (-435 - z) / 25));
+      const baseCrater = 6.5 - craterProgress * 3.0; // Settles at +3.5m
+      const distThrone = Math.hypot(x - 0, z - -505);
+      const distWestIsland = Math.hypot(x - -42, z - -482);
+      const distEastIsland = Math.hypot(x - 42, z - -482);
+      const flatThrone =
+        Math.min(1, Math.max(0, (distThrone - 30) / 12)) *
+        Math.min(1, Math.max(0, (distWestIsland - 16) / 8)) *
+        Math.min(1, Math.max(0, (distEastIsland - 16) / 8));
+      // Energy bridges linking side obsidian islands to the center at z = -482
+      if (Math.abs(z - -482) < 3.5 && Math.abs(x) <= 46) {
+        return baseCrater + 0.25;
+      }
+      // Causeway north toward Starfall Valley
+      if (Math.abs(x) < 6 && z < -525) {
+        return baseCrater;
+      }
+      const rim = Math.min(1, Math.max(0, (Math.abs(x) - 48) / 24)) * 3.2 * flatThrone;
+      return baseCrater + rim;
     }
-    const rim = Math.min(1, Math.max(0, (Math.abs(x) - 48) / 24)) * 3.2 * flatThrone;
-    return baseCrater + rim;
+
+    // Biome 5 (Act III): Starfall Valley & Precursor Astral Forge (z < -550)
+    const valleyProgress = Math.min(1, Math.max(0, (-550 - z) / 28));
+    const baseStarfall = 3.5 + valleyProgress * 2.3; // Rises to +5.8m astral plateau
+    const distForge = Math.hypot(x - 0, z - -635);
+    const distWestObservatory = Math.hypot(x - -46, z - -618);
+    const distEastSanctum = Math.hypot(x - 46, z - -618);
+    const flatForge =
+      Math.min(1, Math.max(0, (distForge - 34) / 14)) *
+      Math.min(1, Math.max(0, (distWestObservatory - 18) / 8)) *
+      Math.min(1, Math.max(0, (distEastSanctum - 18) / 8));
+    if (Math.abs(x) < 6 && z > -595 && z < -540) {
+      return baseStarfall;
+    }
+    const astralRidges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.4 * flatForge;
+    return baseStarfall + astralRidges;
+  }
+
+  // Western Coastal Biome: Sunken Port Solheim & Abyssal Lighthouse (x < -105)
+  if (x < -105) {
+    const coastalProgress = Math.min(1, Math.max(0, (-105 - x) / 30));
+    const basePort = 0.08 * coastalProgress;
+    const distPortSquare = Math.hypot(x - -150, z - 0);
+    const distLighthouse = Math.hypot(x - -174, z - -36);
+    const lighthouseLift = (1 - Math.min(1, Math.max(0, (distLighthouse - 10) / 8))) * 2.5;
+    const squareBlend = 1 - Math.min(1, Math.max(0, (distPortSquare - 26) / 10));
+    const pierBlend =
+      x < -145 && x > -194 ? 1 - Math.min(1, Math.max(0, (Math.abs(z) - 5) / 5)) : 0;
+    const coastalWaves =
+      Math.sin(x * 0.04) * Math.cos(z * 0.04) * 0.35 * (1 - Math.max(squareBlend, pierBlend));
+    return basePort + coastalWaves + Math.max(lighthouseLift, squareBlend * 0.22, pierBlend * 0.32);
+  }
+
+  // Eastern Cliff Plateau Biome: Sun Monastery of Solar Oaths (x > 105, z <= 75)
+  if (x > 105 && z <= 75) {
+    const cliffProgress = Math.min(1, Math.max(0, (x - 105) / 22));
+    const baseMonastery = 2.8 * cliffProgress;
+    const distCourtyard = Math.hypot(x - 158, z - -15);
+    const distObservatory = Math.hypot(x - 178, z - -15);
+    const flatMonastery =
+      Math.min(1, Math.max(0, (distCourtyard - 30) / 10)) *
+      Math.min(1, Math.max(0, (distObservatory - 18) / 8));
+    return baseMonastery + Math.sin(x * 0.04) * Math.cos(z * 0.04) * 0.8 * flatMonastery;
   }
 
   // Distance from village center (0, 0)
@@ -525,11 +600,11 @@ export function getGroundHeight(x: number, z: number): number {
   const riverDist = Math.abs(z - (34 + Math.sin(x * 0.03) * 6));
   const riverDepression = riverDist < 8 ? -1.4 * Math.cos((riverDist / 8) * (Math.PI / 2)) : 0;
 
-  // Bridge over river at x in [-4, 4]
-  const onBridge = Math.abs(x) < 4.5 && riverDist < 8.5;
-  if (onBridge) {
-    return 0.35;
-  }
+  // 3 Bridges over river: Central (x=0), Western Forest (x=-52), Eastern Order (x=52)
+  const bridgeDistX = Math.min(Math.abs(x), Math.abs(x + 52), Math.abs(x - 52));
+  const bridgeBlendX = 1 - Math.min(1, Math.max(0, (bridgeDistX - 3.2) / 2.2));
+  const bridgeBlendZ = 1 - Math.min(1, Math.max(0, (riverDist - 7.5) / 2.0));
+  const bridgeBlend = bridgeBlendX * bridgeBlendZ;
 
   const hills =
     Math.sin(x * 0.035) * Math.cos(z * 0.035) * 2.2 +
@@ -539,15 +614,20 @@ export function getGroundHeight(x: number, z: number): number {
   const fortressElevation =
     distFortress < 34 ? (1 - Math.min(1, Math.max(0, (distFortress - 18) / 16))) * 2.8 : 0;
 
-  return hills * flattenFactor + riverDepression * villageFlat + fortressElevation;
+  const naturalGround =
+    hills * flattenFactor + riverDepression * villageFlat * (1 - bridgeBlend) + fortressElevation;
+  return naturalGround * (1 - bridgeBlend) + 0.35 * bridgeBlend;
 }
 
 /**
  * Determines which biome the coordinates belong to.
  */
 export function getBiomeAt(x: number, z: number): { id: BiomeId; name: string } {
-  if (x > 75 && z > 75) {
+  if (x > 75 && x < 128 && z > 75 && z < 128) {
     return { id: 'catacombs', name: 'Подземные Катакомбы Древних Королей' };
+  }
+  if (z < -550) {
+    return { id: 'starfall_valley', name: 'Долина Звёздного Пепла и Кузница Предтеч' };
   }
   if (z < -435) {
     return { id: 'eclipse_crater', name: 'Кратер Затмения и Зал Трона Пустоты' };
@@ -560,6 +640,12 @@ export function getBiomeAt(x: number, z: number): { id: BiomeId; name: string } 
   }
   if (z < -105) {
     return { id: 'gallows_swamp', name: 'Тракт Висельников и Затопленные Топи' };
+  }
+  if (x < -105) {
+    return { id: 'sunken_port', name: 'Затонувший Порт Сольхейм и Маяк Бездны' };
+  }
+  if (x > 105 && z <= 75) {
+    return { id: 'sun_monastery', name: 'Лазурный Монастырь Солнечных Клятв' };
   }
   if (Math.hypot(x, z) < 30) {
     return { id: 'village', name: 'Деревня Воронья Падь' };
@@ -2127,7 +2213,7 @@ export function resolveSlidingCollision(
   }
 
   // 3. Determine accurate ground + walkable bridge/platform floor height
-  let y = x > 75 && z > 75 ? 0 : getGroundHeight(x, z);
+  let y = x > 82 && x < 126 && z > 82 && z < 126 ? 0 : getGroundHeight(x, z);
   for (const box of boxes) {
     if (
       box.isWalkableFloor &&
@@ -2143,6 +2229,701 @@ export function resolveSlidingCollision(
 
   return { x, z, y };
 }
+
+/**
+ * Pure function that detects hardware platform ('pc' vs 'mobile') from a device environment snapshot.
+ * Handles mobile/tablet User-Agents, iPadOS desktop UA with touch points, coarse pointer media queries,
+ * and mobile viewport dimensions (both portrait and landscape).
+ */
+export function detectHardwarePlatform(
+  env: DeviceEnvironmentSnapshot
+): ControlPlatform {
+  const ua = env.userAgent ?? '';
+  const maxTouchPoints = env.maxTouchPoints ?? 0;
+  const hasCoarsePointer = Boolean(env.hasCoarsePointer);
+  const hasFinePointer = Boolean(env.hasFinePointer);
+  const hasHover = env.hasHover ?? true;
+  const w = env.screenWidth ?? 1440;
+  const h = env.screenHeight ?? 900;
+  const minSide = Math.min(w, h);
+
+  // 1. Explicit mobile/phone/tablet User-Agent strings
+  const mobileUaRegex =
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet|Silk|Kindle/i;
+  if (mobileUaRegex.test(ua)) {
+    return 'mobile';
+  }
+
+  // 2. iPadOS 13+ reporting as Macintosh with multi-touch hardware
+  if (/Macintosh/i.test(ua) && maxTouchPoints > 1) {
+    return 'mobile';
+  }
+
+  // 3. Primary input is coarse pointer without fine mouse or hover capability
+  if (hasCoarsePointer && (!hasFinePointer || !hasHover)) {
+    return 'mobile';
+  }
+
+  // 4. Compact mobile viewport (portrait width < 768px or landscape short side <= 540px on touch/mobile emulation)
+  if (w < 768 || (minSide <= 540 && (maxTouchPoints > 0 || hasCoarsePointer))) {
+    return 'mobile';
+  }
+
+  return 'pc';
+}
+
+/**
+ * Resolves the active control platform ('pc' | 'mobile') combining user setting ('auto' | 'pc' | 'mobile'),
+ * hardware detection, and live input events (touch vs mouse/keyboard).
+ */
+export function resolveControlPlatform(
+  mode: ControlModeSetting | undefined,
+  env: DeviceEnvironmentSnapshot
+): ControlPlatform {
+  if (mode === 'pc') return 'pc';
+  if (mode === 'mobile') return 'mobile';
+
+  // In 'auto' mode, live touch immediately activates mobile controls
+  if (env.lastInputType === 'touch') {
+    return 'mobile';
+  }
+
+  const hw = detectHardwarePlatform(env);
+  if (env.lastInputType === 'mouse_keyboard' && hw === 'pc') {
+    return 'pc';
+  }
+
+  return hw;
+}
+
+/**
+ * Reads the current browser environment snapshot safely (SSR/Node-test safe).
+ */
+export function getBrowserDeviceSnapshot(
+  lastInputType: 'mouse_keyboard' | 'touch' | null = null
+): DeviceEnvironmentSnapshot {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      userAgent: '',
+      maxTouchPoints: 0,
+      hasCoarsePointer: false,
+      hasFinePointer: true,
+      hasHover: true,
+      screenWidth: 1440,
+      screenHeight: 900,
+      lastInputType,
+    };
+  }
+
+  const matchMediaSafe = (query: string): boolean => {
+    try {
+      return typeof window.matchMedia === 'function'
+        ? window.matchMedia(query).matches
+        : false;
+    } catch {
+      return false;
+    }
+  };
+
+  return {
+    userAgent: navigator.userAgent ?? '',
+    maxTouchPoints: navigator.maxTouchPoints ?? 0,
+    hasCoarsePointer: matchMediaSafe('(pointer: coarse)'),
+    hasFinePointer: matchMediaSafe('(pointer: fine)'),
+    hasHover: matchMediaSafe('(hover: hover)'),
+    screenWidth: window.innerWidth || 1440,
+    screenHeight: window.innerHeight || 900,
+    lastInputType,
+  };
+}
+
+/**
+ * Returns localized control scheme descriptions for the resolved platform ('pc' vs 'mobile').
+ */
+export function getPlatformControlSummary(
+  platform: ControlPlatform,
+  lang: GameLanguage = 'ru'
+): {
+  platformBadge: string;
+  moveDodge: string;
+  combatBlock: string;
+  ashSigns: string;
+  codexMenus: string;
+  pointerHint: string;
+} {
+  if (platform === 'mobile') {
+    if (lang === 'en') {
+      return {
+        platformBadge: 'Mobile Device Detected · Touch Controls Active',
+        moveDodge: 'Left Joystick · Outer Ring Sprint · Dodge Button',
+        combatBlock: 'Strike · Heavy · Block (Hold) · Dual Swords',
+        ashSigns: 'Sign Cast · Cycle 5 Signs · Quick Potion',
+        codexMenus: 'Touch Bar: Gear · Map · Alchemy · Senses',
+        pointerHint: 'Touch Mode: Swipe anywhere on the screen to rotate the camera, use the left joystick to move',
+      };
+    }
+    return {
+      platformBadge: 'Определено устройство: Телефон · Сенсорное управление',
+      moveDodge: 'Джойстик слева · Бег (до края) · Кнопка Рывок',
+      combatBlock: 'Кнопки: Удар · Тяж. · Блок · Смена меча',
+      ashSigns: 'Кнопки: Каст Знака · Выбор 5 Знаков · Зелье',
+      codexMenus: 'Быстрое меню: Сумка · Карта · Алхимия · Чутьё',
+      pointerHint: 'Сенсорный режим: проводите пальцем по экрану для обзора камеры, используйте джойстик для движения',
+    };
+  }
+
+  if (lang === 'en') {
+    return {
+      platformBadge: 'PC Browser Detected · Keyboard & Mouse Controls',
+      moveDodge: 'WASD · Shift (Sprint) · Space (Dodge)',
+      combatBlock: 'LMB (Combo / Hold Heavy) · RMB (Block) · [1]/[2]',
+      ashSigns: 'Q / 3-7 (Select Sign) · R (Cast) · F (Potion)',
+      codexMenus: 'E · I · J · M · K · L · B · V (Senses)',
+      pointerHint: 'PC Mode: Click the screen (or hold LMB + drag) to rotate the camera · [Esc] Pause & Settings',
+    };
+  }
+
+  return {
+    platformBadge: 'Определено устройство: ПК (Браузер) · Клавиатура и Мышь',
+    moveDodge: 'WASD · Shift (Бег) · Space (Кувырок)',
+    combatBlock: 'ЛКМ (Комбо / Зажать — Тяж.) · ПКМ (Блок) · [1]/[2]',
+    ashSigns: 'Q / 3-7 (Выбор) · R (Каст Знака) · F (Зелье)',
+    codexMenus: 'E · I · J · M · K · L · B · V (Чутьё)',
+    pointerHint: 'Режим ПК: кликните по экрану (или зажмите ЛКМ) для обзора камеры · [Esc] Пауза и Настройки',
+  };
+}
+
+/**
+ * Default respawn duration (in seconds) for regular world mobs.
+ */
+export const DEFAULT_MOB_RESPAWN_SECONDS = 60;
+
+/**
+ * Determines whether a defeated enemy is a regular world mob that should respawn after a timer,
+ * or a unique story/contract boss / temporary summon that stays dead permanently.
+ */
+export function isRespawnableMob(
+  enemy: Pick<EnemyData, 'id' | 'type' | 'isContractBoss' | 'isSummonedShadow'> & {
+    questTag?: string;
+  }
+): boolean {
+  if (enemy.isContractBoss || enemy.isSummonedShadow) {
+    return false;
+  }
+
+  // Dynamically spawned temporary squads or boss summons should not respawn
+  if (
+    enemy.id.startsWith('bounty_hunter_') ||
+    enemy.id.startsWith('hydra_drowned_') ||
+    enemy.id.startsWith('avatar_shadow_') ||
+    enemy.id.startsWith('ww_summon_') ||
+    enemy.id.startsWith('bounty_pack_')
+  ) {
+    return false;
+  }
+
+  // Unique story bosses, contract bosses, and named sanctuary witch Morana do not respawn
+  const nonRespawnTypes: EnemyData['type'][] = [
+    'boss',
+    'malakor',
+    'boss_hydra',
+    'boss_colossus',
+    'boss_vesper',
+    'boss_avatar',
+    'werewolf',
+    'noonwraith',
+    'gargoyle',
+    'demon',
+    'bounty_hunter',
+  ];
+  if (nonRespawnTypes.includes(enemy.type)) {
+    return false;
+  }
+
+  if (enemy.id === 'hag_sanctuary' || enemy.questTag === 'q2_hag') {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Determines which 3D overhead quest indicator ('exclamation' for ! or 'question' for ? or 'none')
+ * should be displayed above an NPC, Notice Board, or Quest Altar.
+ * Priority: 'question' (turn-in / ready stage / verdict) > 'exclamation' (available quest/contract to take).
+ */
+export function getActorQuestIndicatorState(
+  actorId: string,
+  quests: Quest[],
+  contracts: HunterContract[] = []
+): 'exclamation' | 'question' | 'none' {
+  const findQuest = (id: string) => quests.find((q) => q.id === id);
+
+  // 1. Village Notice Board (Доска объявлений)
+  if (actorId === 'notice_board_village') {
+    const hasAvailableContract = contracts.some((c) => c.status === 'available');
+    return hasAvailableContract ? 'exclamation' : 'none';
+  }
+
+  // 2. Elder Bran (Староста Бран)
+  if (actorId === 'npc_elder') {
+    const q1 = findQuest('quest_missing_hunters');
+    const q3 = findQuest('quest_ancient_king');
+    const qBell = findQuest('quest_blood_belltower');
+
+    if (
+      q1 &&
+      q1.status === 'active' &&
+      q1.currentStageIndex === 4 &&
+      !q1.stages[4]?.completed
+    ) {
+      return 'question';
+    }
+
+    const q1CanStart =
+      q1 &&
+      q1.status !== 'completed' &&
+      q1.currentStageIndex === 0 &&
+      !q1.stages[0]?.completed;
+    const q3CanStart =
+      q1?.status === 'completed' && q3 && q3.status === 'available';
+    const qBellCanStart = qBell && qBell.status === 'available';
+
+    if (q1CanStart || q3CanStart || qBellCanStart) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 3. Village Guards (Стражники Гуннар и Рольф — дают наводку на «Кровь на колокольне»)
+  if (actorId === 'npc_guard_1' || actorId === 'npc_guard_2') {
+    const qBell = findQuest('quest_blood_belltower');
+    if (qBell && qBell.status === 'available') {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 4. Herbalist Marfa (Травница Марфа)
+  if (actorId === 'npc_herbalist') {
+    const q2 = findQuest('quest_swamp_whisper');
+    const qBell = findQuest('quest_blood_belltower');
+
+    if (
+      qBell &&
+      qBell.status === 'active' &&
+      qBell.currentStageIndex === 2 &&
+      !qBell.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    if (q2 && q2.status === 'available') {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 5. Blacksmith Thorn (Кузнец Торн) & Bard Corvin (Бард Корвин)
+  if (actorId === 'npc_blacksmith' || actorId === 'npc_bard') {
+    const qBell = findQuest('quest_blood_belltower');
+    if (
+      qBell &&
+      qBell.status === 'active' &&
+      qBell.currentStageIndex === 2 &&
+      !qBell.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 6. Helga (Жена кузнеца Торна — вердикт по квесту «Кровь на колокольне»)
+  if (actorId === 'npc_belltower_helga') {
+    const qBell = findQuest('quest_blood_belltower');
+    if (
+      qBell &&
+      qBell.status === 'active' &&
+      qBell.currentStageIndex === 3 &&
+      !qBell.stages[3]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 7. Cursed Sanctuary Altar (Алтарь Проклятого Святилища)
+  if (actorId === 'shrine_cursed_altar') {
+    const q2 = findQuest('quest_swamp_whisper');
+    if (
+      q2 &&
+      q2.status === 'active' &&
+      q2.currentStageIndex === 3 &&
+      !q2.stages[3]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 8. Inquisitorazar (Инквизитор Лазарь — Акт II)
+  if (actorId === 'npc_inquisitor') {
+    const q4 = findQuest('quest_act2_malakor');
+    if (
+      q4 &&
+      q4.status !== 'completed' &&
+      q4.currentStageIndex === 0 &&
+      !q4.stages[0]?.completed
+    ) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 9. Boatman Charon (Лодочник Харон — Поход на Север I)
+  if (actorId === 'npc_charon') {
+    const q5 = findQuest('quest_drowned_path');
+    if (
+      q5 &&
+      q5.status !== 'completed' &&
+      q5.currentStageIndex === 0 &&
+      !q5.stages[0]?.completed
+    ) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 10. Old Miner Brom (Старый Рудокоп Бром — Поход на Север II)
+  if (actorId === 'npc_brom') {
+    const q6 = findQuest('quest_mountain_blood');
+    if (
+      q6 &&
+      q6.status !== 'completed' &&
+      q6.currentStageIndex === 0 &&
+      !q6.stages[0]?.completed
+    ) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 11. Survivor Adept Kael (Выживший Адепт Каэль — Поход на Север III)
+  if (actorId === 'npc_kael') {
+    const q7 = findQuest('quest_ash_brotherhood');
+    if (
+      q7 &&
+      q7.status !== 'completed' &&
+      q7.currentStageIndex === 0 &&
+      !q7.stages[0]?.completed
+    ) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 12. Lord Edgar Vane (Лорд Эдгар Вейн — «Пир Воронов»)
+  if (actorId === 'npc_lord_vane') {
+    const qFeast = findQuest('quest_feast_of_ravens');
+    if (!qFeast || qFeast.status === 'completed') return 'none';
+    if (qFeast.status === 'active' && qFeast.currentStageIndex === 3 && !qFeast.stages[3]?.completed) {
+      return 'question';
+    }
+    if (qFeast.currentStageIndex === 0 && !qFeast.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 13. Order Captain Vallen (Капитан Ордена Валлен — «Клятва в Мёртвых Шахтах»)
+  if (actorId === 'npc_order_captain_mines') {
+    const qMines = findQuest('quest_dead_mines_oath');
+    if (!qMines || qMines.status === 'completed') return 'none';
+    if (qMines.status === 'active' && qMines.currentStageIndex === 2 && !qMines.stages[2]?.completed) {
+      return 'question';
+    }
+    if (qMines.currentStageIndex === 0 && !qMines.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 14. Sentient Ghoul Elder Toros (Старейшина горняков Торос — «Клятва в Мёртвых Шахтах»)
+  if (actorId === 'npc_sentient_ghoul_elder') {
+    const qMines = findQuest('quest_dead_mines_oath');
+    if (
+      qMines &&
+      qMines.status === 'active' &&
+      qMines.currentStageIndex === 2 &&
+      !qMines.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 15. Apprentice Erian & Ritual Table («Последний Экзамен Зольника»)
+  if (actorId === 'npc_apprentice_erian') {
+    const qExam = findQuest('quest_last_ash_exam');
+    if (!qExam || qExam.status === 'completed') return 'none';
+    if (qExam.status === 'active' && qExam.currentStageIndex === 2 && !qExam.stages[2]?.completed) {
+      return 'question';
+    }
+    if (qExam.currentStageIndex === 0 && !qExam.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  if (actorId === 'clue_bastion_ritual_table') {
+    const qExam = findQuest('quest_last_ash_exam');
+    if (
+      qExam &&
+      qExam.status === 'active' &&
+      qExam.currentStageIndex === 2 &&
+      !qExam.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 16. Eclipse Altar (Алтарь Пепельного Затмения — Финал)
+  if (actorId === 'shrine_eclipse_altar') {
+    const q8 = findQuest('quest_dawn_valdmark');
+    if (
+      q8 &&
+      q8.status === 'active' &&
+      q8.currentStageIndex === 2 &&
+      !q8.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 17. Sunken Port Solheim Lighthouse Keeper Hendrick («Маяк Затонувшей Гавани»)
+  if (actorId === 'npc_solheim_keeper') {
+    const qPort = findQuest('quest_sunken_lighthouse');
+    if (!qPort || qPort.status === 'completed') return 'none';
+    if (qPort.status === 'active' && qPort.currentStageIndex === 2 && !qPort.stages[2]?.completed) {
+      return 'question';
+    }
+    if (qPort.currentStageIndex === 0 && !qPort.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 18. Sun Monastery Abbot Caelum («Хроники Солнечных Клятв»)
+  if (actorId === 'npc_monastery_abbot') {
+    const qMon = findQuest('quest_monastery_chronicles');
+    if (!qMon || qMon.status === 'completed') return 'none';
+    if (qMon.status === 'active' && qMon.currentStageIndex === 2 && !qMon.stages[2]?.completed) {
+      return 'question';
+    }
+    if (qMon.currentStageIndex === 0 && !qMon.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  // 19. Starfall Valley Precursor Herald & Anvil («Акт III: Кузница Предтеч и Падение Звезды»)
+  if (actorId === 'npc_starfall_herald') {
+    const qStar = findQuest('quest_act3_starfall_forge');
+    if (!qStar || qStar.status === 'completed') return 'none';
+    if (qStar.status === 'active' && qStar.currentStageIndex === 2 && !qStar.stages[2]?.completed) {
+      return 'question';
+    }
+    if (qStar.currentStageIndex === 0 && !qStar.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  if (actorId === 'shrine_starfall_anvil') {
+    const qStar = findQuest('quest_act3_starfall_forge');
+    if (
+      qStar &&
+      qStar.status === 'active' &&
+      qStar.currentStageIndex === 2 &&
+      !qStar.stages[2]?.completed
+    ) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  return 'none';
+}
+
+// ============================================================================
+// 8. SETTLEMENT FENCES, GATES & MOB EXCLUSION ZONES
+// ============================================================================
+
+export interface SettlementZone {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  /** Radius of the physical wooden palisade/fence surrounding the village */
+  fenceRadius: number;
+  /** Extended radius around the village where enemies are forbidden to spawn */
+  spawnSafeRadius: number;
+  /** Angles (in radians, atan2(dz, dx)) where open archway gates are placed */
+  gateAngles: number[];
+  /** Width of each gate opening in meters */
+  gateWidth: number;
+}
+
+export const SETTLEMENT_ZONES: SettlementZone[] = [
+  {
+    id: 'village_crow_hollow',
+    name: 'Деревня Воронья Падь',
+    x: 0,
+    z: 0,
+    fenceRadius: 31.5,
+    spawnSafeRadius: 37.5,
+    gateAngles: [0, Math.PI / 2, Math.PI, -Math.PI / 2],
+    gateWidth: 7.6,
+  },
+  {
+    id: 'settlement_ranger_outpost',
+    name: 'Лесной Кордон Егерей',
+    x: -58,
+    z: 18,
+    fenceRadius: 9.5,
+    spawnSafeRadius: 14.5,
+    gateAngles: [0, -Math.PI / 2],
+    gateWidth: 5.8,
+  },
+  {
+    id: 'settlement_solheim_harbor',
+    name: 'Гавань Сольхейма',
+    x: -128,
+    z: 0,
+    fenceRadius: 18.5,
+    spawnSafeRadius: 25.0,
+    gateAngles: [0, Math.PI],
+    gateWidth: 7.0,
+  },
+  {
+    id: 'settlement_sun_monastery',
+    name: 'Двор Лазурного Монастыря',
+    x: 148,
+    z: -15,
+    fenceRadius: 16.5,
+    spawnSafeRadius: 21.0,
+    gateAngles: [Math.PI, 0],
+    gateWidth: 7.0,
+  },
+  {
+    id: 'settlement_order_camp',
+    name: 'Лагерь Ордена Багрового Солнца',
+    x: -12,
+    z: 62,
+    fenceRadius: 11.0,
+    spawnSafeRadius: 16.0,
+    gateAngles: [-Math.PI / 2, 0],
+    gateWidth: 6.0,
+  },
+  {
+    id: 'settlement_swamp_stilt_village',
+    name: 'Свайный Посёлок в Топях',
+    x: -54,
+    z: -152,
+    fenceRadius: 13.0,
+    spawnSafeRadius: 18.5,
+    gateAngles: [0],
+    gateWidth: 6.2,
+  },
+];
+
+/**
+ * Checks whether a world coordinate (x, z) lies inside any village's fenced perimeter.
+ */
+export function isPointInsideSettlementFence(x: number, z: number, margin = 0): boolean {
+  for (const zone of SETTLEMENT_ZONES) {
+    const dist = Math.hypot(x - zone.x, z - zone.z);
+    if (dist < zone.fenceRadius + margin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks whether a world coordinate (x, z) lies inside any village's extended no-spawn buffer zone.
+ */
+export function isPointInSettlementSafeZone(x: number, z: number, extraMargin = 0): boolean {
+  for (const zone of SETTLEMENT_ZONES) {
+    const dist = Math.hypot(x - zone.x, z - zone.z);
+    if (dist < zone.spawnSafeRadius + extraMargin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Ensures an enemy spawn point is strictly outside every settlement's spawnSafeRadius.
+ * If a spawn coordinate falls inside a settlement or its nearby buffer, pushes it radially outward.
+ */
+export function clampEnemySpawnOutsideSettlements(
+  x: number,
+  z: number,
+  extraMargin = 1.0
+): { x: number; z: number; clamped: boolean } {
+  let curX = x;
+  let curZ = z;
+  let clamped = false;
+
+  for (const zone of SETTLEMENT_ZONES) {
+    const dx = curX - zone.x;
+    const dz = curZ - zone.z;
+    const dist = Math.hypot(dx, dz);
+    const minRadius = zone.spawnSafeRadius + extraMargin;
+    if (dist < minRadius) {
+      const angle = dist > 0.001 ? Math.atan2(dz, dx) : 0;
+      curX = zone.x + Math.cos(angle) * minRadius;
+      curZ = zone.z + Math.sin(angle) * minRadius;
+      clamped = true;
+    }
+  }
+
+  return { x: curX, z: curZ, clamped };
+}
+
+/**
+ * Prevents active enemies (chasing, patrolling, lunging, or teleporting) from crossing
+ * inside any village's fenced perimeter — even through open gates.
+ */
+export function clampEnemyPositionOutsideSettlements(
+  x: number,
+  z: number,
+  margin = 1.1
+): { x: number; z: number; clamped: boolean; settlementId: string | null } {
+  let curX = x;
+  let curZ = z;
+  let clamped = false;
+  let settlementId: string | null = null;
+
+  for (const zone of SETTLEMENT_ZONES) {
+    const dx = curX - zone.x;
+    const dz = curZ - zone.z;
+    const dist = Math.hypot(dx, dz);
+    const barrierRadius = zone.fenceRadius + margin;
+    if (dist < barrierRadius) {
+      const angle = dist > 0.001 ? Math.atan2(dz, dx) : 0;
+      curX = zone.x + Math.cos(angle) * barrierRadius;
+      curZ = zone.z + Math.sin(angle) * barrierRadius;
+      clamped = true;
+      settlementId = zone.id;
+    }
+  }
+
+  return { x: curX, z: curZ, clamped, settlementId };
+}
+
 
 
 

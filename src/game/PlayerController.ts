@@ -382,8 +382,12 @@ export class PlayerController {
     // Normal Movement & Stamina Regeneration
     const inputDir = this.getInputDirection(cameraYaw);
     const isMoving = inputDir.lengthSq() > 0.01;
+    const joyMag = Math.hypot(this.joystickX, this.joystickY);
     const wantsSprint =
-      (this.keys['ShiftLeft'] || this.keys['ShiftRight']) &&
+      (this.keys['ShiftLeft'] ||
+        this.keys['ShiftRight'] ||
+        this.keys['MobileSprint'] ||
+        joyMag > 0.82) &&
       isMoving &&
       !this.isBlocking &&
       this.stats.stamina > 5;
@@ -407,7 +411,10 @@ export class PlayerController {
     }
 
     if (isMoving) {
-      const moveSpeed = this.isBlocking ? 2.8 : wantsSprint ? 8.5 : 5.5;
+      const baseMoveSpeed = this.isBlocking ? 2.8 : wantsSprint ? 8.5 : 5.5;
+      const analogScale =
+        joyMag > 0.05 && !wantsSprint ? Math.max(0.45, Math.min(1, joyMag / 0.82)) : 1;
+      const moveSpeed = baseMoveSpeed * analogScale;
       this.moveWithCollision(
         inputDir.x * moveSpeed * dt,
         inputDir.z * moveSpeed * dt,
@@ -448,24 +455,26 @@ export class PlayerController {
     let nextX = this.stats.x + dx;
     let nextZ = this.stats.z + dz;
 
-    if (this.stats.x > 75 && this.stats.z > 75) {
+    if (this.stats.x > 82 && this.stats.x < 126 && this.stats.z > 82 && this.stats.z < 126) {
       // Underground Catacombs chamber bounds
       nextX = Math.max(89, Math.min(121, nextX));
       nextZ = Math.max(89, Math.min(121, nextZ));
     } else if (nextZ < -95) {
-      // Massively expanded Northern March bounds (z down to -545, x in [-145, 145])
-      nextX = Math.max(-145, Math.min(145, nextX));
-      nextZ = Math.max(-545, nextZ);
+      // Massively expanded Northern March & Starfall Valley bounds (z down to -705, x in [-165, 165])
+      nextX = Math.max(-165, Math.min(165, nextX));
+      nextZ = Math.max(-705, nextZ);
     } else {
-      const distFromOrigin = Math.hypot(nextX, nextZ);
-      if (distFromOrigin > 108) {
-        const scale = 108 / distFromOrigin;
-        nextX *= scale;
-        nextZ *= scale;
-      }
+      // Expanded Central Valley, Sunken Port Solheim (West) & Sun Monastery (East)
+      nextX = Math.max(-205, Math.min(205, nextX));
+      nextZ = Math.max(-95, Math.min(128, nextZ));
 
       const riverZ = 34 + Math.sin(nextX * 0.03) * 6;
-      if (Math.abs(nextZ - riverZ) < 5.2 && Math.abs(nextX) > 3.6) {
+      const onBridge =
+        Math.abs(nextX) <= 3.8 ||
+        Math.abs(nextX + 52) <= 3.8 ||
+        Math.abs(nextX - 52) <= 3.8 ||
+        Math.abs(nextX) > 108;
+      if (Math.abs(nextZ - riverZ) < 5.2 && !onBridge) {
         nextZ = this.stats.z;
       }
     }

@@ -1,8 +1,20 @@
 import * as THREE from 'three';
 import type { AssetManager } from './AssetManager';
 import { ASH_ECHOES, WORLD_LORE_NOTES } from './loreData';
-import { computeNpcSchedule, getGroundHeight, WAYSTONES } from './rules';
-import type { CompanionId, EnemyInstance, WeatherType, WorldInteractable } from './types';
+import {
+  computeNpcSchedule,
+  getActorQuestIndicatorState,
+  getGroundHeight,
+  WAYSTONES,
+} from './rules';
+import type {
+  CompanionId,
+  EnemyInstance,
+  HunterContract,
+  Quest,
+  WeatherType,
+  WorldInteractable,
+} from './types';
 
 export class WorldSystem {
   public interactables: WorldInteractable[] = [];
@@ -12,10 +24,61 @@ export class WorldSystem {
   private lastAnvilStrikeTime = 0;
   private guardAttackCooldowns: Map<string, number> = new Map();
 
-  constructor(scene: THREE.Scene, assetManager: AssetManager) {
+  private colliderMeshes: THREE.Object3D[] = [];
+  private surfaceRaycaster = new THREE.Raycaster();
+
+  constructor(
+    scene: THREE.Scene,
+    assetManager: AssetManager,
+    colliderMeshes: THREE.Object3D[] = []
+  ) {
     this.scene = scene;
     this.assetManager = assetManager;
+    this.colliderMeshes = colliderMeshes;
     this.buildWorldInteractables();
+    this.snapInteractablesToSurface(this.colliderMeshes);
+  }
+
+  public getSurfaceHeightAt(x: number, z: number): number {
+    const baseGround = getGroundHeight(x, z);
+    if (!this.colliderMeshes || this.colliderMeshes.length === 0) {
+      return baseGround;
+    }
+    this.surfaceRaycaster.set(
+      new THREE.Vector3(x, baseGround + 1.35, z),
+      new THREE.Vector3(0, -1, 0)
+    );
+    this.surfaceRaycaster.near = 0;
+    this.surfaceRaycaster.far = 3.5;
+    const hits = this.surfaceRaycaster.intersectObjects(this.colliderMeshes, false);
+    let bestY = baseGround;
+    for (const hit of hits) {
+      if (hit.point.y >= baseGround - 0.35 && hit.point.y <= baseGround + 0.75) {
+        if (hit.point.y > bestY) {
+          bestY = hit.point.y;
+        }
+      }
+    }
+    return bestY;
+  }
+
+  public snapInteractablesToSurface(colliderMeshes: THREE.Object3D[] = this.colliderMeshes): void {
+    this.colliderMeshes = colliderMeshes;
+    this.scene.updateMatrixWorld(true);
+    for (const item of this.interactables) {
+      const surfaceY = this.getSurfaceHeightAt(item.x, item.z);
+      item.y = surfaceY;
+      const mesh = this.meshes.get(item.id);
+      if (mesh) {
+        if (item.type === 'clue' || item.type === 'signpost') {
+          mesh.position.set(item.x, item.y + 1.1, item.z);
+        } else if (item.type === 'herb') {
+          mesh.position.set(item.x, item.y + 0.3, item.z);
+        } else {
+          mesh.position.set(item.x, item.y, item.z);
+        }
+      }
+    }
   }
 
   private buildWorldInteractables(): void {
@@ -104,15 +167,15 @@ export class WorldSystem {
       name: 'Крестьянин Мирон',
       roleOrSubtitle: 'Житель Вороньей Пади · Земледелец',
       promptText: 'Поговорить с Крестьянином Мироном',
-      x: -14,
-      z: 18,
+      x: -8.5,
+      z: 16.5,
       radius: 3.2,
       interacted: false,
       repeatable: true,
       dialogueRootId: 'peasant_root',
       npcScheduleRole: 'farmer',
-      homeX: -14,
-      homeZ: 18,
+      homeX: -8.5,
+      homeZ: 16.5,
     });
 
     add({
@@ -121,15 +184,15 @@ export class WorldSystem {
       name: 'Лесоруб Степан',
       roleOrSubtitle: 'Житель Вороньей Пади · Дровосек',
       promptText: 'Поговорить с Лесорубом Степаном',
-      x: 17,
-      z: -12,
+      x: 15.5,
+      z: -17.5,
       radius: 3.2,
       interacted: false,
       repeatable: true,
       dialogueRootId: 'peasant_root',
       npcScheduleRole: 'woodcutter',
-      homeX: 17,
-      homeZ: -12,
+      homeX: 15.5,
+      homeZ: -17.5,
     });
 
     add({
@@ -138,15 +201,15 @@ export class WorldSystem {
       name: 'Водонос Дарья',
       roleOrSubtitle: 'Жительница Вороньей Пади',
       promptText: 'Поговорить с Дарьей',
-      x: -12,
-      z: -9,
+      x: -9.5,
+      z: -5.5,
       radius: 3.2,
       interacted: false,
       repeatable: true,
       dialogueRootId: 'peasant_root',
       npcScheduleRole: 'water_carrier',
-      homeX: -12,
-      homeZ: -9,
+      homeX: -9.5,
+      homeZ: -5.5,
     });
 
     add({
@@ -173,15 +236,15 @@ export class WorldSystem {
       name: 'Стражник Рольф',
       roleOrSubtitle: 'Дружина Вороньей Пади · Южный дозор',
       promptText: 'Поговорить со Стражником Рольфом',
-      x: 9,
-      z: 16,
+      x: 4.5,
+      z: 16.5,
       radius: 3.2,
       interacted: false,
       repeatable: true,
       dialogueRootId: 'guard_root',
       npcScheduleRole: 'guard',
-      homeX: 9,
-      homeZ: 16,
+      homeX: 4.5,
+      homeZ: 16.5,
       isArmedDefender: true,
     });
 
@@ -323,8 +386,8 @@ export class WorldSystem {
       name: 'Хельга (Жена кузнеца Торна)',
       roleOrSubtitle: 'Квест «Кровь на колокольне» · Тайна Ночного Голода',
       promptText: 'Допросить Хельгу и вынести вердикт',
-      x: 11.5,
-      z: 8.2,
+      x: 10.5,
+      z: 9.8,
       radius: 3.6,
       interacted: false,
       repeatable: true,
@@ -494,8 +557,8 @@ export class WorldSystem {
       name: 'Разгромленная повозка охотников',
       roleOrSubtitle: 'Место нападения',
       promptText: 'Осмотреть место засады',
-      x: -33,
-      z: 17,
+      x: -31.8,
+      z: 16.5,
       radius: 4.0,
       interacted: false,
       repeatable: true,
@@ -543,7 +606,7 @@ export class WorldSystem {
       roleOrSubtitle: 'Сюжетный выбор',
       promptText: 'Решить судьбу Проклятого Артефакта',
       x: -65,
-      z: -55,
+      z: -52.8,
       radius: 4.2,
       interacted: false,
       repeatable: true,
@@ -571,8 +634,8 @@ export class WorldSystem {
       type: 'chest',
       name: 'Сундук стражи',
       promptText: 'Открыть сундук',
-      x: -11,
-      z: 14,
+      x: -9.5,
+      z: 12.5,
       radius: 2.8,
       interacted: false,
       repeatable: false,
@@ -725,7 +788,7 @@ export class WorldSystem {
       roleOrSubtitle: 'Улика контракта «Невеста у колодца» (3/3)',
       promptText: 'Прикоснуться к свадебной фате',
       x: 42,
-      z: 21,
+      z: 19.2,
       radius: 4.0,
       interacted: false,
       repeatable: false,
@@ -786,8 +849,8 @@ export class WorldSystem {
       name: 'Гнездо чудовищ: Логово трупоедов',
       roleOrSubtitle: 'Точка интереса (Гнездо монстров)',
       promptText: 'Уничтожить гнездо чудовищ знаком «Пламя»',
-      x: -26,
-      z: -18,
+      x: -40,
+      z: -20,
       radius: 3.8,
       interacted: false,
       repeatable: false,
@@ -1071,7 +1134,7 @@ export class WorldSystem {
       interacted: false,
       repeatable: false,
       questId: 'quest_drowned_path',
-      questStageId: 'q5_clear_ferry',
+      questStageId: 'q5_repair_ferry',
       loreText: 'Пламя сжигает ядовитые плети! Паромная гать на север открыта.',
     });
     add({
@@ -1152,8 +1215,8 @@ export class WorldSystem {
       name: 'Брошенный сундук обоза у клеток висельников',
       roleOrSubtitle: 'Точка интереса · Тракт Висельников',
       promptText: 'Обыскать окованный сундук обоза',
-      x: -22,
-      z: -128,
+      x: -14,
+      z: -129,
       radius: 3.4,
       interacted: false,
       repeatable: false,
@@ -1204,7 +1267,7 @@ export class WorldSystem {
       interacted: false,
       repeatable: false,
       questId: 'quest_mountain_blood',
-      questStageId: 'q6_repair_lift',
+      questStageId: 'q6_clear_mine_lift',
       loreText: 'Ударная волна «Импульса» дробит вековой лёд! Подъёмник в нижний штрек запущен.',
     });
     add({
@@ -1352,7 +1415,7 @@ export class WorldSystem {
       interacted: false,
       repeatable: false,
       questId: 'quest_ash_brotherhood',
-      questStageId: 'q7_three_seals_trial',
+      questStageId: 'q7_trial_three_seals',
       loreText: 'Три рунные печати вспыхивают янтарным огнём! Врата во Внутренний двор Грандмастера Веспера отворены.',
     });
     add({
@@ -1401,7 +1464,7 @@ export class WorldSystem {
       name: 'Алхимический ларец мутагенов Братства',
       roleOrSubtitle: 'Точка интереса · Восточная лаборатория Бастиона',
       promptText: 'Открыть ларец алхимической лаборатории',
-      x: 37,
+      x: 34.2,
       z: -375,
       radius: 3.6,
       interacted: false,
@@ -1520,7 +1583,491 @@ export class WorldSystem {
     });
 
     // =========================================================================
-    // 4 ПРИЗРАЧНЫЕ СЦЕНЫ «ОТГОЛОСКИ ПЕПЛА» (ЧУТЬЁ ЗОЛЬНИКА [V] + [E])
+    // РАСШИРЕННОЕ НАСЕЛЕНИЕ СУЩЕСТВУЮЩИХ БИОМОВ (ВОРОНЬЯ ПАДЬ, ЛЕС, ПОГОСТ, ТОПИ, ПЕРЕВАЛ, БАСТИОН)
+    // =========================================================================
+    add({
+      id: 'npc_village_miller',
+      type: 'npc',
+      name: 'Мельник Тихон',
+      roleOrSubtitle: 'Хозяин ветряной мельницы Вороньей Пади',
+      promptText: 'Поговорить с Мельником Тихоном',
+      x: 18.5,
+      z: -9.5,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'miller_root',
+      npcScheduleRole: 'farmer',
+      homeX: 18.5,
+      homeZ: -9.5,
+    });
+    add({
+      id: 'npc_village_miller_apprentice',
+      type: 'npc',
+      name: 'Подмастерье мельника Яромир',
+      roleOrSubtitle: 'Зерновой амбар Вороньей Пади',
+      promptText: 'Поговорить с подмастерье Яромиром',
+      x: 18.5,
+      z: -14.5,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_farmer_root',
+      npcScheduleRole: 'farmer',
+      homeX: 18.5,
+      homeZ: -14.5,
+    });
+    add({
+      id: 'npc_guard_captain',
+      type: 'npc',
+      name: 'Сотник Родерик',
+      roleOrSubtitle: 'Начальник караула и южной заставы',
+      promptText: 'Поговорить с Сотником Родериком',
+      x: -3,
+      z: 24,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: -3,
+      homeZ: 24,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_guard_west_bridge',
+      type: 'npc',
+      name: 'Страж западного моста Гарольд',
+      roleOrSubtitle: 'Охрана тракта к гавани Сольхейм',
+      promptText: 'Поговорить со стражем западного моста',
+      x: -50,
+      z: 28,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: -50,
+      homeZ: 28,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_guard_east_bridge',
+      type: 'npc',
+      name: 'Страж восточного моста Маркус',
+      roleOrSubtitle: 'Охрана тракта к Лазурному Монастырю',
+      promptText: 'Поговорить со стражем восточного моста',
+      x: 50,
+      z: 28,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: 50,
+      homeZ: 28,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_forest_ranger',
+      type: 'npc',
+      name: 'Ловчий Берен',
+      roleOrSubtitle: 'Старейший егерь Лесной Заставы',
+      promptText: 'Поговорить с Ловчим Береном (Отдых и слухи леса)',
+      x: -54,
+      z: 19,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'forest_ranger_root',
+      npcScheduleRole: 'woodcutter',
+      homeX: -54,
+      homeZ: 19,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_forest_sawyer',
+      type: 'npc',
+      name: 'Пильщик Корней',
+      roleOrSubtitle: 'Лесопильня у западного ручья',
+      promptText: 'Поговорить с пильщиком Корнеем',
+      x: -68,
+      z: -11,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_woodcutter_root',
+      npcScheduleRole: 'woodcutter',
+      homeX: -68,
+      homeZ: -11,
+    });
+    add({
+      id: 'npc_cemetery_quartermaster',
+      type: 'npc',
+      name: 'Интендант Ордена Кассиан',
+      roleOrSubtitle: 'Снабженец полевого лагеря Алого Солнца',
+      promptText: 'Поговорить с интендантом Кассианом (Лавка припасов)',
+      x: -16,
+      z: 62,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'merchant_root',
+      npcScheduleRole: 'merchant',
+      homeX: -16,
+      homeZ: 62,
+    });
+    add({
+      id: 'npc_swamp_watcher',
+      type: 'npc',
+      name: 'Дозорный гатей Варг',
+      roleOrSubtitle: 'Смотритель сигнальной вышки Топей',
+      promptText: 'Поговорить с дозорным Варгом',
+      x: 14,
+      z: -146,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: 14,
+      homeZ: -146,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_pass_smelter',
+      type: 'npc',
+      name: 'Плавильщик Дорн',
+      roleOrSubtitle: 'Мастер горной плавильни Среброзубого Перевала',
+      promptText: 'Поговорить с Плавильщиком Дорном (Кузня и припасы)',
+      x: 17.5,
+      z: -256,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'pass_smelter_root',
+      npcScheduleRole: 'blacksmith',
+      homeX: 17.5,
+      homeZ: -256,
+      isArmedDefender: true,
+    });
+
+    // =========================================================================
+    // НОВЫЙ БИОМ I: ЗАТОНУВШИЙ ПОРТ СОЛЬХЕЙМ И МАЯК БЕЗДНЫ (ЗАПАД, x < -105)
+    // =========================================================================
+    add({
+      id: 'npc_solheim_keeper',
+      type: 'npc',
+      name: 'Смотритель маяка Хендрик',
+      roleOrSubtitle: 'Хранитель Маяка Бездны · Гавань Сольхейм',
+      promptText: 'Поговорить со Смотрителем Хендриком [Квест гавани]',
+      x: -152,
+      z: -8,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'solheim_keeper_root',
+      npcScheduleRole: 'elder',
+      homeX: -152,
+      homeZ: -8,
+    });
+    add({
+      id: 'npc_solheim_smuggler',
+      type: 'npc',
+      name: 'Капитан Корсар Вейл',
+      roleOrSubtitle: 'Контрабандист и вольный шкипер Сольхейма',
+      promptText: 'Поговорить с Капитаном Вейлом (Чёрный рынок и кости)',
+      x: -132,
+      z: 9,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'solheim_smuggler_root',
+      npcScheduleRole: 'fence',
+      homeX: -132,
+      homeZ: 9,
+    });
+    add({
+      id: 'npc_solheim_fisherman',
+      type: 'npc',
+      name: 'Старый гарпунщик Олаф',
+      roleOrSubtitle: 'Рыбацкий причал Сольхейма',
+      promptText: 'Поговорить с гарпунщиком Олафом',
+      x: -158,
+      z: 4,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'peasant_farmer_root',
+      npcScheduleRole: 'farmer',
+      homeX: -158,
+      homeZ: 4,
+    });
+    add({
+      id: 'npc_solheim_guard',
+      type: 'npc',
+      name: 'Береговой страж Сольхейма',
+      roleOrSubtitle: 'Охрана каменного пирса и таможни',
+      promptText: 'Поговорить с береговым стражем',
+      x: -136,
+      z: 0,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: -136,
+      homeZ: 0,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'campfire_solheim_port',
+      type: 'campfire',
+      name: 'Портовый костёр у Маяка Сольхейма',
+      roleOrSubtitle: 'Отдых, алхимия и смена времени суток',
+      promptText: 'Медитировать у костра (Восстановить ОЗ, снять токсичность)',
+      x: -148,
+      z: -2,
+      radius: 3.0,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'clue_solheim_amber_lens',
+      type: 'clue',
+      name: 'Звёздная Янтарная Линза Маяка',
+      roleOrSubtitle: 'Квест «Маяк Затонувшей Гавани» · Нос затонувшего флагмана',
+      promptText: 'Забрать Звёздную Янтарную Линзу для Маяка Сольхейма [E]',
+      x: -162,
+      z: 18,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_sunken_lighthouse',
+      questStageId: 'q_port_find_amber_lens',
+      loreText:
+        'Вы извлекаете из обломков капитанского мостика массивную линзу из Звёздного Янтаря, внутри которой теплится искра знака Игнис.',
+    });
+    add({
+      id: 'poi_solheim_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Морской Обелиск Прилива',
+      roleOrSubtitle: 'Древний рунический обелиск Сольхейма',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: -166,
+      z: -24,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_solheim_admiral',
+      type: 'chest',
+      name: 'Казначейский сундук адмирала Ворона',
+      roleOrSubtitle: 'Сокровище Затонувшего Порта Сольхейм',
+      promptText: 'Открыть адмиральский сундук с метеоритным серебром',
+      x: -160,
+      z: 21,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 320,
+      lootItems: [
+        { itemId: 'black_ore', count: 2 },
+        { itemId: 'rune_frost', count: 1 },
+        { itemId: 'potion_thunderbolt', count: 2 },
+      ],
+    });
+
+    // =========================================================================
+    // НОВЫЙ БИОМ II: ЛАЗУРНЫЙ МОНАСТЫРЬ СОЛНЕЧНЫХ КЛЯТВ (ВОСТОК, x > 105)
+    // =========================================================================
+    add({
+      id: 'npc_monastery_abbot',
+      type: 'npc',
+      name: 'Аббат Каэлум',
+      roleOrSubtitle: 'Настоятель Лазурного Монастыря и Главный Звездочёт',
+      promptText: 'Поговорить с Аббатом Каэлумом [Квест Монастыря]',
+      x: 152,
+      z: -15,
+      radius: 3.5,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'monastery_abbot_root',
+      npcScheduleRole: 'elder',
+      homeX: 152,
+      homeZ: -15,
+    });
+    add({
+      id: 'npc_monastery_chronicler',
+      type: 'npc',
+      name: 'Сестра Аурелия',
+      roleOrSubtitle: 'Хранительница Скриптория и Аптекарского Сада',
+      promptText: 'Поговорить с Сестрой Аурелией (Монастырская лавка и исцеление)',
+      x: 148,
+      z: -4,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'monastery_chronicler_root',
+      npcScheduleRole: 'herbalist',
+      homeX: 148,
+      homeZ: -4,
+    });
+    add({
+      id: 'npc_monastery_paladin',
+      type: 'npc',
+      name: 'Рыцарь-хранитель Солярис',
+      roleOrSubtitle: 'Страж врат Лазурного Монастыря',
+      promptText: 'Поговорить с рыцарем-хранителем Солярисом',
+      x: 134,
+      z: -15,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'guard_captain_root',
+      npcScheduleRole: 'torch_guard',
+      homeX: 134,
+      homeZ: -15,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'clue_monastery_astrolabe',
+      type: 'clue',
+      name: 'Большая Астролябия Предтеч',
+      roleOrSubtitle: 'Квест «Хроники Солнечных Клятв» · Купол Обсерватории',
+      promptText: 'Сфокусировать зеркала Большой Астролябии на Северном Кратере [E]',
+      x: 171,
+      z: -15,
+      radius: 4.4,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_monastery_chronicles',
+      questStageId: 'q_mon_align_astrolabe',
+      loreText:
+        'Бронзовые кольца Большой Астролябии приходят в движение! Луч лазурного света указывает прямо за северный край Кратера Затмения — в Долину Звёздного Пепла.',
+    });
+    add({
+      id: 'poi_monastery_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Солнечный Обелиск Хронистов',
+      roleOrSubtitle: 'Древний рунический обелиск Монастыря',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: 164,
+      z: -32,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_monastery_religuary',
+      type: 'chest',
+      name: 'Реликварий Первых Звездочётов',
+      roleOrSubtitle: 'Сокровище Лазурного Монастыря',
+      promptText: 'Открыть золочёный ларец Скриптория',
+      x: 168,
+      z: 4,
+      radius: 3.6,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 350,
+      lootItems: [
+        { itemId: 'rune_fire', count: 1 },
+        { itemId: 'void_dust', count: 2 },
+        { itemId: 'potion_swallow', count: 2 },
+      ],
+    });
+
+    // =========================================================================
+    // НОВЫЙ БИОМ III (АКТ III): ДОЛИНА ЗВЁЗДНОГО ПЕПЛА И КУЗНИЦА ПРЕДТЕЧ (z < -550)
+    // =========================================================================
+    add({
+      id: 'npc_starfall_herald',
+      type: 'npc',
+      name: 'Хранитель Звёздного Горна Эландр',
+      roleOrSubtitle: 'Акт III · Последний Страж Кузницы Предтеч',
+      promptText: 'Поговорить с Хранителем Эландром [Акт III: Кузница Предтеч]',
+      x: 0,
+      z: -598,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'starfall_herald_root',
+      npcScheduleRole: 'elder',
+      homeX: 0,
+      homeZ: -598,
+      isArmedDefender: true,
+    });
+    add({
+      id: 'campfire_starfall_forge',
+      type: 'campfire',
+      name: 'Астральная жаровня у врат Кузницы Предтеч',
+      roleOrSubtitle: 'Отдых, алхимия и подготовка к битве с Архонтом',
+      promptText: 'Медитировать у жаровни Предтеч (Восстановить ОЗ, снять токсичность)',
+      x: -8,
+      z: -598,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'shrine_starfall_anvil',
+      type: 'shrine',
+      name: 'Звёздная Наковальня Предтеч (Акт III)',
+      roleOrSubtitle: 'Сердце Астральной Кузницы · Судьба Первой Короны',
+      promptText: 'Прикоснуться к Звёздной Наковальне Предтеч [E]',
+      x: 0,
+      z: -648,
+      radius: 4.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'starfall_anvil_root',
+    });
+    add({
+      id: 'poi_starfall_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Монолит Падшей Звезды',
+      roleOrSubtitle: 'Первородный обелиск Предтеч',
+      promptText: 'Почерпнуть мощь из Места Силы (+1 Очко Навыков и +25% к Знакам)',
+      x: -36,
+      z: -624,
+      radius: 4.0,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_starfall_precursor',
+      type: 'chest',
+      name: 'Звёздный Ковчег Первого Короля Альдрика',
+      roleOrSubtitle: 'Сокровище Долины Звёздного Пепла (Акт III)',
+      promptText: 'Открыть Звёздный Ковчег Предтеч',
+      x: 36,
+      z: -624,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 550,
+      lootItems: [
+        { itemId: 'black_ore', count: 4 },
+        { itemId: 'void_dust', count: 4 },
+        { itemId: 'rune_void_sup', count: 1 },
+      ],
+    });
+
+    // =========================================================================
+    // ПРИЗРАЧНЫЕ СЦЕНЫ «ОТГОЛОСКИ ПЕПЛА» (ЧУТЬЁ ЗОЛЬНИКА [V] + [E])
     // =========================================================================
     for (const echo of ASH_ECHOES) {
       add({
@@ -1541,7 +2088,7 @@ export class WorldSystem {
     }
 
     // =========================================================================
-    // 22 ИНТЕРАКТИВНЫХ ЗАПИСОК, ДНЕВНИКОВ И ФОЛИАНТОВ ВАЛЬДМАРКА (КОДЕКС [L])
+    // 28 ИНТЕРАКТИВНЫХ ЗАПИСОК, ДНЕВНИКОВ И ФОЛИАНТОВ ВАЛЬДМАРКА (КОДЕКС [L])
     // =========================================================================
     for (const note of WORLD_LORE_NOTES) {
       add({
@@ -1563,15 +2110,15 @@ export class WorldSystem {
 
   private spawnVisualForInteractable(item: WorldInteractable): void {
     if (item.type === 'npc') {
-      const role = item.id.includes('elder')
+      const role = item.id.includes('elder') || item.id.includes('abbot') || item.id.includes('keeper') || item.id.includes('herald')
         ? 'elder'
-        : item.id.includes('blacksmith')
+        : item.id.includes('blacksmith') || item.id.includes('smelter')
         ? 'blacksmith'
         : item.id.includes('caravan')
         ? 'caravan'
-        : item.id.includes('merchant')
+        : item.id.includes('merchant') || item.id.includes('quartermaster')
         ? 'merchant'
-        : item.id.includes('inquisitor') || item.id.includes('order_captain')
+        : item.id.includes('inquisitor') || item.id.includes('order_captain') || item.id.includes('paladin')
         ? 'inquisitor'
         : item.id.includes('charon') || item.id.includes('ghoul_elder')
         ? 'charon'
@@ -1581,11 +2128,11 @@ export class WorldSystem {
         ? 'kael'
         : item.id.includes('vane')
         ? 'elder'
-        : item.id.includes('guard')
+        : item.id.includes('guard') || item.id.includes('captain') || item.id.includes('watcher')
         ? 'guard'
         : item.id.includes('bard')
         ? 'bard'
-        : item.id.includes('fence')
+        : item.id.includes('fence') || item.id.includes('smuggler')
         ? 'fence'
         : item.id.includes('lyra')
         ? 'lyra'
@@ -1597,6 +2144,9 @@ export class WorldSystem {
         ? 'peasant'
         : 'herbalist';
       const npcMesh = this.assetManager.createNPCModel(role);
+      const qInd = this.assetManager.createQuestIndicatorGroup();
+      qInd.position.set(0, 2.45, 0);
+      npcMesh.add(qInd);
       npcMesh.position.set(item.x, item.y, item.z);
       npcMesh.lookAt(0, item.y, item.z + 4);
       this.scene.add(npcMesh);
@@ -1676,6 +2226,11 @@ export class WorldSystem {
       orb.position.y = 1.65;
       orb.name = 'poiBeacon';
       shrineGroup.add(pedestal, orb);
+      if (item.type === 'shrine') {
+        const qInd = this.assetManager.createQuestIndicatorGroup();
+        qInd.position.set(0, 2.38, 0);
+        shrineGroup.add(qInd);
+      }
       shrineGroup.position.set(item.x, item.y, item.z);
       this.scene.add(shrineGroup);
       this.meshes.set(item.id, shrineGroup);
@@ -1704,7 +2259,9 @@ export class WorldSystem {
         boardGroup.add(scroll);
       }
 
-      boardGroup.add(postL, postR, panel, roof);
+      const qInd = this.assetManager.createQuestIndicatorGroup();
+      qInd.position.set(0, 2.82, 0);
+      boardGroup.add(postL, postR, panel, roof, qInd);
       boardGroup.position.set(item.x, item.y, item.z);
       this.scene.add(boardGroup);
       this.meshes.set(item.id, boardGroup);
@@ -1996,7 +2553,7 @@ export class WorldSystem {
     goldAmount: number;
     lootTable: string[];
   }): WorldInteractable {
-    const y = getGroundHeight(opts.x, opts.z);
+    const y = this.getSurfaceHeightAt(opts.x, opts.z);
     const pouch: WorldInteractable = {
       id: `loot_pouch_${opts.enemyId}_${Date.now()}`,
       type: 'loot',
@@ -2072,8 +2629,8 @@ export class WorldSystem {
       );
       candle.position.set(0, 0.22, 0.25);
       graveGroup.add(postV, postH, candle);
-      const gy = getGroundHeight(11.5, 8.2);
-      graveGroup.position.set(11.5, gy, 8.2);
+      const gy = this.getSurfaceHeightAt(10.5, 9.8);
+      graveGroup.position.set(10.5, gy, 9.8);
       this.scene.add(graveGroup);
     } else if (choiceId === 'belltower_cleanse_ritual') {
       const helga = this.interactables.find((i) => i.id === 'npc_belltower_helga');
@@ -2208,6 +2765,33 @@ export class WorldSystem {
     return closest;
   }
 
+  public syncQuestIndicators(
+    quests: Quest[],
+    contracts: HunterContract[],
+    elapsed = 0
+  ): void {
+    for (const item of this.interactables) {
+      if (item.type !== 'npc' && item.type !== 'notice_board' && item.type !== 'shrine') {
+        continue;
+      }
+      const mesh = this.meshes.get(item.id);
+      if (!mesh) continue;
+      const qRoot = mesh.getObjectByName('questIndicatorRoot');
+      if (!qRoot) continue;
+      const ex = qRoot.getObjectByName('questExclamation');
+      const qu = qRoot.getObjectByName('questQuestion');
+      const state = getActorQuestIndicatorState(item.id, quests, contracts);
+      if (ex) ex.visible = state === 'exclamation';
+      if (qu) qu.visible = state === 'question';
+      if (state !== 'none') {
+        const baseY =
+          item.type === 'notice_board' ? 2.82 : item.type === 'shrine' ? 2.38 : 2.45;
+        qRoot.position.y = baseY + Math.sin(elapsed * 3.2 + item.x * 0.5) * 0.12;
+        qRoot.rotation.y = elapsed * 2.1;
+      }
+    }
+  }
+
   public update(
     elapsed: number,
     playerX: number,
@@ -2221,11 +2805,16 @@ export class WorldSystem {
       enemies: EnemyInstance[];
       activeCompanionId: CompanionId | null;
       vesperSpared: boolean;
+      quests?: Quest[];
+      contracts?: HunterContract[];
       onAnvilStrike?: (distanceRatio: number) => void;
       onGuardAttackEnemy?: (guardName: string, enemy: EnemyInstance, damage: number) => void;
     }
   ): WorldInteractable | null {
     const dt = livingWorldOpts?.dt ?? 0.016;
+    if (livingWorldOpts?.quests && livingWorldOpts?.contracts) {
+      this.syncQuestIndicators(livingWorldOpts.quests, livingWorldOpts.contracts, elapsed);
+    }
 
     for (const item of this.interactables) {
       if (item.isPOI && !item.discovered) {
@@ -2333,11 +2922,38 @@ export class WorldSystem {
         const rightArm = mesh.getObjectByName('npcRightArm');
         const head = mesh.getObjectByName('npcHead');
 
-        if (distToTarget > 0.18) {
+        const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
+        const isConversingOrGreeting =
+          dPlayer < 3.6 &&
+          schedule.state !== 'PANIC_FLEE' &&
+          schedule.state !== 'COMBAT_DEFEND';
+
+        // Contextual awareness label for smarter NPC immersion
+        if (isConversingOrGreeting) {
+          const isNightNow = livingWorldOpts.timeOfDay >= 20 || livingWorldOpts.timeOfDay < 5.5;
+          const contextNote =
+            livingWorldOpts.weather === 'rain'
+              ? 'Укрывается от непогоды · Готов к беседе'
+              : isNightNow
+              ? 'Настороже в ночной тьме · Готов к беседе'
+              : schedule.activityLabel;
+          item.promptText = `Поговорить с ${shortName} [${contextNote}]`;
+        }
+
+        if (dPlayer < 1.3 && schedule.state !== 'COMBAT_DEFEND') {
+          // Politely step aside if standing too close to the player
+          const awayX = item.x - playerX;
+          const awayZ = item.z - playerZ;
+          const awayDist = Math.max(0.01, Math.hypot(awayX, awayZ));
+          item.x += (awayX / awayDist) * 1.5 * livingWorldOpts.dt;
+          item.z += (awayZ / awayDist) * 1.5 * livingWorldOpts.dt;
+          item.y = this.getSurfaceHeightAt(item.x, item.z);
+          mesh.position.set(item.x, item.y, item.z);
+        } else if (distToTarget > 0.18 && !isConversingOrGreeting) {
           const step = Math.min(distToTarget, moveSpeed * livingWorldOpts.dt);
           item.x += (dx / distToTarget) * step;
           item.z += (dz / distToTarget) * step;
-          item.y = getGroundHeight(item.x, item.z);
+          item.y = this.getSurfaceHeightAt(item.x, item.z);
           mesh.position.set(item.x, item.y, item.z);
           mesh.rotation.y = Math.atan2(dx, dz);
           const stride = Math.sin(elapsed * 8.5);
@@ -2352,8 +2968,7 @@ export class WorldSystem {
           if (rightArm) rightArm.rotation.x = stride * 0.36;
           if (head) head.rotation.y = THREE.MathUtils.damp(head.rotation.y, 0, 8, dt);
         } else {
-          const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
-          if (dPlayer < 6.0) {
+          if (dPlayer < 6.8) {
             mesh.lookAt(playerX, item.y, playerZ);
             if (head) {
               head.rotation.y = Math.sin(elapsed * 1.5) * 0.08;
@@ -2375,9 +2990,13 @@ export class WorldSystem {
             );
           }
           if (rightArm) {
+            // Subtle greeting gesture when facing the player up close
+            const greetAngle = isConversingOrGreeting
+              ? -0.35 + Math.sin(elapsed * 3.2) * 0.08
+              : -Math.sin(elapsed * 2.0) * 0.04;
             rightArm.rotation.x = THREE.MathUtils.damp(
               rightArm.rotation.x,
-              -Math.sin(elapsed * 2.0) * 0.04,
+              greetAngle,
               8,
               dt
             );

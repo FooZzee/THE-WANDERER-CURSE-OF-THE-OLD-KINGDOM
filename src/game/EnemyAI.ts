@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import type { AssetManager, CharacterRig } from './AssetManager';
-import { getGroundHeight, resolveSlidingCollision } from './rules';
+import {
+  clampEnemyPositionOutsideSettlements,
+  clampEnemySpawnOutsideSettlements,
+  DEFAULT_MOB_RESPAWN_SECONDS,
+  getGroundHeight,
+  isPointInsideSettlementFence,
+  isRespawnableMob,
+  resolveSlidingCollision,
+} from './rules';
 import type { CollisionCylinder } from './SceneManager';
 import type { CollisionBox, EnemyData, EnemyType } from './types';
 
@@ -67,7 +75,7 @@ export class EnemyAI {
     // =========================================================================
     // 1. ВОЛКИ (Лес и окраины) — быстрые, низкие, атакуют стаей по 2-3 особи, делают рывок при атаке
     // =========================================================================
-    // Стайка №1: Окраины деревни и Забытых земель (3 особи)
+    // Стайка №1: Дальние восточные холмы Забытых земель вдали от ворот деревни (3 особи)
     this.createEnemy({
       id: 'wolf_outskirts_1',
       type: 'wolf',
@@ -78,8 +86,8 @@ export class EnemyAI {
       speed: 5.9,
       detectRadius: 17,
       attackRadius: 3.3,
-      spawnX: 25,
-      spawnZ: -16,
+      spawnX: 43,
+      spawnZ: -28,
       xpReward: 30,
       goldReward: 14,
       lootTable: ['wolf_pelt'],
@@ -96,8 +104,8 @@ export class EnemyAI {
       speed: 6.1,
       detectRadius: 17,
       attackRadius: 3.3,
-      spawnX: 29,
-      spawnZ: -19,
+      spawnX: 47,
+      spawnZ: -31,
       xpReward: 28,
       goldReward: 12,
       lootTable: ['wolf_pelt', 'herb_swallow'],
@@ -114,8 +122,8 @@ export class EnemyAI {
       speed: 6.2,
       detectRadius: 18,
       attackRadius: 3.5,
-      spawnX: 27,
-      spawnZ: -22,
+      spawnX: 45,
+      spawnZ: -35,
       xpReward: 40,
       goldReward: 20,
       lootTable: ['wolf_pelt', 'monster_claw'],
@@ -190,8 +198,8 @@ export class EnemyAI {
       speed: 4.5,
       detectRadius: 15,
       attackRadius: 2.3,
-      spawnX: -14,
-      spawnZ: -20,
+      spawnX: -38,
+      spawnZ: -28,
       xpReward: 40,
       goldReward: 20,
       lootTable: ['monster_claw', 'herb_swallow'],
@@ -207,8 +215,8 @@ export class EnemyAI {
       speed: 4.6,
       detectRadius: 16,
       attackRadius: 2.3,
-      spawnX: -32,
-      spawnZ: 16,
+      spawnX: -35,
+      spawnZ: 18,
       xpReward: 45,
       goldReward: 25,
       lootTable: ['ghoul_blood', 'monster_claw'],
@@ -225,8 +233,8 @@ export class EnemyAI {
       speed: 4.7,
       detectRadius: 16,
       attackRadius: 2.4,
-      spawnX: -36,
-      spawnZ: 20,
+      spawnX: -37,
+      spawnZ: 21,
       xpReward: 55,
       goldReward: 30,
       lootTable: ['ghoul_blood', 'iron_ore'],
@@ -244,7 +252,7 @@ export class EnemyAI {
       detectRadius: 16,
       attackRadius: 2.3,
       spawnX: -34,
-      spawnZ: 22,
+      spawnZ: 23,
       xpReward: 50,
       goldReward: 28,
       lootTable: ['ghoul_blood', 'herb_swallow'],
@@ -445,15 +453,15 @@ export class EnemyAI {
     this.createEnemy({
       id: 'drowned_swamp_stilt',
       type: 'drowned',
-      name: 'Вожак Утопленников Свайного Посёлка',
+      name: 'Вожак Утопленников у Трясинной Гати',
       level: 5,
       hp: 235,
       damage: 29,
       speed: 5.2,
       detectRadius: 20,
       attackRadius: 2.5,
-      spawnX: -48,
-      spawnZ: -152,
+      spawnX: -30,
+      spawnZ: -146,
       xpReward: 110,
       goldReward: 65,
       lootTable: ['ghoul_blood', 'cursed_essence'],
@@ -722,6 +730,201 @@ export class EnemyAI {
       lootTable: ['void_dust', 'king_crown_shard', 'rune_void_sup'],
       questTag: 'q8_avatar',
     });
+
+    // =========================================================================
+    // 10. НОВЫЙ БИОМ I: ЗАТОНУВШИЙ ПОРТ СОЛЬХЕЙМ И МАЯК БЕЗДНЫ (ЗАПАД, x < -105)
+    // =========================================================================
+    this.createEnemy({
+      id: 'solheim_drowned_1',
+      type: 'drowned',
+      name: 'Утопший матрос «Гордости Альдрика»',
+      level: 5,
+      hp: 210,
+      damage: 26,
+      speed: 5.3,
+      detectRadius: 18,
+      attackRadius: 2.5,
+      spawnX: -166,
+      spawnZ: 8,
+      xpReward: 125,
+      goldReward: 65,
+      lootTable: ['ghoul_blood', 'cursed_essence'],
+      packId: 'pack_solheim_pier',
+    });
+    this.createEnemy({
+      id: 'solheim_drowned_2',
+      type: 'drowned',
+      name: 'Боцман Чёрного Прилива',
+      level: 5,
+      hp: 235,
+      damage: 28,
+      speed: 5.4,
+      detectRadius: 18,
+      attackRadius: 2.6,
+      spawnX: -170,
+      spawnZ: 16,
+      xpReward: 135,
+      goldReward: 75,
+      lootTable: ['ghoul_blood', 'iron_ore'],
+      packId: 'pack_solheim_pier',
+    });
+    this.createEnemy({
+      id: 'solheim_corsair_1',
+      type: 'skeleton',
+      name: 'Проклятый корсар Сольхейма',
+      level: 5,
+      hp: 220,
+      damage: 27,
+      speed: 4.9,
+      detectRadius: 18,
+      attackRadius: 2.6,
+      spawnX: -164,
+      spawnZ: -24,
+      xpReward: 130,
+      goldReward: 70,
+      lootTable: ['iron_ore', 'cursed_essence'],
+    });
+    this.createEnemy({
+      id: 'boss_solheim_siren',
+      type: 'hag',
+      name: 'Сирена Чёрного Прилива (Хранительница Линзы)',
+      level: 6,
+      hp: 460,
+      damage: 36,
+      speed: 4.6,
+      detectRadius: 22,
+      attackRadius: 11.5,
+      spawnX: -175,
+      spawnZ: 12,
+      xpReward: 380,
+      goldReward: 260,
+      lootTable: ['cursed_essence', 'void_dust', 'potion_swallow'],
+      questTag: 'q_port_siren',
+      isContractBoss: true,
+    });
+
+    // =========================================================================
+    // 11. НОВЫЙ БИОМ II: ЛАЗУРНЫЙ МОНАСТЫРЬ СОЛНЕЧНЫХ КЛЯТВ (ВОСТОК, x > 105)
+    // =========================================================================
+    this.createEnemy({
+      id: 'monastery_wraith_1',
+      type: 'frost_wraith',
+      name: 'Призрак Звёздного Архива',
+      level: 6,
+      hp: 260,
+      damage: 32,
+      speed: 4.8,
+      detectRadius: 19,
+      attackRadius: 10.5,
+      spawnX: 174,
+      spawnZ: -30,
+      xpReward: 160,
+      goldReward: 90,
+      lootTable: ['cursed_essence', 'ice_lotus'],
+    });
+    this.createEnemy({
+      id: 'monastery_wraith_2',
+      type: 'frost_wraith',
+      name: 'Тень Расколотого Купола',
+      level: 6,
+      hp: 275,
+      damage: 34,
+      speed: 4.9,
+      detectRadius: 19,
+      attackRadius: 10.5,
+      spawnX: 172,
+      spawnZ: 2,
+      xpReward: 170,
+      goldReward: 95,
+      lootTable: ['cursed_essence', 'void_dust'],
+    });
+    this.createEnemy({
+      id: 'boss_monastery_guardian',
+      type: 'gargoyle',
+      name: 'Осквернённый Страж Обсерватории',
+      level: 7,
+      hp: 580,
+      damage: 42,
+      speed: 4.3,
+      detectRadius: 22,
+      attackRadius: 3.8,
+      spawnX: 176,
+      spawnZ: -15,
+      xpReward: 460,
+      goldReward: 320,
+      lootTable: ['black_ore', 'void_dust', 'rune_fire'],
+      questTag: 'q_mon_guardian',
+      isContractBoss: true,
+    });
+
+    // =========================================================================
+    // 12. НОВЫЙ БИОМ III (АКТ III): ДОЛИНА ЗВЁЗДНОГО ПЕПЛА И КУЗНИЦА ПРЕДТЕЧ (z < -550)
+    // =========================================================================
+    this.createEnemy({
+      id: 'starfall_knight_1',
+      type: 'void_knight',
+      name: 'Астральный Часовой Предтеч',
+      level: 9,
+      hp: 490,
+      damage: 52,
+      speed: 5.0,
+      detectRadius: 22,
+      attackRadius: 3.6,
+      spawnX: -18,
+      spawnZ: -616,
+      xpReward: 290,
+      goldReward: 185,
+      lootTable: ['void_dust', 'black_ore'],
+    });
+    this.createEnemy({
+      id: 'starfall_knight_2',
+      type: 'void_knight',
+      name: 'Страж Звёздного Ковенанта',
+      level: 9,
+      hp: 510,
+      damage: 54,
+      speed: 5.0,
+      detectRadius: 22,
+      attackRadius: 3.6,
+      spawnX: 18,
+      spawnZ: -616,
+      xpReward: 300,
+      goldReward: 195,
+      lootTable: ['void_dust', 'black_ore'],
+    });
+    this.createEnemy({
+      id: 'starfall_golem_1',
+      type: 'troglodyte',
+      name: 'Метеоритный Голем Звёздного Горна',
+      level: 9,
+      hp: 540,
+      damage: 50,
+      speed: 4.2,
+      detectRadius: 20,
+      attackRadius: 3.6,
+      spawnX: -28,
+      spawnZ: -638,
+      xpReward: 310,
+      goldReward: 200,
+      lootTable: ['black_ore', 'iron_ore'],
+    });
+    this.createEnemy({
+      id: 'boss_starfall_archon',
+      type: 'boss',
+      name: 'Архонт Звёздного Пепла (Страж Кузницы Предтеч)',
+      level: 10,
+      hp: 1480,
+      damage: 65,
+      speed: 5.1,
+      detectRadius: 30,
+      attackRadius: 4.4,
+      spawnX: 0,
+      spawnZ: -635,
+      xpReward: 1600,
+      goldReward: 1100,
+      lootTable: ['void_dust', 'black_ore', 'rune_void_sup'],
+      questTag: 'q_star_archon',
+    });
   }
 
   public shatterColossusCrystal(enemyId: string): number {
@@ -901,9 +1104,14 @@ export class EnemyAI {
     astralInvulnerable?: boolean;
     crystalArmorCount?: number;
   }): EnemyData {
+    // Guarantee no enemy ever spawns inside a village or its surrounding safe buffer
+    const safeSpawn = clampEnemySpawnOutsideSettlements(cfg.spawnX, cfg.spawnZ);
+    const spawnX = safeSpawn.x;
+    const spawnZ = safeSpawn.z;
+
     const rig = this.assetManager.createEnemyModel(cfg.type);
-    const y = getGroundHeight(cfg.spawnX, cfg.spawnZ);
-    rig.root.position.set(cfg.spawnX, y, cfg.spawnZ);
+    const y = getGroundHeight(spawnX, spawnZ);
+    rig.root.position.set(spawnX, y, spawnZ);
 
     // Clone materials on enemy meshes so hit flash and boss phase aura affect only this enemy
     rig.root.traverse((obj) => {
@@ -1015,11 +1223,11 @@ export class EnemyAI {
       goldReward: cfg.goldReward,
       lootTable: cfg.lootTable,
       state: 'PATROL',
-      spawnX: cfg.spawnX,
-      spawnZ: cfg.spawnZ,
-      x: cfg.spawnX,
+      spawnX,
+      spawnZ,
+      x: spawnX,
       y,
-      z: cfg.spawnZ,
+      z: spawnZ,
       rotationY: 0,
       stunTimer: 0,
       burnTimer: 0,
@@ -1050,8 +1258,8 @@ export class EnemyAI {
       flurryTickTimer: 0,
       teleportCooldown: 0,
       aoeTelegraphGroup,
-      aoeCenterX: cfg.spawnX,
-      aoeCenterZ: cfg.spawnZ,
+      aoeCenterX: spawnX,
+      aoeCenterZ: spawnZ,
       aoeRadius,
     });
 
@@ -1210,7 +1418,11 @@ export class EnemyAI {
         continue;
       }
 
-      if (p.life <= 0 || p.y < groundH) {
+      if (
+        p.life <= 0 ||
+        p.y < groundH ||
+        isPointInsideSettlementFence(p.x, p.z, 0.2)
+      ) {
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
       }
@@ -1249,6 +1461,42 @@ export class EnemyAI {
           4,
           dt
         );
+
+        // Timed mob respawn system for regular monsters
+        if (isRespawnableMob(d)) {
+          const duration = d.respawnDuration ?? DEFAULT_MOB_RESPAWN_SECONDS;
+          if (typeof d.respawnTimer !== 'number') {
+            d.respawnTimer = duration;
+          } else {
+            d.respawnTimer = Math.max(0, d.respawnTimer - dt);
+          }
+
+          // Hide corpse after 6 seconds on the ground
+          if (d.respawnTimer < duration - 6) {
+            enemy.rig.root.visible = false;
+          }
+
+          // Respawn when timer expires and player is not standing right on top of the spawn point
+          const distToSpawnPoint = Math.hypot(playerX - d.spawnX, playerZ - d.spawnZ);
+          if (d.respawnTimer <= 0 && distToSpawnPoint > 14) {
+            const groundY = getGroundHeight(d.spawnX, d.spawnZ);
+            d.hp = d.maxHp;
+            d.state = 'PATROL';
+            d.isDead = false;
+            d.x = d.spawnX;
+            d.z = d.spawnZ;
+            d.y = groundY;
+            d.burnTimer = 0;
+            d.bleedTimer = 0;
+            d.slowTimer = 0;
+            d.stunTimer = 0;
+            d.confusedTimer = 0;
+            d.respawnTimer = undefined;
+            enemy.rig.root.visible = true;
+            enemy.rig.root.rotation.set(0, 0, 0);
+            enemy.rig.root.position.set(d.x, d.y, d.z);
+          }
+        }
         continue;
       }
 
@@ -1523,8 +1771,11 @@ export class EnemyAI {
         enemy.teleportCooldown = d.type === 'boss_vesper' ? 5.0 : 6.5;
         const angle = Math.random() * Math.PI * 2;
         const teleDist = d.type === 'boss_vesper' ? 4.2 : 7.5 + Math.random() * 2.5;
-        d.x = (d.type === 'boss_vesper' ? aggroX : d.spawnX) + Math.cos(angle) * teleDist;
-        d.z = (d.type === 'boss_vesper' ? aggroZ : d.spawnZ) + Math.sin(angle) * teleDist;
+        const rawTeleX = (d.type === 'boss_vesper' ? aggroX : d.spawnX) + Math.cos(angle) * teleDist;
+        const rawTeleZ = (d.type === 'boss_vesper' ? aggroZ : d.spawnZ) + Math.sin(angle) * teleDist;
+        const clampedTele = clampEnemyPositionOutsideSettlements(rawTeleX, rawTeleZ, 1.3);
+        d.x = clampedTele.x;
+        d.z = clampedTele.z;
         d.y = getGroundHeight(d.x, d.z);
         enemy.rig.root.position.set(d.x, d.y, d.z);
         onCombatEvent?.(
@@ -1607,8 +1858,49 @@ export class EnemyAI {
         const dx = aggroX - d.x;
         const dz = aggroZ - d.z;
         const dist = Math.max(0.01, Math.hypot(dx, dz));
+
+        // Tactical Flanking & Anti-Crowding Separation for smarter Enemy AI
+        let dirX = dx / dist;
+        let dirZ = dz / dist;
+
+        // Pack/agile enemies circle slightly to flank the player from left/right when approaching
+        if (
+          dist > d.attackRadius * 1.15 &&
+          dist < 11.0 &&
+          (d.type === 'wolf' ||
+            d.type === 'ghoul' ||
+            d.type === 'fallen_ash' ||
+            d.type === 'bounty_hunter')
+        ) {
+          const flankSign = enemy.patrolAngle > Math.PI ? 1 : -1;
+          const perpX = -dirZ * flankSign * 0.36;
+          const perpZ = dirX * flankSign * 0.36;
+          dirX += perpX;
+          dirZ += perpZ;
+        }
+
+        // Separation force so enemies don't stack on top of each other
+        for (const other of this.enemies) {
+          if (other === enemy || other.data.state === 'DEAD') continue;
+          const sepX = d.x - other.data.x;
+          const sepZ = d.z - other.data.z;
+          const sepDist = Math.hypot(sepX, sepZ);
+          if (sepDist > 0.01 && sepDist < 1.65) {
+            const push = (1.65 - sepDist) * 0.65;
+            dirX += (sepX / sepDist) * push;
+            dirZ += (sepZ / sepDist) * push;
+          }
+        }
+
+        const norm = Math.max(0.01, Math.hypot(dirX, dirZ));
         const step = d.speed * speedMult * dt;
-        this.moveEnemy(enemy, (dx / dist) * step, (dz / dist) * step, obstacles, collisionBoxes);
+        this.moveEnemy(
+          enemy,
+          (dirX / norm) * step,
+          (dirZ / norm) * step,
+          obstacles,
+          collisionBoxes
+        );
         d.rotationY = Math.atan2(dx, dz);
         this.animateEnemy(enemy, 'run');
       } else if (d.state === 'ATTACK') {
@@ -1680,7 +1972,7 @@ export class EnemyAI {
             this.animateEnemy(enemy, 'idle');
           }
         }
-        // 3. SWAMP HAG, NOONWRAITH, PLAGUE REAPER & FROST WRAITH: Kiting & Magical Projectiles
+        // 3. SWAMP HAG, NOONWRAITH, PLAGUE REAPER & FROST WRAITH: Kiting, Lateral Strafe & Magical Projectiles
         else if (
           d.type === 'hag' ||
           d.type === 'noonwraith' ||
@@ -1688,8 +1980,14 @@ export class EnemyAI {
           d.type === 'frost_wraith'
         ) {
           if (dist < 5.6) {
-            const backStep = d.speed * 0.75 * speedMult * dt;
-            this.moveEnemy(enemy, -(dx / dist) * backStep, -(dz / dist) * backStep, obstacles);
+            const backStep = d.speed * 0.78 * speedMult * dt;
+            this.moveEnemy(enemy, -(dx / dist) * backStep, -(dz / dist) * backStep, obstacles, collisionBoxes);
+            this.animateEnemy(enemy, 'walk');
+          } else if (enemy.attackWindupTimer <= 0) {
+            // Tactical lateral strafe while waiting for spell cooldown
+            const strafeDir = Math.sin(enemy.animTime * 1.4 + enemy.patrolAngle) >= 0 ? 1 : -1;
+            const strafeStep = d.speed * 0.42 * speedMult * dt * strafeDir;
+            this.moveEnemy(enemy, -(dz / dist) * strafeStep, (dx / dist) * strafeStep, obstacles, collisionBoxes);
             this.animateEnemy(enemy, 'walk');
           } else {
             this.animateEnemy(enemy, 'idle');
@@ -1839,9 +2137,12 @@ export class EnemyAI {
       collisionBoxes
     );
 
-    d.x = resolved.x;
-    d.z = resolved.z;
-    d.y = resolved.y;
+    // Prevent mobs from ever crossing inside any fenced settlement (even through open gates)
+    const outsideFence = clampEnemyPositionOutsideSettlements(resolved.x, resolved.z, r + 0.55);
+
+    d.x = outsideFence.x;
+    d.z = outsideFence.z;
+    d.y = outsideFence.clamped ? getGroundHeight(d.x, d.z) : resolved.y;
     enemy.rig.root.position.set(d.x, d.y, d.z);
     enemy.rig.root.rotation.y = d.rotationY;
   }

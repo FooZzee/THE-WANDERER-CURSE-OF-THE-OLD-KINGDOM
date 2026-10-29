@@ -13,6 +13,8 @@ export class DialogueSystem {
           text: 'Я выслежу пропавших охотников и проверю тропу, по которой ушёл Веспер.',
           nextNodeId: 'elder_q1_details',
           action: 'accept_quest_1',
+          conditionQuestId: 'quest_missing_hunters',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_q1_turnin',
@@ -27,6 +29,8 @@ export class DialogueSystem {
           text: 'Расскажи о Ночи Пепельного Затмения, Малакоре и Разрушенной крепости.',
           nextNodeId: 'elder_fortress_lore',
           action: 'start_quest_3',
+          conditionQuestId: 'quest_ancient_king',
+          conditionStatus: 'available',
         },
         {
           id: 'opt_elder_vesper_lore',
@@ -38,6 +42,8 @@ export class DialogueSystem {
           text: '🔍 [Расследование: Кровь на колокольне] «Что за ночные убийства происходят у старой колокольни?»',
           nextNodeId: 'elder_belltower_intro',
           action: 'start_quest_belltower',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStatus: 'available',
         },
         {
           id: 'opt_elder_contracts',
@@ -148,6 +154,8 @@ export class DialogueSystem {
           id: 'opt_smith_interrogate',
           text: '🔍 [Допрос подозреваемого] «На балке колокольни найден обрывок твоего кузнечного передника в крови, Торн.»',
           nextNodeId: 'belltower_suspect_smith',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_smith_dice',
@@ -228,6 +236,8 @@ export class DialogueSystem {
           text: 'Я исследую Проклятое святилище и остановлю ритуал ведьмы Мораны.',
           action: 'start_quest_2',
           nextNodeId: 'herbalist_q2_started',
+          conditionQuestId: 'quest_swamp_whisper',
+          conditionStatus: 'available',
         },
         {
           id: 'opt_herbalist_lore',
@@ -238,6 +248,8 @@ export class DialogueSystem {
           id: 'opt_herb_interrogate',
           text: '🔍 [Допрос подозреваемого] «Жители винят твоего ручного волка в убийствах у колокольни.»',
           nextNodeId: 'belltower_suspect_herbalist',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_heal',
@@ -302,11 +314,15 @@ export class DialogueSystem {
           id: 'opt_destroy_artifact',
           text: '[Уничтожить артефакт] Расколоть кристалл мечом (Чистая руна Света +300 Опыта)',
           action: 'destroy_artifact',
+          conditionQuestId: 'quest_swamp_whisper',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_cleanse_artifact',
           text: '[Снять проклятие и забрать] Подчинить мощь артефакта Печатью Пепла (Амулет Бездны +25% к Знакам)',
           action: 'cleanse_artifact',
+          conditionQuestId: 'quest_swamp_whisper',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_leave_altar',
@@ -326,11 +342,15 @@ export class DialogueSystem {
           id: 'opt_side_order',
           text: '[Поддержать Орден Алого Солнца] Принять Освящённый клинок Ордена и идти на штурм Малакора',
           action: 'side_order',
+          conditionQuestId: 'quest_act2_malakor',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_side_village',
           text: '[Защитить Воронью Падь и Ковен] Отвергнуть фанатиков, принять Рунный клинок Пади и сразить Малакора',
           action: 'side_village',
+          conditionQuestId: 'quest_act2_malakor',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_leave_inquisitor',
@@ -379,6 +399,8 @@ export class DialogueSystem {
           text: 'Я починю переправу через трясину и убью Матерь Трясины, чтобы расчистить путь на Север.',
           action: 'accept_quest_drowned',
           nextNodeId: 'charon_details',
+          conditionQuestId: 'quest_drowned_path',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_charon_lore',
@@ -427,7 +449,7 @@ export class DialogueSystem {
     brom_root: {
       id: 'brom_root',
       speaker: 'Старый Рудокоп Бром',
-      role: 'Последний штейгер Среброзубого Перевала и Мёртвых Шахт',
+      role: 'Последний штейгер Среброзубого Перевала и Мёртвые Шахты',
       text: 'Стой, путник! Здесь даже ветер режет до кости... Зольник? Клянусь предками, я видел твоего наставника Веспера! Он поднимался к Чёрному Бастиону, но за ним своды Мёртвых Шахт обрушились, а в главном карьере восстал исполинский «Кристальный Колосс» из живой Чёрной Руды!',
       options: [
         {
@@ -435,6 +457,8 @@ export class DialogueSystem {
           text: 'Я запущу древний подъёмник, расчищу завал и сокрушу Кристального Колосса.',
           action: 'accept_quest_mountain',
           nextNodeId: 'brom_details',
+          conditionQuestId: 'quest_mountain_blood',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_brom_lore',
@@ -491,6 +515,8 @@ export class DialogueSystem {
           text: 'Я пройду «Испытание Трёх Печатей» и вызову Грандмастера Веспера на дуэль.',
           action: 'accept_quest_bastion',
           nextNodeId: 'kael_details',
+          conditionQuestId: 'quest_ash_brotherhood',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_kael_lore',
@@ -565,16 +591,22 @@ export class DialogueSystem {
           id: 'opt_ending_destroy',
           text: '☀️ [Уничтожить Сердце Пустоты и вернуть Солнце] Расколоть Ядро серебром и Печатью Игнис — навсегда рассеять Затмение ценой угасания всей магии и Тлеющей Крови в мире!',
           action: 'ending_destroy_heart',
+          conditionQuestId: 'quest_dawn_valdmark',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_ending_absorb',
           text: '👑 [Поглотить силу и стать Бессмертным Владыкой] Вобрать Сердце Пустоты в собственную грудь — занять Обсидиановый Трон и железной волей подчинить всех чудовищ Севера!',
           action: 'ending_absorb_power',
+          conditionQuestId: 'quest_dawn_valdmark',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_ending_transfer',
           text: '⚖️ [Передать обузданную мощь Хранителям Вальдмарка] Запечатать Ядро в рунный реликварий и передать его союзникам долины для возрождения Нового Королевства!',
           action: 'ending_faction_transfer',
+          conditionQuestId: 'quest_dawn_valdmark',
+          conditionStageIndex: 2,
         },
       ],
     },
@@ -697,6 +729,8 @@ export class DialogueSystem {
           id: 'opt_bard_interrogate',
           text: '🔍 [Допрос подозреваемого] «Говорят, бродячий артист бродил у колокольни в ночь убийства.»',
           nextNodeId: 'belltower_suspect_bard',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_bard_dice',
@@ -804,6 +838,8 @@ export class DialogueSystem {
           text: '🔍 [Расследование: Кровь на колокольне] «Доложи о ночных убийствах у старой колокольни.»',
           nextNodeId: 'elder_belltower_intro',
           action: 'start_quest_belltower',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStatus: 'available',
         },
         {
           id: 'opt_guard_close',
@@ -867,16 +903,22 @@ export class DialogueSystem {
           id: 'opt_bell_kill_wife',
           text: '⚔️ [Убить Хельгу по закону охотников] «Прости, Хельга. Проклятие зашло слишком далеко.» (Кузнец закроет лавку в трауре)',
           action: 'belltower_kill_wife',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_bell_cleanse_ritual',
           text: '🔥 [Провести опасный ритуал очищения с травницей Марфой] «Я выжгу проклятие своей Тлеющей Кровью и Знаком Игнис!» (-45 ОЗ, Хельга спасена)',
           action: 'belltower_cleanse_ritual',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_bell_blame_outsider',
           text: '🪙 [Скрыть правду за 300 крон и обвинить бродячего артиста] «Запри её в погребе, Торн. Для деревни убийцей станет чужак.» (-25 Репутации)',
           action: 'belltower_blame_outsider',
+          conditionQuestId: 'quest_blood_belltower',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_bell_wait',
@@ -900,11 +942,15 @@ export class DialogueSystem {
           text: '🔍 [Начать расследование «Пир Воронов»] «Я осмотрю пиршественный стол и подвал поместья с Чутьём Охотника [V].»',
           action: 'start_quest_feast_ravens',
           nextNodeId: 'lord_vane_started',
+          conditionQuestId: 'quest_feast_of_ravens',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_feast_confront',
           text: '👁️ [Разоблачить иллюзию] «Твои гости — истлевшие скелеты, Вейн! Ты скармливаешь путников твари в подвале ради иллюзии!»',
           nextNodeId: 'lord_vane_confront',
+          conditionQuestId: 'quest_feast_of_ravens',
+          conditionStageIndex: 3,
         },
         {
           id: 'opt_feast_leave',
@@ -963,16 +1009,22 @@ export class DialogueSystem {
           id: 'opt_mines_start',
           text: '🔍 [Начать расследование] «Сначала я изучу баррикаду Чутьём Охотника [V] и поговорю с их старейшиной внутри.»',
           action: 'start_quest_dead_mines',
+          conditionQuestId: 'quest_dead_mines_oath',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_mines_purge_direct',
           text: '⚔️ [Зачистить шахту для Ордена] «Гуль рано или поздно сорвётся от голода. Выжигаем штрек именем Ордена!» (+340 крон, Шахта под контролем Ордена)',
           action: 'mines_purge_for_order',
+          conditionQuestId: 'quest_dead_mines_oath',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_mines_protect_direct',
           text: '🛡️ [Защитить разумных гулей и атаковать отряд Инквизиции] «Они не тронули ни одного человека! Опустите факелы или умрёте!» (Бой с отрядом Ордена)',
           action: 'mines_protect_ghouls',
+          conditionQuestId: 'quest_dead_mines_oath',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_mines_close',
@@ -991,11 +1043,15 @@ export class DialogueSystem {
           id: 'opt_ghoul_protect',
           text: '🛡️ [Защитить разумных гулей и сразиться с отрядом Инквизиции] «Клянусь Братством Пепла — я не дам Ордену сжечь вашу семью!» (+20 Репутации, Чёрная Руда, Контроль горняков)',
           action: 'mines_protect_ghouls',
+          conditionQuestId: 'quest_dead_mines_oath',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_ghoul_purge',
           text: '⚔️ [Зачистить шахту для Ордена] «Ваша мутация необратима, Торос. Через месяц вы потеряете разум. Я исполню приговор Ордена.» (+340 крон, -20 Репутации)',
           action: 'mines_purge_for_order',
+          conditionQuestId: 'quest_dead_mines_oath',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_ghoul_leave',
@@ -1018,11 +1074,15 @@ export class DialogueSystem {
           id: 'opt_exam_start',
           text: '🔍 [Начать квест «Последний Экзамен Зольника»] «Из десяти мальчиков Испытание переживают трое, Эриан. Я осмотрю реликвариум мутагенов.»',
           action: 'start_quest_ash_exam',
+          conditionQuestId: 'quest_last_ash_exam',
+          conditionStageIndex: 0,
         },
         {
           id: 'opt_exam_begin_ritual',
           text: '⚗️ [Начать диалоговый ритуал «Тлеющей Крови»] «Мутагены собраны. Ложись на каменный стол, Эриан — начинаем дозировку.»',
           nextNodeId: 'ash_exam_ritual_step1',
+          conditionQuestId: 'quest_last_ash_exam',
+          conditionStageIndex: 2,
         },
         {
           id: 'opt_exam_close',
@@ -1089,6 +1149,285 @@ export class DialogueSystem {
         },
       ],
     },
+
+    // =========================================================================
+    // 5. РАСШИРЕННОЕ НАСЕЛЕНИЕ БИОМОВ (МЕЛЬНИК, КАПИТАН СТРАЖИ, ОХОТНИКИ, КУЗНЕЦ ПЕРЕВАЛА)
+    // =========================================================================
+    miller_root: {
+      id: 'miller_root',
+      speaker: 'Мельник Тихон',
+      role: 'Хозяин ветряной мельницы Вороньей Пади',
+      text: 'Жернова крутятся день и ночь, Зольник! Мы кормим не только Воронью Падь, но и отправляем муку монахам в Лазурный Монастырь на восточных скалах. Если пойдёшь на запад к Затонувшему Порту Сольхейм — передай смотрителю Хендрику, что мы ждём соль и рыбий жир!',
+      options: [
+        {
+          id: 'opt_miller_dice',
+          text: 'Сыграем партию в «Кости Судьбы» под шум мельничных крыльев?',
+          action: 'open_dice_poker',
+        },
+        {
+          id: 'opt_miller_close',
+          text: 'Доброго помола, Тихон.',
+          action: 'close',
+        },
+      ],
+    },
+    guard_captain_root: {
+      id: 'guard_captain_root',
+      speaker: 'Сотник Родерик',
+      role: 'Начальник караула и южной заставы Вороньей Пади',
+      text: 'Мы укрепили частокол, поставили две новые сторожевые вышки и починили западный и восточный мосты через реку, Корвус! Теперь караваны ходят и к морской гавани Сольхейм на западе, и к Лазурному Монастырю на востоке. Но ночью у леса всё равно держи серебряный клинок наготове.',
+      options: [
+        {
+          id: 'opt_capt_board',
+          text: 'Показать сводку заказов с Доски объявлений.',
+          action: 'open_notice_board',
+        },
+        {
+          id: 'opt_capt_close',
+          text: 'Несите службу бдительно, сотник.',
+          action: 'close',
+        },
+      ],
+    },
+    forest_ranger_root: {
+      id: 'forest_ranger_root',
+      speaker: 'Ловчий Берен',
+      role: 'Старейший егерь Лесной Заставы',
+      text: 'Мы срубили укреплённую егерскую вышку в самом сердце Старого леса, Зольник. Отсюда видно и древний круг друидов, и тропу на запад к морским утёсам Сольхейма. Если ранен — передохни у нашего костра и возьми целебный отвар.',
+      options: [
+        {
+          id: 'opt_ranger_heal',
+          text: 'Перевязать раны и очистить кровь у егерского костра.',
+          action: 'heal_player',
+        },
+        {
+          id: 'opt_ranger_close',
+          text: 'Удачной охоты, Берен.',
+          action: 'close',
+        },
+      ],
+    },
+    pass_smelter_root: {
+      id: 'pass_smelter_root',
+      speaker: 'Плавильщик Дорн',
+      role: 'Мастер горной плавильни Среброзубого Перевала',
+      text: 'Видишь высокие каменные трубы нашей плавильни у моста? Мы вновь разожгли горны Перевала! Приноси руду — выкую и заточу тебе любой клинок не хуже деревенского кузнеца Торна.',
+      options: [
+        {
+          id: 'opt_smelter_smith',
+          text: 'Открыть горную кузницу (Заточка и Доспехи Школ)',
+          action: 'open_blacksmith',
+        },
+        {
+          id: 'opt_smelter_shop',
+          text: 'Посмотреть припасы горняков (Лавка)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_smelter_close',
+          text: 'До встречи у горна.',
+          action: 'close',
+        },
+      ],
+    },
+
+    // =========================================================================
+    // 6. НОВЫЙ БИОМ I: ЗАТОНУВШИЙ ПОРТ СОЛЬХЕЙМ И МАЯК БЕЗДНЫ (ЗАПАДНОЕ ПОБЕРЕЖЬЕ)
+    // =========================================================================
+    solheim_keeper_root: {
+      id: 'solheim_keeper_root',
+      speaker: 'Смотритель маяка Хендрик',
+      role: 'Хранитель Маяка Бездны · Затонувший Порт Сольхейм',
+      text: 'Слава богам, Зольник из Школы Ворона! Двенадцать лет назад твой учитель Веспер зачаровал наш Маяк Звёздным Янтарём, чтобы Чёрный Прилив не поглотил всю долину. Но вчера ночью Сирена Чёрного Прилива и восставшие моряки с затонувшего флагмана «Гордость Альдрика» похитили Янтарную Линзу! Без огня маяка туман морской бездны затопит берег!',
+      options: [
+        {
+          id: 'opt_port_start',
+          text: '⚓ [Начать квест «Маяк Затонувшей Гавани»] «Я пробьюсь к затонувшему флагману у пирса, убью Сирену и верну Звёздную Линзу.»',
+          action: 'start_quest_sunken_lighthouse',
+          conditionQuestId: 'quest_sunken_lighthouse',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_port_complete',
+          text: '🔥 [Зажечь Маяк Сольхейма] «Сирена Чёрного Прилива мертва, а Звёздная Янтарная Линза возвращена в жаровню маяка!»',
+          action: 'complete_quest_sunken_lighthouse',
+          conditionQuestId: 'quest_sunken_lighthouse',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_port_shop',
+          text: 'Обменять морские трофеи и припасы (Торговля)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_port_dice',
+          text: 'Сыграть партию в «Кости Судьбы» в портовой таверне',
+          action: 'open_dice_poker',
+        },
+        {
+          id: 'opt_port_close',
+          text: 'Держи вахту, Хендрик.',
+          action: 'close',
+        },
+      ],
+    },
+    solheim_smuggler_root: {
+      id: 'solheim_smuggler_root',
+      speaker: 'Капитан Корсар Вейл',
+      role: 'Вольный шкипер и контрабандист Сольхейма',
+      text: 'Тише, охотник! Пока королевский флот лежит на дне бухты, моя шхуна — единственная, кто знает фарватер сквозь рифы Затмения. У меня есть редкие эликсиры, заморская руда и товар без лишних вопросов.',
+      options: [
+        {
+          id: 'opt_smuggler_fence',
+          text: 'Посмотреть контрабандные товары порта (Чёрный рынок)',
+          action: 'open_fence_shop',
+        },
+        {
+          id: 'opt_smuggler_dice',
+          text: 'Бросить кости на пиратское золото («Кости Судьбы»)',
+          action: 'open_dice_poker',
+        },
+        {
+          id: 'opt_smuggler_close',
+          text: 'Попутного ветра, капитан.',
+          action: 'close',
+        },
+      ],
+    },
+
+    // =========================================================================
+    // 7. НОВЫЙ БИОМ II: ЛАЗУРНЫЙ МОНАСТЫРЬ СОЛНЕЧНЫХ КЛЯТВ (ВОСТОЧНОЕ ПЛАТО)
+    // =========================================================================
+    monastery_abbot_root: {
+      id: 'monastery_abbot_root',
+      speaker: 'Аббат Каэлум',
+      role: 'Настоятель Лазурного Монастыря и Главный Звездочёт',
+      text: 'Приветствую тебя в обители Первого Света, Корвус из Братства Пепла. Не бойся наших сводов: мы не фанатики Инквизитора Лазаря. Пятьсот лет наши монахи изучали траекторию Упавшей Звезды Предтеч. Но каменная горгулья, осквернённая пеплом, захватила купол нашей Астральной Обсерватории и сбила зеркала Большой Астролябии!',
+      options: [
+        {
+          id: 'opt_mon_start',
+          text: '🔭 [Начать квест «Хроники Солнечных Клятв»] «Я очищу купол Обсерватории от каменного чудовища и настрою Большую Астролябию.»',
+          action: 'start_quest_monastery_chronicles',
+          conditionQuestId: 'quest_monastery_chronicles',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_mon_complete',
+          text: '☀️ [Сдать квест] «Страж Обсерватории повержен, а Большая Астролябия сфокусирована на Долине Звёздного Пепла!»',
+          action: 'complete_quest_monastery_chronicles',
+          conditionQuestId: 'quest_monastery_chronicles',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_mon_heal',
+          text: 'Принять благословение Лазурного Алтаря (Полное исцеление и очищение)',
+          action: 'heal_player',
+        },
+        {
+          id: 'opt_mon_codex',
+          text: 'Открыть Летописи и Кодекс Вальдмарка',
+          action: 'open_codex',
+        },
+        {
+          id: 'opt_mon_close',
+          text: 'Да хранит вас свет звёзд, Аббат.',
+          action: 'close',
+        },
+      ],
+    },
+    monastery_chronicler_root: {
+      id: 'monastery_chronicler_root',
+      speaker: 'Сестра Аурелия',
+      role: 'Хранительница Скриптория и Аптекарского Сада',
+      text: 'В нашем горном саду растут редчайшие травы, не тронутые Чёрной Росой, а в скриптории собраны переводы таблиц Звёздных Кузнецов. Заглядывай за эликсирами или целебными снадобьями в любое время, Зольник.',
+      options: [
+        {
+          id: 'opt_chronicler_shop',
+          text: 'Приобрести монастырские эликсиры и редкие травы (Лавка)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_chronicler_heal',
+          text: 'Исцелить раны монастырским бальзамом',
+          action: 'heal_player',
+        },
+        {
+          id: 'opt_chronicler_close',
+          text: 'Благодарю, сестра Аурелия.',
+          action: 'close',
+        },
+      ],
+    },
+
+    // =========================================================================
+    // 8. НОВЫЙ БИОМ III (АКТ III): ДОЛИНА ЗВЁЗДНОГО ПЕПЛА И КУЗНИЦА ПРЕДТЕЧ
+    // =========================================================================
+    starfall_herald_root: {
+      id: 'starfall_herald_root',
+      speaker: 'Хранитель Звёздного Горна Эландр',
+      role: 'Акт III · Последний Страж Кузницы Предтеч',
+      text: 'Ты перешагнул за край Кратера Затмения, носитель Тлеющей Крови... Перед тобой Долина Звёздного Пепла — колыбель, куда тысячу лет назад упала Звезда Предтеч. Из её светлой брони были выкованы Первая Корона Вальдмарка и клинки Братства, а её тёмное ядро стало Сердцем Пустоты. Но раскол под горой пробудил бессмертного стража кузницы — Архонта Звёздного Пепла!',
+      options: [
+        {
+          id: 'opt_star_start',
+          text: '⚔️ [Начать Акт III: «Кузница Предтеч и Падение Звезды»] «Я войду в чертог Кузницы Предтеч, сражу Звёздного Архонта и решу судьбу Первого Горна!»',
+          action: 'start_quest_starfall_forge',
+          conditionQuestId: 'quest_act3_starfall_forge',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_star_choice_reforge',
+          text: '👑 [Перековать Корону Света на Звёздной Наковальне] Направить мощь Кузницы Предтеч на возрождение Вальдмарка (+35 Макс. ОЗ, +20% Мощь Знаков, +1800 XP)',
+          action: 'starfall_reforge_crown',
+          conditionQuestId: 'quest_act3_starfall_forge',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_star_choice_shatter',
+          text: '🔨 [Навсегда запечатать Звёздный Горн Предтеч] Расколоть наковальню, чтобы ни один тиран больше не коснулся силы звёзд (+30 Репутации, +1200 крон, +1800 XP)',
+          action: 'starfall_shatter_forge',
+          conditionQuestId: 'quest_act3_starfall_forge',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_star_smith',
+          text: 'Использовать малый горн Предтеч для закалки снаряжения (Кузница)',
+          action: 'open_blacksmith',
+        },
+        {
+          id: 'opt_star_close',
+          text: 'Я приготовлю мечи к битве.',
+          action: 'close',
+        },
+      ],
+    },
+    starfall_anvil_root: {
+      id: 'starfall_anvil_root',
+      speaker: 'Звёздная Наковальня Предтеч',
+      role: 'Акт III · Сердце Астральной Кузницы',
+      text: 'Перед вами пылает бело-золотым астральным пламенем тысячелетняя Наковальня Предтеч. Архонт Звёздного Пепла повержен, и первородный металл Упавшей Звезды ждёт последнего удара молота.',
+      options: [
+        {
+          id: 'opt_anvil_reforge',
+          text: '👑 [Перековать Первую Корону и Клинки Света] Пробудить благодатный огонь Предтеч над всем Вальдмарком (+35 Макс. ОЗ, +20% Знаки, +1800 XP)',
+          action: 'starfall_reforge_crown',
+          conditionQuestId: 'quest_act3_starfall_forge',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_anvil_shatter',
+          text: '🔨 [Погасить Звёздный Горн навеки] Освободить северные земли от власти древнего металла (+30 Репутации, +1200 крон, +1800 XP)',
+          action: 'starfall_shatter_forge',
+          conditionQuestId: 'quest_act3_starfall_forge',
+          conditionStageIndex: 2,
+        },
+        {
+          id: 'opt_anvil_leave',
+          text: 'Отойти от Звёздной Наковальни.',
+          action: 'close',
+        },
+      ],
+    },
   };
 
   public getDialogueNode(
@@ -1150,11 +1489,19 @@ export class DialogueSystem {
       const q = quests.find((item) => item.id === opt.conditionQuestId);
       if (!q) return false;
       if (opt.conditionStatus && q.status !== opt.conditionStatus) return false;
-      if (
-        opt.conditionStageIndex !== undefined &&
-        (q.status !== 'active' || q.currentStageIndex !== opt.conditionStageIndex)
-      ) {
-        return false;
+      if (opt.conditionStageIndex !== undefined) {
+        if (q.status === 'completed') return false;
+        if (opt.conditionStageIndex === 0) {
+          if (
+            (q.status !== 'active' && q.status !== 'available') ||
+            q.currentStageIndex !== 0 ||
+            Boolean(q.stages[0]?.completed)
+          ) {
+            return false;
+          }
+        } else if (q.status !== 'active' || q.currentStageIndex !== opt.conditionStageIndex) {
+          return false;
+        }
       }
       return true;
     });

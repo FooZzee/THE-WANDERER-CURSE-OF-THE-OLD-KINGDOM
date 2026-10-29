@@ -23,12 +23,27 @@ import {
   INVESTIGATION_QUEST_CHOICES,
   isTargetInAttackCone,
   MAGIC_SIGNS,
-  resolveInvestigationQuestChoice,
+   resolveInvestigationQuestChoice,
   resolveSlidingCollision,
   validateAshExamRitual,
   WEATHER_PRESETS,
+  detectHardwarePlatform,
+  resolveControlPlatform,
+  getPlatformControlSummary,
+  getActorQuestIndicatorState,
+  isRespawnableMob,
+  DEFAULT_MOB_RESPAWN_SECONDS,
+  WAYSTONES,
+  SETTLEMENT_ZONES,
+  isPointInsideSettlementFence,
+  isPointInSettlementSafeZone,
+  clampEnemySpawnOutsideSettlements,
+  clampEnemyPositionOutsideSettlements,
 } from './rules.ts';
-import { CODEX_ARTICLES, PROLOGUE_SLIDES, WORLD_LORE_NOTES } from './loreData.ts';
+import { t } from './i18n.ts';
+import { ASH_ECHOES, CODEX_ARTICLES, PROLOGUE_SLIDES, WORLD_LORE_NOTES } from './loreData.ts';
+import { QuestSystem } from './QuestSystem.ts';
+import { DialogueSystem } from './DialogueSystem.ts';
 import type { GameItem, PlayerStats, Quest, SignType, SkillNode } from './types.ts';
 
 test('MAGIC_SIGNS defines all 5 signs with valid staminaCost and cooldown', () => {
@@ -260,10 +275,10 @@ test('interpolateWeatherMetrics smoothly blends atmospheric parameters between w
   assert.equal(foggy.mistIntensity, 1);
 });
 
-test('WORLD_LORE_NOTES defines 22 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 22/22', () => {
-  assert.equal(WORLD_LORE_NOTES.length, 22);
+test('WORLD_LORE_NOTES defines 28 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 28/28', () => {
+  assert.equal(WORLD_LORE_NOTES.length, 28);
   assert.equal(PROLOGUE_SLIDES.length, 3);
-  assert.ok(CODEX_ARTICLES.length >= 6);
+  assert.ok(CODEX_ARTICLES.length >= 9);
 
   let stats: PlayerStats = {
     level: 1,
@@ -585,6 +600,367 @@ test('resolveSlidingCollision slides smoothly along AABB walls and cylinders wit
   // X movement should slide freely to -0.5 while Z stays outside the box
   assert.equal(res.x, -0.5);
   assert.ok(res.z <= -2.6, `Expected z (${res.z}) to stay outside wall boundary -2.6`);
+});
+
+test('detectHardwarePlatform and resolveControlPlatform accurately distinguish PC browser vs Mobile phone/tablet', () => {
+  const desktopEnv = {
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+    maxTouchPoints: 0,
+    hasCoarsePointer: false,
+    hasFinePointer: true,
+    hasHover: true,
+    screenWidth: 1920,
+    screenHeight: 1080,
+    lastInputType: null as 'mouse_keyboard' | 'touch' | null,
+  };
+  assert.equal(detectHardwarePlatform(desktopEnv), 'pc');
+  assert.equal(resolveControlPlatform('auto', desktopEnv), 'pc');
+
+  const iphoneEnv = {
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
+    maxTouchPoints: 5,
+    hasCoarsePointer: true,
+    hasFinePointer: false,
+    hasHover: false,
+    screenWidth: 390,
+    screenHeight: 844,
+    lastInputType: null as 'mouse_keyboard' | 'touch' | null,
+  };
+  assert.equal(detectHardwarePlatform(iphoneEnv), 'mobile');
+  assert.equal(resolveControlPlatform('auto', iphoneEnv), 'mobile');
+
+  const ipadDesktopUaEnv = {
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
+    maxTouchPoints: 5,
+    hasCoarsePointer: true,
+    hasFinePointer: false,
+    hasHover: false,
+    screenWidth: 1024,
+    screenHeight: 768,
+    lastInputType: null as 'mouse_keyboard' | 'touch' | null,
+  };
+  assert.equal(detectHardwarePlatform(ipadDesktopUaEnv), 'mobile');
+
+  // Manual override works in both directions
+  assert.equal(resolveControlPlatform('mobile', desktopEnv), 'mobile');
+  assert.equal(resolveControlPlatform('pc', iphoneEnv), 'pc');
+
+  // Live touch input in 'auto' mode switches to mobile controls
+  assert.equal(
+    resolveControlPlatform('auto', { ...desktopEnv, lastInputType: 'touch' }),
+    'mobile'
+  );
+
+  const pcSummary = getPlatformControlSummary('pc', 'ru');
+  const mobileSummary = getPlatformControlSummary('mobile', 'ru');
+  assert.ok(pcSummary.moveDodge.includes('WASD'));
+  assert.ok(mobileSummary.moveDodge.includes('Джойстик'));
+});
+
+test('i18n t() resolves all Title, HUD, Dock, Inventory, and Pause dot-keys without raw key fallbacks', () => {
+  const keys = [
+    'title.header',
+    'title.quickStart',
+    'title.subtitle',
+    'title.desc',
+    'title.startHunt',
+    'title.exit',
+    'title.moveDodge',
+    'title.combatBlock',
+    'title.ashSigns',
+    'title.codexMenus',
+    'title.pointerHint',
+    'hud.level',
+    'hud.corvusTitle',
+    'hud.xp',
+    'hud.gold',
+    'hud.skillPoint',
+    'hud.health',
+    'hud.stamina',
+    'hud.toxicity',
+    'hud.prices',
+    'hud.activeWeapon',
+    'hud.steelSword',
+    'hud.silverSword',
+    'hud.steelShort',
+    'hud.silverShort',
+    'hud.signReady',
+    'hud.potion',
+    'dock.show',
+    'dock.hide',
+    'mobile.attack',
+    'mobile.heavy',
+    'mobile.dodge',
+    'mobile.block',
+    'mobile.sign',
+  ];
+  for (const key of keys) {
+    const ruVal = t('ru', key);
+    const enVal = t('en', key);
+    assert.notEqual(ruVal, key, `Russian translation missing for ${key}`);
+    assert.notEqual(enVal, key, `English translation missing for ${key}`);
+    assert.ok(ruVal.length > 0);
+    assert.ok(enVal.length > 0);
+  }
+});
+
+test('getActorQuestIndicatorState returns exclamation (!) for quest givers & notice board, and question (?) for ready turn-ins', () => {
+  const qs = new QuestSystem();
+
+  // At start of game:
+  // Elder Bran has stage 0 of quest_missing_hunters -> exclamation (!)
+  assert.equal(getActorQuestIndicatorState('npc_elder', qs.quests, qs.contracts), 'exclamation');
+  // Notice Board has 3 available contracts -> exclamation (!)
+  assert.equal(
+    getActorQuestIndicatorState('notice_board_village', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  // Herbalist Marfa has quest_swamp_whisper available -> exclamation (!)
+  assert.equal(
+    getActorQuestIndicatorState('npc_herbalist', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  // Suspect Helga is NOT yet ready for verdict -> none
+  assert.equal(
+    getActorQuestIndicatorState('npc_belltower_helga', qs.quests, qs.contracts),
+    'none'
+  );
+
+  // Advance quest_missing_hunters to stage 1 and accept quest_blood_belltower -> Elder Bran has no unaccepted quests left -> none
+  qs.completeStage('quest_missing_hunters', 'q1_talk_elder');
+  qs.activateQuest('quest_blood_belltower');
+  assert.equal(getActorQuestIndicatorState('npc_elder', qs.quests, qs.contracts), 'none');
+  qs.completeStage('quest_missing_hunters', 'q1_find_tracks');
+  qs.completeStage('quest_missing_hunters', 'q1_inspect_camp');
+  qs.completeStage('quest_missing_hunters', 'q1_kill_ghouls');
+
+  // Now Elder Bran has a ready turn-in -> question (?)
+  assert.equal(getActorQuestIndicatorState('npc_elder', qs.quests, qs.contracts), 'question');
+
+  // Complete quest_missing_hunters -> Elder Bran now offers quest_ancient_king -> exclamation (!)
+  qs.completeStage('quest_missing_hunters', 'q1_return_elder');
+  assert.equal(getActorQuestIndicatorState('npc_elder', qs.quests, qs.contracts), 'exclamation');
+
+  // Accept all 3 contracts on Notice Board -> Notice Board indicator becomes 'none'
+  qs.acceptContract('contract_werewolf');
+  qs.acceptContract('contract_noonwraith');
+  qs.acceptContract('contract_gargoyle');
+  assert.equal(
+    getActorQuestIndicatorState('notice_board_village', qs.quests, qs.contracts),
+    'none'
+  );
+});
+
+test('QuestSystem and DialogueSystem strictly enforce prerequisite stages and prevent skipping ahead', () => {
+  const qs = new QuestSystem();
+  const ds = new DialogueSystem();
+
+  // Verify getQuestById, getQuest, and getContractById lookups
+  assert.equal(qs.getQuestById('quest_act2_malakor')?.id, 'quest_act2_malakor');
+  assert.equal(qs.getQuest('quest_missing_hunters')?.id, 'quest_missing_hunters');
+  assert.equal(qs.getQuestById('non_existent_quest'), undefined);
+  assert.equal(qs.getContractById('contract_werewolf')?.id, 'contract_werewolf');
+
+  // 1. Unaccepted contract clues cannot advance until accepted on Notice Board
+  const clueBeforeAccept = qs.advanceContractClue('contract_werewolf');
+  assert.equal(clueBeforeAccept.contract?.status, 'available');
+  assert.equal(clueBeforeAccept.contract?.cluesFound, 0);
+
+  qs.acceptContract('contract_werewolf');
+  const clueAfterAccept = qs.advanceContractClue('contract_werewolf');
+  assert.equal(clueAfterAccept.contract?.status, 'tracking');
+  assert.equal(clueAfterAccept.contract?.cluesFound, 1);
+
+  // 2. Investigation quest "Blood on the Belltower": Helga's verdict options are hidden before stages 0..2 are completed
+  const helgaEarly = ds.getDialogueNode('belltower_helga_root', qs.quests);
+  assert.ok(helgaEarly);
+  const earlyVerdicts = helgaEarly.options.filter(
+    (o) =>
+      o.action === 'belltower_kill_wife' ||
+      o.action === 'belltower_cleanse_ritual' ||
+      o.action === 'belltower_blame_outsider'
+  );
+  assert.equal(earlyVerdicts.length, 0, 'Should not allow Helga verdict before clues & interrogation');
+
+  // Complete stages 0, 1, 2 of quest_blood_belltower
+  qs.activateQuest('quest_blood_belltower');
+  qs.completeStage('quest_blood_belltower', 'q_bell_corpse');
+  qs.completeStage('quest_blood_belltower', 'q_bell_roof_tracks');
+  qs.completeStage('quest_blood_belltower', 'q_bell_interrogate');
+
+  // Now Helga shows (?) indicator and verdict options are unlocked
+  assert.equal(
+    getActorQuestIndicatorState('npc_belltower_helga', qs.quests, qs.contracts),
+    'question'
+  );
+  const helgaReady = ds.getDialogueNode('belltower_helga_root', qs.quests);
+  const readyVerdicts = (helgaReady?.options ?? []).filter(
+    (o) =>
+      o.action === 'belltower_kill_wife' ||
+      o.action === 'belltower_cleanse_ritual' ||
+      o.action === 'belltower_blame_outsider'
+  );
+  assert.equal(readyVerdicts.length, 3);
+});
+
+test('isRespawnableMob allows regular mobs to respawn after DEFAULT_MOB_RESPAWN_SECONDS while excluding bosses', () => {
+  assert.equal(DEFAULT_MOB_RESPAWN_SECONDS, 60);
+  assert.equal(
+    isRespawnableMob({
+      id: 'wolf_1',
+      type: 'wolf',
+      questTag: undefined,
+      isContractBoss: false,
+    }),
+    true
+  );
+  assert.equal(
+    isRespawnableMob({
+      id: 'ghoul_q1',
+      type: 'ghoul',
+      questTag: 'q1_ghouls',
+      isContractBoss: false,
+    }),
+    true
+  );
+  assert.equal(
+    isRespawnableMob({
+      id: 'boss_hydra',
+      type: 'boss_hydra',
+      questTag: 'q5_hydra',
+      isContractBoss: false,
+    }),
+    false
+  );
+  assert.equal(
+    isRespawnableMob({
+      id: 'contract_ww',
+      type: 'werewolf',
+      questTag: 'contract_werewolf',
+      isContractBoss: true,
+    }),
+    false
+  );
+});
+
+test('New Biomes (Sunken Port Solheim, Sun Monastery, Starfall Valley Act III) resolve biome IDs, heights, waystones, and quest indicators', () => {
+  assert.equal(getBiomeAt(-150, 0).id, 'sunken_port');
+  assert.equal(getBiomeAt(155, -15).id, 'sun_monastery');
+  assert.equal(getBiomeAt(0, -620).id, 'starfall_valley');
+
+  assert.ok(getGroundHeight(160, -15) > 2.5, 'Sun Monastery plateau should be elevated');
+  assert.ok(getGroundHeight(0, -640) > 5.0, 'Starfall Valley forge plateau should be high');
+  assert.equal(WAYSTONES.length, 10);
+
+  const qs = new QuestSystem();
+  assert.equal(
+    getActorQuestIndicatorState('npc_solheim_keeper', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  assert.equal(
+    getActorQuestIndicatorState('npc_monastery_abbot', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  assert.equal(
+    getActorQuestIndicatorState('npc_starfall_herald', qs.quests, qs.contracts),
+    'exclamation'
+  );
+
+  // Advance Solheim quest to turn-in stage
+  qs.activateQuest('quest_sunken_lighthouse');
+  qs.completeStage('quest_sunken_lighthouse', 'q_port_talk_keeper');
+  qs.completeStage('quest_sunken_lighthouse', 'q_port_find_amber_lens');
+  assert.equal(
+    getActorQuestIndicatorState('npc_solheim_keeper', qs.quests, qs.contracts),
+    'question'
+  );
+});
+
+test('Settlement fences, gates, safe spawn buffers, and mob exclusion prevent enemies from spawning in or entering villages', () => {
+  assert.equal(SETTLEMENT_ZONES.length, 6);
+  for (const zone of SETTLEMENT_ZONES) {
+    assert.ok(zone.fenceRadius > 8, `${zone.id} must have a positive fence radius`);
+    assert.ok(
+      zone.spawnSafeRadius > zone.fenceRadius,
+      `${zone.id} spawnSafeRadius must exceed fenceRadius`
+    );
+    assert.ok(zone.gateAngles.length >= 1, `${zone.id} must have at least one exit gate`);
+  }
+
+  // Crow Hollow center (0, 0) is inside the fence and safe zone
+  assert.equal(isPointInsideSettlementFence(0, 0), true);
+  assert.equal(isPointInSettlementSafeZone(0, 0), true);
+
+  // Point at (34, 0) is outside Crow Hollow fence (31.5m) but inside safe spawn buffer (37.5m)
+  assert.equal(isPointInsideSettlementFence(34, 0), false);
+  assert.equal(isPointInSettlementSafeZone(34, 0), true);
+
+  // Attempting to spawn an enemy inside or near Crow Hollow pushes it outside spawnSafeRadius
+  const clampedSpawn = clampEnemySpawnOutsideSettlements(15, 0);
+  assert.equal(clampedSpawn.clamped, true);
+  assert.ok(
+    Math.hypot(clampedSpawn.x, clampedSpawn.z) >= 37.5,
+    `Enemy spawn must be pushed outside safe zone (>=37.5m), got ${Math.hypot(clampedSpawn.x, clampedSpawn.z)}`
+  );
+  assert.equal(isPointInSettlementSafeZone(clampedSpawn.x, clampedSpawn.z), false);
+
+  // Attempting to move an enemy across a village gate or fence clamps it outside the fence
+  const clampedMove = clampEnemyPositionOutsideSettlements(30.0, 0, 1.0);
+  assert.equal(clampedMove.clamped, true);
+  assert.equal(clampedMove.settlementId, 'village_crow_hollow');
+  assert.ok(
+    Math.hypot(clampedMove.x, clampedMove.z) >= 32.5,
+    'Enemy attempting to enter village through east gate must be stopped outside fence'
+  );
+});
+
+test('All waystones, lore notes, ash echoes, and swamp/port chests sit above water level and off settlement fence lines', () => {
+  for (const ws of WAYSTONES) {
+    const y = getGroundHeight(ws.x, ws.z);
+    assert.ok(Number.isFinite(y), `Waystone ${ws.id} must have finite ground height`);
+    if (ws.z < -105 && ws.z >= -215) {
+      assert.ok(y > -0.45, `Swamp waystone ${ws.id} must sit above swamp water (-0.48), got ${y}`);
+    }
+    for (const zone of SETTLEMENT_ZONES) {
+      const d = Math.hypot(ws.x - zone.x, ws.z - zone.z);
+      assert.ok(
+        Math.abs(d - zone.fenceRadius) >= 1.1,
+        `Waystone ${ws.id} must not collide with fence of ${zone.id}`
+      );
+    }
+  }
+
+  for (const note of WORLD_LORE_NOTES) {
+    const y = getGroundHeight(note.x, note.z);
+    assert.ok(Number.isFinite(y), `Lore note ${note.id} must have finite ground height`);
+    if (note.z < -105 && note.z >= -215) {
+      assert.ok(y > -0.45, `Swamp lore note ${note.id} must sit above swamp water (-0.48), got ${y}`);
+    }
+    for (const zone of SETTLEMENT_ZONES) {
+      const d = Math.hypot(note.x - zone.x, note.z - zone.z);
+      assert.ok(
+        Math.abs(d - zone.fenceRadius) >= 1.1,
+        `Lore note ${note.id} must not collide with fence of ${zone.id}`
+      );
+    }
+  }
+
+  for (const echo of ASH_ECHOES) {
+    const y = getGroundHeight(echo.x, echo.z);
+    assert.ok(Number.isFinite(y), `Ash echo ${echo.id} must have finite ground height`);
+    if (echo.z < -105 && echo.z >= -215) {
+      assert.ok(y > -0.45, `Swamp ash echo ${echo.id} must sit above swamp water (-0.48), got ${y}`);
+    }
+  }
+
+  // Verify key swamp and coastal chests sit above water
+  assert.ok(getGroundHeight(16, -175) > -0.45, 'chest_swamp_north must be above swamp water');
+  assert.ok(getGroundHeight(-52, -152) > -0.45, 'poi_swamp_stilt_stash must be above swamp water');
+  assert.ok(getGroundHeight(-14, -129) > -0.45, 'poi_swamp_refugee_chest must be above swamp water');
+  assert.ok(getGroundHeight(-160, 21) > -1.0, 'chest_solheim_admiral must be above sea water');
 });
 
 

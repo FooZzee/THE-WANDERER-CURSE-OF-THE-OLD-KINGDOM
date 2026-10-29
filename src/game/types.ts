@@ -1,4 +1,5 @@
 export type SignType = 'flame' | 'barrier' | 'impulse' | 'illusion' | 'frost';
+export type MagicSignType = SignType;
 
 export type ActiveSwordType = 'steel' | 'silver';
 
@@ -222,6 +223,8 @@ export interface EnemyData {
   vesperHealed?: boolean;
   isDead?: boolean;
   freezeTimer?: number;
+  respawnTimer?: number;
+  respawnDuration?: number;
 }
 
 export interface HunterContract {
@@ -465,6 +468,13 @@ export interface DialogueOption {
     | 'exam_step2_wrong'
     | 'exam_revive_brotherhood'
     | 'exam_bury_secrets'
+    | 'start_quest_sunken_lighthouse'
+    | 'complete_quest_sunken_lighthouse'
+    | 'start_quest_monastery_chronicles'
+    | 'complete_quest_monastery_chronicles'
+    | 'start_quest_starfall_forge'
+    | 'starfall_reforge_crown'
+    | 'starfall_shatter_forge'
     | 'close';
   conditionQuestId?: string;
   conditionStatus?: 'available' | 'active' | 'completed';
@@ -560,9 +570,38 @@ export type BiomeId =
   | 'gallows_swamp'
   | 'silver_pass'
   | 'ash_bastion'
-  | 'eclipse_crater';
+  | 'eclipse_crater'
+  | 'sunken_port'
+  | 'sun_monastery'
+  | 'starfall_valley';
 
 export type WeatherType = 'clear' | 'fog' | 'rain';
+
+export type GameLanguage = 'ru' | 'en';
+
+export type ControlPlatform = 'pc' | 'mobile';
+export type ControlModeSetting = 'auto' | 'pc' | 'mobile';
+
+export interface DeviceEnvironmentSnapshot {
+  userAgent?: string;
+  maxTouchPoints?: number;
+  hasCoarsePointer?: boolean;
+  hasFinePointer?: boolean;
+  hasHover?: boolean;
+  screenWidth?: number;
+  screenHeight?: number;
+  lastInputType?: 'mouse_keyboard' | 'touch' | null;
+}
+
+export interface HudVisibilitySettings {
+  minimapRadar: boolean;
+  clockWeather: boolean;
+  questTracker: boolean;
+  companionPanel: boolean;
+  reputationBar: boolean;
+  combatLog: boolean;
+  controlsDock: boolean;
+}
 
 export interface GraphicsSettings {
   quality: 'low' | 'medium' | 'high';
@@ -570,7 +609,13 @@ export interface GraphicsSettings {
   shadows: boolean;
   weatherEffects: boolean;
   audioEnabled: boolean;
+  musicEnabled: boolean;
   masterVolume: number;
+  sfxVolume: number;
+  musicVolume: number;
+  language: GameLanguage;
+  controlMode?: ControlModeSetting;
+  hudVisibility: HudVisibilitySettings;
 }
 
 export type BladeOilType = 'none' | 'necrophage' | 'cursed' | 'specter';
@@ -717,6 +762,7 @@ export interface HUDState {
   reputationTitle?: string;
   merchantPriceMultiplier?: number;
   isFenceShopOpen?: boolean;
+  detectedPlatform?: ControlPlatform;
 }
 
 

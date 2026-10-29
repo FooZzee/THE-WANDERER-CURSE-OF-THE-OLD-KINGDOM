@@ -3,8 +3,11 @@ build/
 dist/
 coverage/
 .aistudio/
+.agents/
+release/
+.godot/
+public/assets/aistudio/
 .DS_Store
 *.log
 .env*
 !.env.example
-

@@ -641,6 +641,66 @@ export class AssetManager {
     studR.rotation.z = -0.5;
     body.add(leftPauldron, rightPauldron, studL, studR);
 
+    // Modular 3D Armor Set Attachments (toggled by equipped armor)
+    // 1. Bear School Fur Mantle Collar & Tassets
+    const bearFurGroup = new THREE.Group();
+    bearFurGroup.name = 'armorPart_bearFur';
+    const furMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.92 });
+    const furCollar = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.085, 8, 16), furMat);
+    furCollar.rotation.x = Math.PI / 2;
+    furCollar.position.set(0, 0.69, -0.02);
+    const tassetL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.24, 0.34), furMat);
+    tassetL.position.set(-0.2, -0.04, 0);
+    const tassetR = tassetL.clone();
+    tassetR.position.x = 0.2;
+    bearFurGroup.add(furCollar, tassetL, tassetR);
+    bearFurGroup.visible = false;
+    body.add(bearFurGroup);
+
+    // 2. Frost Warden / Obsidian Void Shoulder Spikes & Chest Core
+    const spikesGroup = new THREE.Group();
+    spikesGroup.name = 'armorPart_shoulderSpikes';
+    const spikeMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.95,
+      roughness: 0.2,
+      metalness: 0.8,
+    });
+    const spikeL1 = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.24, 5), spikeMat);
+    spikeL1.position.set(-0.37, 0.8, 0);
+    spikeL1.rotation.z = 0.38;
+    const spikeR1 = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.24, 5), spikeMat);
+    spikeR1.position.set(0.37, 0.8, 0);
+    spikeR1.rotation.z = -0.38;
+    const chestGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 0), spikeMat);
+    chestGem.position.set(0, 0.44, 0.175);
+    spikesGroup.add(spikeL1, spikeR1, chestGem);
+    spikesGroup.visible = false;
+    body.add(spikesGroup);
+
+    // 3. Flame / Grandmaster / Royal Guard Chest Crest & Winged Collar
+    const crestGroup = new THREE.Group();
+    crestGroup.name = 'armorPart_royalCrest';
+    const crestMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.55,
+      metalness: 0.9,
+      roughness: 0.2,
+    });
+    const chestPlateCrest = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.38, 0.04), crestMat);
+    chestPlateCrest.position.set(0, 0.42, 0.16);
+    const collarGuardL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.22), crestMat);
+    collarGuardL.position.set(-0.22, 0.72, -0.02);
+    collarGuardL.rotation.z = 0.25;
+    const collarGuardR = collarGuardL.clone();
+    collarGuardR.position.x = 0.22;
+    collarGuardR.rotation.z = -0.25;
+    crestGroup.add(chestPlateCrest, collarGuardL, collarGuardR);
+    crestGroup.visible = false;
+    body.add(crestGroup);
+
     // Multi-segment dynamic flowing cloak on back
     const heroCloakMat = clothMat.clone();
     const cloak = new THREE.Group();
@@ -649,12 +709,14 @@ export class AssetManager {
     cloak.rotation.x = 0.08;
 
     const cloakUpper = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.45, 0.04), heroCloakMat);
+    cloakUpper.name = 'heroCloakUpper';
     cloakUpper.position.y = -0.22;
     cloakUpper.castShadow = true;
 
     const cloakLower = new THREE.Group();
     cloakLower.position.set(0, -0.44, 0);
     const cloakLowerMesh = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.03), heroCloakMat);
+    cloakLowerMesh.name = 'heroCloakLower';
     cloakLowerMesh.position.y = -0.25;
     cloakLowerMesh.castShadow = true;
     cloakLower.add(cloakLowerMesh);
@@ -676,7 +738,6 @@ export class AssetManager {
     const steelGuardBack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.035, 0.05), steelMat);
     steelGuardBack.position.set(0, 0.52, 0);
     steelBackHilt.add(steelPommelBack, steelGuardBack);
-    // Steel sword starts drawn in right hand, so its back scabbard is empty
     steelBackHilt.visible = false;
     steelScabbardGroup.add(steelScabbardBody, steelChape, steelBackHilt);
 
@@ -736,16 +797,36 @@ export class AssetManager {
     head.add(skull, hair, cowlBand, amberEyeL, amberEyeR, medallion);
     body.add(head);
 
-    // Left Arm
+    // Left Arm + Optional Dual-Wield Offhand Blade (Dusk Fangs)
     const leftArm = new THREE.Group();
     leftArm.position.set(-0.34, 0.62, 0);
     const leftSleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.42, 6, 8), chainmailMat);
     leftSleeve.position.y = -0.24;
     leftSleeve.castShadow = true;
-    leftArm.add(leftSleeve);
+
+    const offhandDagger = new THREE.Group();
+    offhandDagger.name = 'weaponPart_offhandDagger';
+    offhandDagger.position.set(0, -0.44, 0.08);
+    offhandDagger.rotation.x = Math.PI / 2.2;
+    const offHilt = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 8), leatherMat);
+    const offBlade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.045, 0.68, 0.016),
+      new THREE.MeshStandardMaterial({
+        color: 0xe9d5ff,
+        emissive: 0x9333ea,
+        emissiveIntensity: 0.85,
+        metalness: 0.9,
+        roughness: 0.15,
+      })
+    );
+    offBlade.position.y = 0.42;
+    offhandDagger.add(offHilt, offBlade);
+    offhandDagger.visible = false;
+
+    leftArm.add(leftSleeve, offhandDagger);
     body.add(leftArm);
 
-    // Right Arm + Active Sword
+    // Right Arm + Active Modular Weapon
     const rightArm = new THREE.Group();
     rightArm.position.set(0.34, 0.62, 0);
     const rightSleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.42, 6, 8), chainmailMat);
@@ -753,7 +834,7 @@ export class AssetManager {
     rightSleeve.castShadow = true;
     rightArm.add(rightSleeve);
 
-    // Sword Group held in right hand
+    // Sword/Weapon Group held in right hand
     const swordGroup = new THREE.Group();
     swordGroup.position.set(0, -0.45, 0.1);
     swordGroup.rotation.x = Math.PI / 2.2;
@@ -767,6 +848,37 @@ export class AssetManager {
     blade.name = 'heroBlade';
     blade.position.y = 0.65;
     blade.castShadow = true;
+
+    // Special Weapon Head 1: Plague Reaper Scythe Blade
+    const scytheHead = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.58, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0x84cc16,
+        emissive: 0x4d7c0f,
+        emissiveIntensity: 0.9,
+        metalness: 0.8,
+        roughness: 0.2,
+      })
+    );
+    scytheHead.name = 'weaponPart_scytheHead';
+    scytheHead.position.set(0.24, 1.08, 0);
+    scytheHead.rotation.z = -Math.PI / 2.3;
+    scytheHead.visible = false;
+
+    // Special Weapon Head 2: Black Ore Cleaver Heavy Axe-Blade
+    const cleaverHead = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.62, 0.032),
+      new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.85,
+        metalness: 0.92,
+        roughness: 0.18,
+      })
+    );
+    cleaverHead.name = 'weaponPart_cleaverHead';
+    cleaverHead.position.set(0.07, 0.78, 0);
+    cleaverHead.visible = false;
 
     // Glowing runic groove along the fuller of the blade
     const runeStrip = new THREE.Mesh(
@@ -784,7 +896,7 @@ export class AssetManager {
 
     const trailAnchor = new THREE.Object3D();
     trailAnchor.position.set(0, 1.15, 0);
-    swordGroup.add(hilt, crossguard, blade, runeStrip, trailAnchor);
+    swordGroup.add(hilt, crossguard, blade, scytheHead, cleaverHead, runeStrip, trailAnchor);
     rightArm.add(swordGroup);
     body.add(rightArm);
 
@@ -840,24 +952,39 @@ export class AssetManager {
   }
 
   /**
-   * Dynamically updates hero armor, back scabbard hilts, & blade materials based on
-   * equipped Witcher Set, Socketed Rune, and Active Sword ('steel' vs 'silver').
+   * Dynamically updates hero 3D armor pieces, pauldrons, cloak, back scabbard hilts,
+   * and weapon silhouettes/materials based on equipped Armor ID, Weapon ID, Witcher Set,
+   * Socketed Rune, and Active Sword ('steel' vs 'silver').
    */
   public updateHeroEquipmentVisuals(
     rig: CharacterRig,
     activeSet: 'raven' | 'bear' | 'flame' | 'grandmaster' | 'obsidian' | 'frost_warden' | null,
     runeEffect?: 'fire' | 'bleed' | 'vamp' | 'ward' | 'frost' | 'void' | null,
-    activeSword: 'steel' | 'silver' = 'steel'
+    activeSword: 'steel' | 'silver' = 'steel',
+    equippedArmorId?: string,
+    equippedWeaponId?: string
   ): void {
     const cuirass = rig.root.getObjectByName('heroCuirass') as THREE.Mesh | undefined;
-    const cloak = rig.root.getObjectByName('heroCloak') as THREE.Mesh | undefined;
+    const pauldronL = rig.root.getObjectByName('heroPauldronL') as THREE.Mesh | undefined;
+    const pauldronR = rig.root.getObjectByName('heroPauldronR') as THREE.Mesh | undefined;
+    const cloakUpper = rig.root.getObjectByName('heroCloakUpper') as THREE.Mesh | undefined;
+    const cloakLower = rig.root.getObjectByName('heroCloakLower') as THREE.Mesh | undefined;
+    const bearFur = rig.root.getObjectByName('armorPart_bearFur');
+    const shoulderSpikes = rig.root.getObjectByName('armorPart_shoulderSpikes');
+    const royalCrest = rig.root.getObjectByName('armorPart_royalCrest');
+
     const blade = rig.root.getObjectByName('heroBlade') as THREE.Mesh | undefined;
+    const scytheHead = rig.root.getObjectByName('weaponPart_scytheHead');
+    const cleaverHead = rig.root.getObjectByName('weaponPart_cleaverHead');
+    const offhandDagger = rig.root.getObjectByName('weaponPart_offhandDagger');
     const runeStrip = rig.root.getObjectByName('heroRuneStrip') as THREE.Mesh | undefined;
     const crossguard = rig.root.getObjectByName('heroCrossguard') as THREE.Mesh | undefined;
     const steelBackHilt = rig.root.getObjectByName('steelBackHilt');
     const silverBackHilt = rig.root.getObjectByName('silverBackHilt');
 
-    // Show the inactive sword's hilt in its back scabbard and hide the drawn sword's back hilt
+    const armorId = equippedArmorId || (activeSet ? `armor_${activeSet}` : 'armor_leather');
+    const weaponId = equippedWeaponId || (activeSword === 'silver' ? 'sword_runic_silver' : 'sword_wolf_steel');
+
     if (steelBackHilt) {
       steelBackHilt.visible = activeSword === 'silver';
     }
@@ -865,73 +992,178 @@ export class AssetManager {
       silverBackHilt.visible = activeSword === 'steel';
     }
 
+    // Toggle 3D Armor Set geometry attachments
+    const isBear = activeSet === 'bear' || armorId.includes('bear');
+    const isFrost = activeSet === 'frost_warden' || armorId.includes('frost');
+    const isObsidian = activeSet === 'obsidian' || armorId.includes('obsidian');
+    const isFlame = activeSet === 'flame' || armorId.includes('flame');
+    const isGrandmaster = activeSet === 'grandmaster' || armorId.includes('grandmaster');
+    const isRaven = activeSet === 'raven' || armorId.includes('raven');
+    const isChainmail = armorId.includes('chainmail');
+
+    if (bearFur) bearFur.visible = isBear;
+    if (shoulderSpikes) {
+      shoulderSpikes.visible = isFrost || isObsidian;
+      shoulderSpikes.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+          obj.material.color.setHex(isObsidian ? 0xc084fc : 0x38bdf8);
+          obj.material.emissive.setHex(isObsidian ? 0x7e22ce : 0x0284c7);
+        }
+      });
+    }
+    if (royalCrest) {
+      royalCrest.visible = isFlame || isGrandmaster;
+      royalCrest.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+          obj.material.color.setHex(isFlame ? 0xf97316 : 0xfbbf24);
+          obj.material.emissive.setHex(isFlame ? 0xea580c : 0xd97706);
+        }
+      });
+    }
+
+    // Scale pauldrons depending on light vs heavy armor
+    if (pauldronL && pauldronR) {
+      const pScale = isBear || isObsidian ? 1.38 : isFlame || isFrost || isGrandmaster ? 1.24 : 1.05;
+      pauldronL.scale.set(pScale, pScale * 0.7, pScale);
+      pauldronR.scale.set(pScale, pScale * 0.7, pScale);
+      if (pauldronL.material instanceof THREE.MeshStandardMaterial) {
+        pauldronL.material.color.setHex(
+          isObsidian
+            ? 0x3b0764
+            : isFrost
+            ? 0x0369a1
+            : isFlame
+            ? 0x991b1b
+            : isBear
+            ? 0x451a03
+            : isRaven
+            ? 0x1e293b
+            : 0x57534e
+        );
+      }
+    }
+
     if (cuirass && cuirass.material instanceof THREE.MeshStandardMaterial) {
-      if (activeSet === 'raven') {
+      if (isRaven) {
         cuirass.material.color.setHex(0x1e293b);
-        cuirass.material.metalness = 0.45;
-      } else if (activeSet === 'bear') {
+        cuirass.material.metalness = 0.52;
+      } else if (isBear) {
         cuirass.material.color.setHex(0x451a03);
-        cuirass.material.metalness = 0.65;
-      } else if (activeSet === 'flame') {
+        cuirass.material.metalness = 0.68;
+      } else if (isFlame) {
         cuirass.material.color.setHex(0x7f1d1d);
-        cuirass.material.metalness = 0.7;
-      } else if (activeSet === 'frost_warden') {
+        cuirass.material.metalness = 0.75;
+      } else if (isFrost) {
         cuirass.material.color.setHex(0x0284c7);
-        cuirass.material.metalness = 0.78;
-      } else if (activeSet === 'grandmaster') {
+        cuirass.material.metalness = 0.8;
+      } else if (isGrandmaster) {
         cuirass.material.color.setHex(0x18181b);
-        cuirass.material.metalness = 0.85;
-      } else if (activeSet === 'obsidian') {
+        cuirass.material.metalness = 0.88;
+      } else if (isObsidian) {
         cuirass.material.color.setHex(0x3b0764);
         cuirass.material.metalness = 0.92;
+      } else if (isChainmail) {
+        cuirass.material.color.setHex(0x78716c);
+        cuirass.material.metalness = 0.78;
       } else {
         cuirass.material.color.setHex(0x4a3222);
-        cuirass.material.metalness = 0.15;
+        cuirass.material.metalness = 0.18;
       }
     }
 
-    if (cloak && cloak.material instanceof THREE.MeshStandardMaterial) {
-      if (activeSet === 'raven') {
-        cloak.material.color.setHex(0x0f172a);
-      } else if (activeSet === 'bear') {
-        cloak.material.color.setHex(0x292524);
-      } else if (activeSet === 'flame') {
-        cloak.material.color.setHex(0x450a0a);
-      } else if (activeSet === 'frost_warden') {
-        cloak.material.color.setHex(0x0c4a6e);
-      } else if (activeSet === 'grandmaster') {
-        cloak.material.color.setHex(0x27272a);
-      } else if (activeSet === 'obsidian') {
-        cloak.material.color.setHex(0x581c87);
-      } else {
-        cloak.material.color.setHex(0x1f242d);
+    const cloakHex = isRaven
+      ? 0x0f172a
+      : isBear
+      ? 0x292524
+      : isFlame
+      ? 0x450a0a
+      : isFrost
+      ? 0x0c4a6e
+      : isGrandmaster
+      ? 0x18181b
+      : isObsidian
+      ? 0x4c1d95
+      : 0x1f242d;
+
+    for (const cMesh of [cloakUpper, cloakLower]) {
+      if (cMesh && cMesh.material instanceof THREE.MeshStandardMaterial) {
+        cMesh.material.color.setHex(cloakHex);
       }
     }
+
+    // Update 3D Weapon Silhouette & Materials based on equippedWeaponId
+    const isScythe = weaponId === 'mythic_plague_scythe';
+    const isCleaver = weaponId === 'mythic_black_cleaver';
+    const isDuskFangs = weaponId === 'mythic_dusk_fangs';
+    const isSunEater = weaponId === 'mythic_sun_eater';
+    const isVoidVoice = weaponId === 'mythic_void_voice';
+    const isRelicGreatsword = weaponId === 'relic_blade' || weaponId === 'sword_order_crimson';
+
+    if (scytheHead) scytheHead.visible = isScythe;
+    if (cleaverHead) cleaverHead.visible = isCleaver;
+    if (offhandDagger) offhandDagger.visible = isDuskFangs;
 
     if (crossguard && crossguard.material instanceof THREE.MeshStandardMaterial) {
-      crossguard.material.color.setHex(activeSword === 'silver' ? 0xe2e8f0 : 0x64748b);
+      crossguard.scale.set(isSunEater || isRelicGreatsword ? 1.38 : isScythe ? 0.55 : 1.0, 1, 1);
+      crossguard.material.color.setHex(
+        isSunEater || isRelicGreatsword
+          ? 0xf59e0b
+          : isVoidVoice || isDuskFangs
+          ? 0xc084fc
+          : activeSword === 'silver'
+          ? 0xe2e8f0
+          : 0x64748b
+      );
     }
 
     if (blade && blade.material instanceof THREE.MeshStandardMaterial) {
-      blade.material.color.setHex(activeSword === 'silver' ? 0xf1f5f9 : 0x94a3b8);
-      blade.material.metalness = activeSword === 'silver' ? 0.96 : 0.85;
-      blade.material.roughness = activeSword === 'silver' ? 0.14 : 0.28;
+      // Morph blade width & length by weapon archetype
+      if (isSunEater || isRelicGreatsword) {
+        blade.scale.set(1.65, 1.18, 1.25);
+      } else if (isScythe) {
+        blade.scale.set(0.55, 1.15, 0.9);
+      } else if (isCleaver) {
+        blade.scale.set(1.15, 0.92, 1.1);
+      } else if (isDuskFangs) {
+        blade.scale.set(0.88, 0.9, 1.0);
+      } else {
+        blade.scale.set(1.0, 1.0, 1.0);
+      }
 
-      if (runeEffect === 'fire') {
+      blade.material.color.setHex(
+        isSunEater
+          ? 0xfde047
+          : isVoidVoice
+          ? 0xe9d5ff
+          : isScythe
+          ? 0xbef264
+          : isCleaver
+          ? 0x38bdf8
+          : activeSword === 'silver'
+          ? 0xf1f5f9
+          : 0x94a3b8
+      );
+      blade.material.metalness = activeSword === 'silver' ? 0.96 : 0.85;
+      blade.material.roughness = activeSword === 'silver' ? 0.14 : 0.26;
+
+      if (isSunEater || runeEffect === 'fire') {
         blade.material.emissive.setHex(0xf97316);
+        blade.material.emissiveIntensity = isSunEater ? 1.45 : 0.95;
+      } else if (isVoidVoice || runeEffect === 'void') {
+        blade.material.emissive.setHex(0xa855f7);
+        blade.material.emissiveIntensity = 1.3;
+      } else if (isScythe) {
+        blade.material.emissive.setHex(0x65a30d);
+        blade.material.emissiveIntensity = 0.95;
+      } else if (isCleaver || runeEffect === 'frost') {
+        blade.material.emissive.setHex(0x38bdf8);
+        blade.material.emissiveIntensity = 1.15;
+      } else if (isDuskFangs || runeEffect === 'vamp') {
+        blade.material.emissive.setHex(0x9333ea);
         blade.material.emissiveIntensity = 0.95;
       } else if (runeEffect === 'bleed') {
         blade.material.emissive.setHex(0xdc2626);
         blade.material.emissiveIntensity = 0.85;
-      } else if (runeEffect === 'vamp') {
-        blade.material.emissive.setHex(0x9333ea);
-        blade.material.emissiveIntensity = 0.9;
-      } else if (runeEffect === 'frost') {
-        blade.material.emissive.setHex(0x38bdf8);
-        blade.material.emissiveIntensity = 1.15;
-      } else if (runeEffect === 'void') {
-        blade.material.emissive.setHex(0xa855f7);
-        blade.material.emissiveIntensity = 1.25;
       } else if (activeSword === 'silver') {
         blade.material.emissive.setHex(0x38bdf8);
         blade.material.emissiveIntensity = 0.45;
@@ -942,11 +1174,16 @@ export class AssetManager {
     }
 
     if (runeStrip && runeStrip.material instanceof THREE.MeshStandardMaterial) {
-      runeStrip.visible = activeSword === 'silver' || Boolean(runeEffect);
-      if (runeEffect === 'fire') {
+      runeStrip.visible =
+        activeSword === 'silver' ||
+        Boolean(runeEffect) ||
+        isSunEater ||
+        isVoidVoice ||
+        isDuskFangs;
+      if (isSunEater || runeEffect === 'fire') {
         runeStrip.material.color.setHex(0xfbbf24);
         runeStrip.material.emissive.setHex(0xf97316);
-      } else if (runeEffect === 'void') {
+      } else if (isVoidVoice || isDuskFangs || runeEffect === 'void') {
         runeStrip.material.color.setHex(0xe879f9);
         runeStrip.material.emissive.setHex(0xa855f7);
       } else {
@@ -2086,6 +2323,14 @@ export class AssetManager {
     shadow.position.y = 0.02;
 
     root.add(body, leftLeg, rightLeg, shadow);
+    for (const part of [body, leftLeg, rightLeg]) {
+      part.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+    }
     return {
       root,
       body,
@@ -2097,6 +2342,109 @@ export class AssetManager {
       cloak: cloakMesh,
       weaponMesh,
     };
+  }
+
+  /**
+   * Creates a rounded yellow 3D Quest Indicator Group containing both:
+   * - `questExclamation` (!): rounded 3D capsule + sphere dot for available quests/contracts
+   * - `questQuestion` (?): smooth rounded 3D curved hook + spherical caps + sphere dot for ready turn-ins
+   */
+  public createQuestIndicatorGroup(): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'questIndicatorRoot';
+
+    const yellowMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 1.35,
+      roughness: 0.22,
+      metalness: 0.35,
+    });
+
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0xfde047,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+
+    // 1. Rounded 3D Exclamation Mark (!)
+    const exclamationGroup = new THREE.Group();
+    exclamationGroup.name = 'questExclamation';
+
+    const exStem = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.105, 0.36, 12, 20),
+      yellowMat
+    );
+    exStem.position.y = 0.36;
+    exStem.castShadow = true;
+
+    const exDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.115, 20, 20),
+      yellowMat
+    );
+    exDot.position.y = -0.02;
+    exDot.castShadow = true;
+
+    const exHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 16, 16),
+      haloMat
+    );
+    exHalo.position.y = 0.24;
+
+    exclamationGroup.add(exStem, exDot, exHalo);
+    exclamationGroup.visible = false;
+
+    // 2. Rounded 3D Question Mark (?)
+    const questionGroup = new THREE.Group();
+    questionGroup.name = 'questQuestion';
+
+    const curvePoints = [
+      new THREE.Vector3(-0.15, 0.42, 0),
+      new THREE.Vector3(-0.12, 0.56, 0),
+      new THREE.Vector3(0.0, 0.63, 0),
+      new THREE.Vector3(0.14, 0.56, 0),
+      new THREE.Vector3(0.15, 0.41, 0),
+      new THREE.Vector3(0.03, 0.28, 0),
+      new THREE.Vector3(0.0, 0.16, 0),
+    ];
+    const qCurve = new THREE.CatmullRomCurve3(curvePoints);
+    const qTube = new THREE.Mesh(
+      new THREE.TubeGeometry(qCurve, 28, 0.092, 16, false),
+      yellowMat
+    );
+    qTube.castShadow = true;
+
+    const qStartCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.092, 16, 16),
+      yellowMat
+    );
+    qStartCap.position.copy(curvePoints[0]);
+
+    const qEndCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.092, 16, 16),
+      yellowMat
+    );
+    qEndCap.position.copy(curvePoints[curvePoints.length - 1]);
+
+    const qDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.115, 20, 20),
+      yellowMat
+    );
+    qDot.position.y = -0.04;
+    qDot.castShadow = true;
+
+    const qHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 16, 16),
+      haloMat
+    );
+    qHalo.position.y = 0.28;
+
+    questionGroup.add(qTube, qStartCap, qEndCap, qDot, qHalo);
+    questionGroup.visible = false;
+
+    group.add(exclamationGroup, questionGroup);
+    return group;
   }
 
   public dispose(): void {

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ItemResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/item_resource.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = &"silver_ash_blade"
+name_ru = "Серебряный меч Братства Пепла"
+name_en = "Ash Brotherhood Silver Sword"
+description_ru = "Рунный серебряный клинок Зольников (100% урона по нечисти и проклятым)."
+description_en = "Runic silver blade of the Ash Brotherhood (100% damage against monsters)."
+category = "weapon"
+equip_slot = "silverSword"
+rarity = "rare"
+icon_symbol = "🗡️"
+attack_bonus = 28
+defense_bonus = 0
+max_hp_bonus = 0
+value = 160
