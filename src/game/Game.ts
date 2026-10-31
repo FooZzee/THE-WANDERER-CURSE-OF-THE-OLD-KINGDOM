@@ -19,6 +19,7 @@ import {
   calculateMerchantPrice,
   clampReputation,
   COMPANION_PROFILES,
+  computeCombatHapticPattern,
   computeEffectivePlayerStats,
   createInitialDicePokerState,
   discoverLoreEntry,
@@ -154,12 +155,35 @@ export class Game {
   private lastMouseY = 0;
   private lmbDownTime = 0;
   private heavyAttackTriggeredOnHold = false;
+  private reusableEnemyDataList: EnemyData[] = [];
+  private prologueTargetPos = new THREE.Vector3();
+  private prologueTargetLook = new THREE.Vector3();
+
+  public lastHapticPattern: number[] = [];
 
   public getResolvedPlatform(): ControlPlatform {
     return resolveControlPlatform(
       this.settings.controlMode ?? 'auto',
       getBrowserDeviceSnapshot(this.lastInputType)
     );
+  }
+
+  /**
+   * Triggers device haptic vibration via navigator.vibrate specifically on mobile platforms
+   * when the player lands a critical hit or takes heavy damage.
+   */
+  public triggerMobileHaptic(pattern: number[]): boolean {
+    if (!pattern || pattern.length === 0) return false;
+    if (this.getResolvedPlatform() !== 'mobile') return false;
+    this.lastHapticPattern = [...pattern];
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        return navigator.vibrate(pattern);
+      } catch {
+        return false;
+      }
+    }
+    return false;
   }
 
   constructor(container: HTMLElement, onHUDUpdate: (state: HUDState) => void) {
@@ -2794,9 +2818,7 @@ export class Game {
   }
 
   private getCodexArticlesWithUnlockState(): CodexArticle[] {
-    return CODEX_ARTICLES.map((article) => ({
-      ...article,
-    }));
+    return CODEX_ARTICLES;
   }
 
   private updateCompanion(dt: number, elapsed: number, maxPlayerHp: number): void {
@@ -3010,18 +3032,18 @@ export class Game {
 
     if (!this.isPaused && this.activeModal === 'prologue') {
       const slide = PROLOGUE_SLIDES[this.prologueSlideIndex] ?? PROLOGUE_SLIDES[0];
-      const targetPos = new THREE.Vector3(
+      this.prologueTargetPos.set(
         slide.camPos[0] + Math.sin(elapsed * 0.28) * 3.5,
         slide.camPos[1] + Math.cos(elapsed * 0.22) * 0.8,
         slide.camPos[2] + Math.cos(elapsed * 0.25) * 3.5
       );
-      const targetLook = new THREE.Vector3(
+      this.prologueTargetLook.set(
         slide.lookAt[0],
         slide.lookAt[1],
         slide.lookAt[2]
       );
-      this.cameraController.camera.position.lerp(targetPos, Math.min(1, dt * 1.8));
-      this.prologueLookAt.lerp(targetLook, Math.min(1, dt * 2.2));
+      this.cameraController.camera.position.lerp(this.prologueTargetPos, Math.min(1, dt * 1.8));
+      this.prologueLookAt.lerp(this.prologueTargetLook, Math.min(1, dt * 2.2));
       this.cameraController.camera.lookAt(this.prologueLookAt);
     } else if (!this.isPaused && this.activeModal === 'none') {
       if ((this.player.stats.blacksmithClosedTimer ?? 0) > 0) {
@@ -3061,7 +3083,7 @@ export class Game {
         this.player.stats.z,
         isSprinting,
         this.sceneManager.obstacles,
-        this.sceneManager.colliderMeshes
+        this.sceneManager.cameraColliderMeshes
       );
 
       // Seamless Biome Transition Detection & Cinematic Location Banner + Companion Bark
@@ -3190,6 +3212,11 @@ export class Game {
       // Random Road Encounters
       this.updateRoadEncounters(dt);
 
+      this.reusableEnemyDataList.length = this.enemyAI.enemies.length;
+      for (let i = 0; i < this.enemyAI.enemies.length; i++) {
+        this.reusableEnemyDataList[i] = this.enemyAI.enemies[i].data;
+      }
+
       this.world.update(
         elapsed,
         this.player.stats.x,
@@ -3200,7 +3227,7 @@ export class Game {
           dt,
           timeOfDay: this.sceneManager.getTimeOfDay(),
           weather: this.sceneManager.getWeather(),
-          enemies: this.enemyAI.enemies.map((e) => e.data),
+          enemies: this.reusableEnemyDataList,
           activeCompanionId: this.player.stats.activeCompanionId ?? null,
           vesperSpared: this.player.stats.vesperFate === 'spared',
           quests: this.quests.quests,
@@ -3241,7 +3268,22 @@ export class Game {
         this.sceneManager.obstacles,
         this.handleEnemyKilled,
         this.addLog,
-        (intensity, dur) => this.cameraController.addShake(intensity, dur),
+        (intensity, dur, profile) => {
+          this.cameraController.addShake(intensity, dur, profile);
+          if (profile) {
+            const haptic = computeCombatHapticPattern({
+              platform: this.getResolvedPlatform(),
+              kind: profile.kind,
+              isHeavy: profile.intensity >= 0.4,
+            });
+            if (haptic.length > 0) {
+              this.triggerMobileHaptic(haptic);
+            }
+            if (profile.kind !== 'light_hit') {
+              this.emitHUD();
+            }
+          }
+        },
         (text, isCrit, isPlayerHit, color) => {
           this.floatingDamages.push({
             id: `${Date.now()}-${Math.random()}`,
@@ -3273,7 +3315,21 @@ export class Game {
             this.player,
             effStats.defense,
             this.addLog,
-            (intensity, dur) => this.cameraController.addShake(intensity, dur),
+            (intensity, dur, profile) => {
+              this.cameraController.addShake(intensity, dur, profile);
+              if (profile) {
+                const haptic = computeCombatHapticPattern({
+                  platform: this.getResolvedPlatform(),
+                  kind: profile.kind,
+                });
+                if (haptic.length > 0) {
+                  this.triggerMobileHaptic(haptic);
+                }
+                if (profile.kind !== 'light_hit') {
+                  this.emitHUD();
+                }
+              }
+            },
             () =>
               this.magic.triggerBarrierExplosion(
                 this.player,
@@ -3282,7 +3338,8 @@ export class Game {
                 this.sceneManager.obstacles,
                 this.handleEnemyKilled,
                 this.addLog
-              )
+              ),
+            effStats.activeSet
           );
           if (this.player.stats.hp <= 0) {
             this.setModal('death');
@@ -3335,7 +3392,9 @@ export class Game {
   }
 
   public emitHUD(): void {
-    this.world.syncQuestIndicators(this.quests.quests, this.quests.contracts);
+    if (this.activeModal !== 'none') {
+      this.world.syncQuestIndicators(this.quests.quests, this.quests.contracts);
+    }
     const isCatacombs = this.player.stats.x > 75 && this.player.stats.z > 75;
     const biome = isCatacombs
       ? { id: 'catacombs' as const, name: 'Подземные Катакомбы Древних Королей' }
@@ -3384,8 +3443,8 @@ export class Game {
     this.onHUDUpdate({
       player: { ...this.player.stats },
       activeQuest: this.quests.getActiveQuest(),
-      allQuests: [...this.quests.quests],
-      contracts: [...this.quests.contracts],
+      allQuests: this.quests.quests,
+      contracts: this.quests.contracts,
       nearbyInteractable: nearest ? { ...nearest } : null,
       lockedEnemy,
       isTargetLocked: lockedEnemy !== null,
@@ -3395,12 +3454,12 @@ export class Game {
       weather: this.sceneManager.getWeather(),
       signCooldowns: { ...this.magic.cooldowns },
       combatLog: this.combatLog,
-      floatingDamages: [...this.floatingDamages],
-      inventory: [...this.inventory.items],
-      skills: [...this.inventory.skills],
+      floatingDamages: this.floatingDamages,
+      inventory: this.inventory.items,
+      skills: this.inventory.skills,
       activeModal: this.activeModal,
       activeDialogueNode: this.activeDialogueNode,
-      discoveredLoreIds: [...(this.player.stats.discoveredLoreIds ?? [])],
+      discoveredLoreIds: this.player.stats.discoveredLoreIds ?? [],
       activeLoreNote: this.activeLoreNote,
       activeAshEcho: this.activeAshEcho,
       ashEchoes: ASH_ECHOES,
@@ -3411,7 +3470,7 @@ export class Game {
       prologueSlides: PROLOGUE_SLIDES,
       notificationBanner: this.notificationBanner,
       settings: { ...this.settings },
-      worldInteractables: this.world.interactables.map((i) => ({ ...i })),
+      worldInteractables: this.world.interactables,
       enemies: this.enemyAI.enemies.map((e) => ({
         id: e.data.id,
         name: e.data.name,
@@ -3438,6 +3497,7 @@ export class Game {
         bountyHuntersActive: repInfo.bountyHuntersActive,
       },
       detectedPlatform: this.getResolvedPlatform(),
+      screenShake: this.cameraController.getShakeState(),
     });
   }
 

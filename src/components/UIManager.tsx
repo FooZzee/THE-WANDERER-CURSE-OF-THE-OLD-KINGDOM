@@ -375,11 +375,34 @@ export const UIManager: React.FC<UIManagerProps> = ({
     game?.setJoystickInput(0, 0, false);
   };
 
+  const activeShake = hud.screenShake;
+  const isShaking = Boolean(activeShake?.active && activeModal === 'none');
+  const hudShakeStyle: React.CSSProperties | undefined = isShaking
+    ? {
+        transform: `translate3d(${(activeShake?.offsetX ?? 0) * 0.45}px, ${(activeShake?.offsetY ?? 0) * 0.45}px, 0)`,
+      }
+    : undefined;
+
   return (
     <div
       data-platform={activePlatform}
-      className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-2.5 sm:p-4 md:p-6"
+      data-screen-shake={isShaking ? activeShake?.kind : 'none'}
+      style={hudShakeStyle}
+      className="fixed inset-0 pointer-events-none z-10 flex flex-col justify-between p-2.5 sm:p-4 md:p-6 transition-transform duration-75"
     >
+      {/* VISCERAL COMBAT SCREEN-SHAKE IMPACT VIGNETTE (Critical Player Hits & Heavy Enemy Attacks) */}
+      {isShaking && activeShake && activeShake.flashColor && activeShake.flashOpacity > 0.02 && (
+        <div
+          data-testid="screen-shake-overlay"
+          style={{
+            opacity: activeShake.flashOpacity,
+            boxShadow: `inset 0 0 110px 28px ${activeShake.flashColor}`,
+            borderColor: activeShake.flashColor,
+          }}
+          className="fixed inset-0 pointer-events-none z-20 border-2 transition-opacity duration-75"
+        />
+      )}
+
       {/* MOBILE TOUCH CAMERA LOOK LAYER (Swipe anywhere not covered by HUD buttons to rotate camera) */}
       {isMobile && activeModal === 'none' && (
         <div

@@ -763,7 +763,20 @@ export interface HUDState {
   merchantPriceMultiplier?: number;
   isFenceShopOpen?: boolean;
   detectedPlatform?: ControlPlatform;
+  screenShake?: {
+    active: boolean;
+    kind: 'none' | 'light_hit' | 'heavy_hit' | 'critical_hit' | 'heavy_enemy_attack';
+    intensity: number;
+    timer: number;
+    duration: number;
+    trauma: number;
+    offsetX: number;
+    offsetY: number;
+    flashColor: string | null;
+    flashOpacity: number;
+  };
 }
+
 
 
 

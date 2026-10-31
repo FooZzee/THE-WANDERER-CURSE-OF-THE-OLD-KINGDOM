@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { AssetManager } from './AssetManager';
 import {
+  computeSkyboxState,
   getGroundHeight,
   getNextWeatherState,
   interpolateWeatherMetrics,
   SETTLEMENT_ZONES,
   WEATHER_PRESETS,
+  type SkyboxState,
 } from './rules';
 import type { CollisionBox, GraphicsSettings, WeatherType } from './types';
 
@@ -20,10 +22,10 @@ export interface CollisionCylinder {
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 const _weatherTint = new THREE.Color();
-const _skyDawn = new THREE.Color(0x4a3028);
-const _skyDay = new THREE.Color(0x3a4e66);
-const _skyDusk = new THREE.Color(0x452618);
-const _skyNight = new THREE.Color(0x070b14);
+const _targetTintColor = new THREE.Color();
+const _targetSunColor = new THREE.Color();
+const _targetBiomeFogColor = new THREE.Color();
+const _lightningColor = new THREE.Color(0xc7d2fe);
 
 const _sunDawn = new THREE.Color(0xff9e5e);
 const _sunNoon = new THREE.Color(0xfff1d6);
@@ -47,10 +49,39 @@ export class SceneManager {
   public torchLights: THREE.PointLight[] = [];
   public worldLightAnchors: WorldLightAnchor[] = [];
   private celestialOrb: THREE.Mesh | null = null;
+  private skyboxGroup: THREE.Group = new THREE.Group();
+  private skyDomeUniforms: {
+    uZenithColor: { value: THREE.Color };
+    uHorizonColor: { value: THREE.Color };
+    uNadirColor: { value: THREE.Color };
+    uSunDirection: { value: THREE.Vector3 };
+    uSunGlowColor: { value: THREE.Color };
+    uSunGlowIntensity: { value: number };
+  } | null = null;
+  private cloudDomeUniforms: {
+    uTime: { value: number };
+    uCloudDensity: { value: number };
+    uCloudLitColor: { value: THREE.Color };
+    uCloudShadowColor: { value: THREE.Color };
+    uSunDirection: { value: THREE.Vector3 };
+    uLightningFlash: { value: number };
+  } | null = null;
+  private sunGroup: THREE.Group | null = null;
+  private sunDiscMat: THREE.MeshBasicMaterial | null = null;
+  private sunCoronaMat: THREE.MeshBasicMaterial | null = null;
+  private moonGroup: THREE.Group | null = null;
+  private moonDiscMat: THREE.MeshBasicMaterial | null = null;
+  private moonHaloMat: THREE.MeshBasicMaterial | null = null;
+  private starfieldPoints: THREE.Points | null = null;
+  private starfieldMat: THREE.PointsMaterial | null = null;
+  private lastSkyboxState: SkyboxState = computeSkyboxState(14.5, 'fog');
   public obstacles: CollisionCylinder[] = [];
   public collisionBoxes: CollisionBox[] = [];
   public colliderMeshes: THREE.Object3D[] = [];
+  public cameraColliderMeshes: THREE.Object3D[] = [];
   public isHeadless: boolean;
+  private frameCounter = 0;
+  private lastPrimaryTorchAnchor: WorldLightAnchor | null = null;
 
   private assetManager: AssetManager;
   private rainSystem: THREE.Points | null = null;
@@ -127,11 +158,11 @@ export class SceneManager {
     this.sunLight = new THREE.DirectionalLight(0xffdcb5, 1.85);
     this.sunLight.position.set(45, 65, 35);
     this.sunLight.castShadow = !this.isHeadless;
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
-    this.sunLight.shadow.camera.near = 5;
-    this.sunLight.shadow.camera.far = 190;
-    const d = 65;
+    this.sunLight.shadow.mapSize.width = 1024;
+    this.sunLight.shadow.mapSize.height = 1024;
+    this.sunLight.shadow.camera.near = 6;
+    this.sunLight.shadow.camera.far = 165;
+    const d = 38;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -141,26 +172,25 @@ export class SceneManager {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Celestial Sun / Moon Disc in the sky
-    const orbGeo = new THREE.SphereGeometry(4.2, 16, 16);
-    const orbMat = new THREE.MeshBasicMaterial({
-      color: 0xffdcb5,
-      fog: false,
-    });
-    this.celestialOrb = new THREE.Mesh(orbGeo, orbMat);
-    this.scene.add(this.celestialOrb);
+    // Build complete Dynamic Skybox System (Sky Gradient Dome, Celestial Sun & Moon Rigs, Night Starfield, Volumetric Cloud Canopy)
+    this.buildDynamicSkybox();
 
-    // Pre-allocate 4 dynamic shadow-casting PointLights for nearest world light sources (torches, campfires, braziers)
+    // Pre-allocate 4 dynamic PointLights for nearest world light sources (torches, campfires, braziers).
+    // Primary torchLight[0] casts dynamic shadows with throttled cubemap updates to guarantee 60 FPS.
     if (!this.isHeadless) {
       for (let i = 0; i < 4; i++) {
         const pt = new THREE.PointLight(0xf97316, 6.2, 24, 1.45);
-        pt.castShadow = this.shadowsEnabled;
-        pt.shadow.mapSize.width = 512;
-        pt.shadow.mapSize.height = 512;
-        pt.shadow.camera.near = 0.35;
-        pt.shadow.camera.far = 24;
-        pt.shadow.bias = -0.0025;
-        pt.shadow.normalBias = 0.035;
+        pt.castShadow = i === 0 && this.shadowsEnabled;
+        if (i === 0) {
+          pt.shadow.mapSize.width = 512;
+          pt.shadow.mapSize.height = 512;
+          pt.shadow.camera.near = 0.4;
+          pt.shadow.camera.far = 22;
+          pt.shadow.bias = -0.0025;
+          pt.shadow.normalBias = 0.035;
+          pt.shadow.autoUpdate = false;
+          pt.shadow.needsUpdate = true;
+        }
         this.scene.add(pt);
         this.torchLights.push(pt);
       }
@@ -181,6 +211,50 @@ export class SceneManager {
     this.buildStarfallValleyAndForge();
     this.buildSettlementFencesAndGates();
     this.buildWeatherSystem();
+    this.freezeStaticWorldMatrices();
+  }
+
+  private freezeStaticWorldMatrices(): void {
+    this.scene.updateMatrixWorld(true);
+    const dynamicObjects = new Set<THREE.Object3D>();
+    dynamicObjects.add(this.skyboxGroup);
+    if (this.celestialOrb) dynamicObjects.add(this.celestialOrb);
+    if (this.cursedCrystalMesh) dynamicObjects.add(this.cursedCrystalMesh);
+    if (this.catacombsGateMesh) dynamicObjects.add(this.catacombsGateMesh);
+    if (this.windmillSailsMesh) dynamicObjects.add(this.windmillSailsMesh);
+    if (this.lighthouseBeamMesh) dynamicObjects.add(this.lighthouseBeamMesh);
+    if (this.monasteryAstrolabeMesh) dynamicObjects.add(this.monasteryAstrolabeMesh);
+    if (this.starfallCoreMesh) dynamicObjects.add(this.starfallCoreMesh);
+    if (this.rainSystem) dynamicObjects.add(this.rainSystem);
+    if (this.rainSplashSystem) dynamicObjects.add(this.rainSplashSystem);
+    if (this.mistSystem) dynamicObjects.add(this.mistSystem);
+    if (this.embersSystem) dynamicObjects.add(this.embersSystem);
+    for (const sb of this.swampBubbles) dynamicObjects.add(sb.mesh);
+    for (const mc of this.mineCrystals) dynamicObjects.add(mc.mesh);
+    for (const fr of this.floatingCraterRocks) dynamicObjects.add(fr.mesh);
+    for (const pt of this.torchLights) dynamicObjects.add(pt);
+    dynamicObjects.add(this.sunLight);
+    dynamicObjects.add(this.sunLight.target);
+    dynamicObjects.add(this.hemiLight);
+
+    const markDynamicRecursive = (obj: THREE.Object3D) => {
+      dynamicObjects.add(obj);
+      for (const child of obj.children) {
+        markDynamicRecursive(child);
+      }
+    };
+    for (const d of Array.from(dynamicObjects)) {
+      markDynamicRecursive(d);
+    }
+
+    for (const child of this.scene.children) {
+      if (dynamicObjects.has(child)) continue;
+      child.traverse((node) => {
+        if (!dynamicObjects.has(node)) {
+          node.matrixAutoUpdate = false;
+        }
+      });
+    }
   }
 
   public getAssetManager(): AssetManager {
@@ -190,8 +264,8 @@ export class SceneManager {
   private buildTerrainAndWater(): void {
     const widthX = 430;
     const lengthZ = 270;
-    const segX = this.isHeadless ? 160 : 220;
-    const segZ = this.isHeadless ? 120 : 180;
+    const segX = this.isHeadless ? 100 : 140;
+    const segZ = this.isHeadless ? 80 : 110;
     const geo = new THREE.PlaneGeometry(widthX, lengthZ, segX, segZ);
     geo.rotateX(-Math.PI / 2);
 
@@ -368,6 +442,7 @@ export class SceneManager {
     group.add(foundation, walls, roof, chimney, winFront, winRight, door);
     this.scene.add(group);
     this.colliderMeshes.push(walls, roof);
+    this.cameraColliderMeshes.push(walls, roof);
 
     const cosR = Math.abs(Math.cos(rotY));
     const sinR = Math.abs(Math.sin(rotY));
@@ -968,6 +1043,7 @@ export class SceneManager {
 
       this.scene.add(monolith);
       this.colliderMeshes.push(monolith);
+      this.cameraColliderMeshes.push(monolith);
       this.obstacles.push({ x: mx, z: mz, radius: 1.0, height: 5 });
     }
 
@@ -1040,6 +1116,7 @@ export class SceneManager {
       tower.receiveShadow = true;
       this.scene.add(tower);
       this.colliderMeshes.push(tower);
+      this.cameraColliderMeshes.push(tower);
       this.obstacles.push({ x: wx, z: wz, radius: 2.1, height: 7 });
     }
 
@@ -1277,8 +1354,8 @@ export class SceneManager {
     // 0. Massively Expanded Seamless Northern Terrain Mesh covering x in [-205, 205], z in [-718, -98] (including Act III Starfall Valley)
     const northWidth = 410;
     const northLength = 620;
-    const segX = this.isHeadless ? 140 : 180;
-    const segZ = this.isHeadless ? 240 : 320;
+    const segX = this.isHeadless ? 90 : 120;
+    const segZ = this.isHeadless ? 150 : 210;
     const northGeo = new THREE.PlaneGeometry(northWidth, northLength, segX, segZ);
     northGeo.rotateX(-Math.PI / 2);
 
@@ -2510,13 +2587,15 @@ export class SceneManager {
       return diff;
     };
 
+    const stepDist = 2.1;
+    const fenceSegments: { px: number; py: number; pz: number; rotY: number }[] = [];
+
     for (const zone of SETTLEMENT_ZONES) {
       const circumference = 2 * Math.PI * zone.fenceRadius;
-      const stepDist = 2.1;
       const numSegments = Math.max(18, Math.round(circumference / stepDist));
       const gateHalfAngle = (zone.gateWidth * 0.5) / zone.fenceRadius;
 
-      // 1. Build Wooden Palisade / Fence Segments around the settlement perimeter
+      // 1. Collect Wooden Palisade / Fence Segment transforms around the settlement perimeter
       for (let i = 0; i < numSegments; i++) {
         const angle = (i / numSegments) * Math.PI * 2;
         const inGate = zone.gateAngles.some(
@@ -2528,53 +2607,7 @@ export class SceneManager {
         const pz = zone.z + Math.sin(angle) * zone.fenceRadius;
         const py = getGroundHeight(px, pz);
 
-        const segGroup = new THREE.Group();
-        segGroup.position.set(px, py, pz);
-        // Align local Z along the tangent of the perimeter circle
-        segGroup.rotation.y = -angle;
-
-        // Main vertical timber post
-        const post = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.18, 0.22, 2.35, 6),
-          woodMat
-        );
-        post.position.y = 1.17;
-        post.castShadow = true;
-        post.receiveShadow = true;
-
-        // Sharpened palisade stake tip
-        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.45, 6), woodMat);
-        tip.position.y = 2.55;
-        tip.castShadow = true;
-
-        // Upper & lower horizontal fence rails
-        const railUpper = new THREE.Mesh(
-          new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25),
-          woodMat
-        );
-        railUpper.position.y = 1.65;
-        railUpper.castShadow = true;
-        railUpper.receiveShadow = true;
-
-        const railLower = new THREE.Mesh(
-          new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25),
-          woodMat
-        );
-        railLower.position.y = 0.85;
-        railLower.castShadow = true;
-        railLower.receiveShadow = true;
-
-        // Intermediate wooden palisade plank
-        const midPlank = new THREE.Mesh(
-          new THREE.BoxGeometry(0.12, 2.05, 0.32),
-          woodMat
-        );
-        midPlank.position.set(0, 1.05, stepDist * 0.48);
-        midPlank.castShadow = true;
-        midPlank.receiveShadow = true;
-
-        segGroup.add(post, tip, railUpper, railLower, midPlank);
-        this.scene.add(segGroup);
+        fenceSegments.push({ px, py, pz, rotY: -angle });
 
         // Register physical obstacle so player cannot walk through the fence (must use gates)
         this.obstacles.push({
@@ -2586,6 +2619,11 @@ export class SceneManager {
       }
 
       // 2. Build Wooden Archway Gates ("Ворота") at each gate opening
+      const plinthGeo = new THREE.BoxGeometry(0.95, 0.85, 0.95);
+      const pillarGeo = new THREE.CylinderGeometry(0.32, 0.38, 4.2, 8);
+      const bracketGeo = new THREE.BoxGeometry(0.38, 0.12, 0.12);
+      const flameGeo = new THREE.OctahedronGeometry(0.22, 1);
+
       for (const gateAngle of zone.gateAngles) {
         const radX = Math.cos(gateAngle);
         const radZ = Math.sin(gateAngle);
@@ -2612,52 +2650,33 @@ export class SceneManager {
         gateGroup.position.set(gx, gy, gz);
         gateGroup.rotation.y = -gateAngle;
 
+        const doorLeafGeo = new THREE.BoxGeometry(0.18, 2.65, halfSpan * 0.78);
         for (const side of [-1, 1]) {
           const zOff = side * halfSpan;
-          // Stone plinth base
-          const plinth = new THREE.Mesh(
-            new THREE.BoxGeometry(0.95, 0.85, 0.95),
-            stoneMat
-          );
+          const plinth = new THREE.Mesh(plinthGeo, stoneMat);
           plinth.position.set(0, 0.42, zOff);
           plinth.castShadow = true;
           plinth.receiveShadow = true;
 
-          // Heavy timber gate pillar
-          const pillar = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.32, 0.38, 4.2, 8),
-            woodMat
-          );
+          const pillar = new THREE.Mesh(pillarGeo, woodMat);
           pillar.position.set(0, 2.1, zOff);
           pillar.castShadow = true;
           pillar.receiveShadow = true;
 
-          // Swung-open wooden gate door leaf (angled outward so player can walk freely)
-          const doorLeaf = new THREE.Mesh(
-            new THREE.BoxGeometry(0.18, 2.65, halfSpan * 0.78),
-            woodMat
-          );
+          const doorLeaf = new THREE.Mesh(doorLeafGeo, woodMat);
           doorLeaf.position.set(0.85, 1.4, zOff - side * 0.48);
           doorLeaf.rotation.y = side * 1.12;
           doorLeaf.castShadow = true;
           doorLeaf.receiveShadow = true;
 
-          // Gate torch sconce & flame
-          const bracket = new THREE.Mesh(
-            new THREE.BoxGeometry(0.38, 0.12, 0.12),
-            steelMat
-          );
+          const bracket = new THREE.Mesh(bracketGeo, steelMat);
           bracket.position.set(0.36, 2.75, zOff);
-          const flame = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.22, 1),
-            flameMat
-          );
+          const flame = new THREE.Mesh(flameGeo, flameMat);
           flame.position.set(0.5, 2.95, zOff);
 
           gateGroup.add(plinth, pillar, doorLeaf, bracket, flame);
         }
 
-        // Overhead archway crossbeam & pitched gate lintel roof
         const lintelBeam = new THREE.Mesh(
           new THREE.BoxGeometry(0.65, 0.48, halfSpan * 2 + 1.4),
           woodMat
@@ -2686,6 +2705,56 @@ export class SceneManager {
           baseIntensity: 6.0,
           distance: 23,
         });
+      }
+    }
+
+    // Batch all ~350 settlement fence segments into 5 shared InstancedMeshes (reduces ~1,750 draw calls to 5)
+    if (fenceSegments.length > 0) {
+      const count = fenceSegments.length;
+      const postGeo = new THREE.CylinderGeometry(0.18, 0.22, 2.35, 6);
+      postGeo.translate(0, 1.17, 0);
+      const tipGeo = new THREE.ConeGeometry(0.2, 0.45, 6);
+      tipGeo.translate(0, 2.55, 0);
+      const railUpperGeo = new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25);
+      railUpperGeo.translate(0, 1.65, 0);
+      const railLowerGeo = new THREE.BoxGeometry(0.14, 0.2, stepDist + 0.25);
+      railLowerGeo.translate(0, 0.85, 0);
+      const midPlankGeo = new THREE.BoxGeometry(0.12, 2.05, 0.32);
+      midPlankGeo.translate(0, 1.05, stepDist * 0.48);
+
+      const postInst = new THREE.InstancedMesh(postGeo, woodMat, count);
+      const tipInst = new THREE.InstancedMesh(tipGeo, woodMat, count);
+      const railUpperInst = new THREE.InstancedMesh(railUpperGeo, woodMat, count);
+      const railLowerInst = new THREE.InstancedMesh(railLowerGeo, woodMat, count);
+      const midPlankInst = new THREE.InstancedMesh(midPlankGeo, woodMat, count);
+
+      postInst.castShadow = !this.isHeadless;
+      postInst.receiveShadow = true;
+      tipInst.castShadow = !this.isHeadless;
+      railUpperInst.castShadow = !this.isHeadless;
+      railUpperInst.receiveShadow = true;
+      railLowerInst.castShadow = !this.isHeadless;
+      railLowerInst.receiveShadow = true;
+      midPlankInst.castShadow = !this.isHeadless;
+      midPlankInst.receiveShadow = true;
+
+      for (let i = 0; i < count; i++) {
+        const seg = fenceSegments[i];
+        _dummy.position.set(seg.px, seg.py, seg.pz);
+        _dummy.rotation.set(0, seg.rotY, 0);
+        _dummy.scale.set(1, 1, 1);
+        _dummy.updateMatrix();
+        postInst.setMatrixAt(i, _dummy.matrix);
+        tipInst.setMatrixAt(i, _dummy.matrix);
+        railUpperInst.setMatrixAt(i, _dummy.matrix);
+        railLowerInst.setMatrixAt(i, _dummy.matrix);
+        midPlankInst.setMatrixAt(i, _dummy.matrix);
+      }
+
+      for (const inst of [postInst, tipInst, railUpperInst, railLowerInst, midPlankInst]) {
+        inst.instanceMatrix.needsUpdate = true;
+        inst.computeBoundingSphere();
+        this.scene.add(inst);
       }
     }
   }
@@ -2722,19 +2791,325 @@ export class SceneManager {
     return this.timeOfDay;
   }
 
+  public getSkyboxState(): SkyboxState {
+    return this.lastSkyboxState;
+  }
+
+  private buildDynamicSkybox(): void {
+    this.scene.add(this.skyboxGroup);
+
+    // 1. Atmospheric Sky Gradient Dome (Rayleigh/Mie Horizon Scatter + Zenith/Nadir Gradient)
+    this.skyDomeUniforms = {
+      uZenithColor: { value: new THREE.Color(0x224c87) },
+      uHorizonColor: { value: new THREE.Color(0x6e9bc4) },
+      uNadirColor: { value: new THREE.Color(0x1a2430) },
+      uSunDirection: { value: new THREE.Vector3(0.5, 0.6, -0.6).normalize() },
+      uSunGlowColor: { value: new THREE.Color(0xfef08a) },
+      uSunGlowIntensity: { value: 0.65 },
+    };
+
+    const skyDomeGeo = new THREE.SphereGeometry(235, 32, 20);
+    const skyDomeMat = new THREE.ShaderMaterial({
+      uniforms: this.skyDomeUniforms,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      vertexShader: `
+        varying vec3 vWorldOffset;
+        void main() {
+          vWorldOffset = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uZenithColor;
+        uniform vec3 uHorizonColor;
+        uniform vec3 uNadirColor;
+        uniform vec3 uSunDirection;
+        uniform vec3 uSunGlowColor;
+        uniform float uSunGlowIntensity;
+        varying vec3 vWorldOffset;
+
+        void main() {
+          vec3 dir = normalize(vWorldOffset);
+          float y = dir.y;
+
+          // Smooth horizon-to-zenith and horizon-to-nadir blend
+          float upperMix = pow(clamp(y, 0.0, 1.0), 0.55);
+          float lowerMix = pow(clamp(-y, 0.0, 1.0), 0.65);
+
+          vec3 skyCol = mix(uHorizonColor, uZenithColor, upperMix);
+          skyCol = mix(skyCol, uNadirColor, lowerMix);
+
+          // Subtle warm atmospheric band along the horizon
+          float horizonBand = pow(1.0 - min(1.0, abs(y) * 2.2), 3.0);
+          skyCol = mix(skyCol, uHorizonColor * 1.12, horizonBand * 0.35);
+
+          // Mie forward scattering glow around the sun
+          float sunDot = max(0.0, dot(dir, uSunDirection));
+          float mieHalo = pow(sunDot, 6.0) * 0.38 + pow(sunDot, 36.0) * 0.65;
+          skyCol += uSunGlowColor * mieHalo * uSunGlowIntensity;
+
+          gl_FragColor = vec4(skyCol, 1.0);
+        }
+      `,
+    });
+    const skyDomeMesh = new THREE.Mesh(skyDomeGeo, skyDomeMat);
+    skyDomeMesh.renderOrder = -10;
+    skyDomeMesh.frustumCulled = false;
+    this.skyboxGroup.add(skyDomeMesh);
+
+    // 2. Twinkling Night Starfield & Milky Way Band (720 stars across upper celestial dome)
+    const starCount = 720;
+    const starPositions = new Float32Array(starCount * 3);
+    const starColors = new Float32Array(starCount * 3);
+    const starRadius = 218;
+
+    for (let i = 0; i < starCount; i++) {
+      // Deterministic pseudo-random distribution with a denser Milky Way band
+      const seed1 = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+      const u = seed1 - Math.floor(seed1);
+      const seed2 = Math.sin(i * 93.9898 + 19.133) * 24634.6345;
+      const v = seed2 - Math.floor(seed2);
+
+      const theta = u * Math.PI * 2;
+      // Keep stars above horizon (phi from 0.04 to 0.47 * PI)
+      const phi = Math.acos(0.08 + v * 0.92);
+
+      const sx = starRadius * Math.sin(phi) * Math.cos(theta);
+      const sy = starRadius * Math.cos(phi);
+      const sz = starRadius * Math.sin(phi) * Math.sin(theta);
+
+      starPositions[i * 3] = sx;
+      starPositions[i * 3 + 1] = sy;
+      starPositions[i * 3 + 2] = sz;
+
+      // Star color temperature palette (blue-white, warm gold, silver-cyan, rose giant)
+      const tempChoice = i % 5;
+      if (tempChoice === 0) {
+        starColors[i * 3] = 0.78;
+        starColors[i * 3 + 1] = 0.88;
+        starColors[i * 3 + 2] = 1.0;
+      } else if (tempChoice === 1) {
+        starColors[i * 3] = 1.0;
+        starColors[i * 3 + 1] = 0.94;
+        starColors[i * 3 + 2] = 0.76;
+      } else if (tempChoice === 2) {
+        starColors[i * 3] = 0.65;
+        starColors[i * 3 + 1] = 0.92;
+        starColors[i * 3 + 2] = 0.98;
+      } else if (tempChoice === 3) {
+        starColors[i * 3] = 1.0;
+        starColors[i * 3 + 1] = 0.82;
+        starColors[i * 3 + 2] = 0.68;
+      } else {
+        starColors[i * 3] = 0.92;
+        starColors[i * 3 + 1] = 0.95;
+        starColors[i * 3 + 2] = 1.0;
+      }
+    }
+
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+    this.starfieldMat = new THREE.PointsMaterial({
+      size: 1.75,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      fog: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    this.starfieldPoints = new THREE.Points(starGeo, this.starfieldMat);
+    this.starfieldPoints.renderOrder = -9;
+    this.starfieldPoints.frustumCulled = false;
+    this.skyboxGroup.add(this.starfieldPoints);
+
+    // 3. Celestial Sun Rig (Solar Disc + Additive Corona Halo)
+    this.sunGroup = new THREE.Group();
+    const sunDiscGeo = new THREE.SphereGeometry(5.2, 20, 20);
+    this.sunDiscMat = new THREE.MeshBasicMaterial({
+      color: 0xfff7d6,
+      fog: false,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
+    });
+    const sunDiscMesh = new THREE.Mesh(sunDiscGeo, this.sunDiscMat);
+    sunDiscMesh.renderOrder = -8;
+
+    const sunCoronaGeo = new THREE.SphereGeometry(10.5, 20, 20);
+    this.sunCoronaMat = new THREE.MeshBasicMaterial({
+      color: 0xfef08a,
+      fog: false,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const sunCoronaMesh = new THREE.Mesh(sunCoronaGeo, this.sunCoronaMat);
+    sunCoronaMesh.renderOrder = -8;
+
+    this.sunGroup.add(sunDiscMesh, sunCoronaMesh);
+    this.celestialOrb = sunDiscMesh;
+    this.skyboxGroup.add(this.sunGroup);
+
+    // 4. Celestial Moon Rig (Lunar Disc + Lunar Mare Crater Details + Nocturnal Halo)
+    this.moonGroup = new THREE.Group();
+    const moonDiscGeo = new THREE.SphereGeometry(4.2, 20, 20);
+    this.moonDiscMat = new THREE.MeshBasicMaterial({
+      color: 0xdbeafe,
+      fog: false,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false,
+    });
+    const moonDiscMesh = new THREE.Mesh(moonDiscGeo, this.moonDiscMat);
+    moonDiscMesh.renderOrder = -8;
+
+    const moonHaloGeo = new THREE.SphereGeometry(8.6, 20, 20);
+    this.moonHaloMat = new THREE.MeshBasicMaterial({
+      color: 0x60a5fa,
+      fog: false,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const moonHaloMesh = new THREE.Mesh(moonHaloGeo, this.moonHaloMat);
+    moonHaloMesh.renderOrder = -8;
+
+    this.moonGroup.add(moonDiscMesh, moonHaloMesh);
+    this.skyboxGroup.add(this.moonGroup);
+
+    // 5. Dynamic Volumetric Cloud Canopy Dome (Procedural Multi-Octave FBM Clouds)
+    this.cloudDomeUniforms = {
+      uTime: { value: 0 },
+      uCloudDensity: { value: 0.68 },
+      uCloudLitColor: { value: new THREE.Color(0xf1f5f9) },
+      uCloudShadowColor: { value: new THREE.Color(0x475569) },
+      uSunDirection: { value: new THREE.Vector3(0.5, 0.6, -0.6).normalize() },
+      uLightningFlash: { value: 0 },
+    };
+
+    const cloudDomeGeo = new THREE.SphereGeometry(
+      192,
+      36,
+      20,
+      0,
+      Math.PI * 2,
+      0,
+      Math.PI * 0.49
+    );
+    const cloudDomeMat = new THREE.ShaderMaterial({
+      uniforms: this.cloudDomeUniforms,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+      vertexShader: `
+        varying vec3 vLocalPos;
+        void main() {
+          vLocalPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uCloudDensity;
+        uniform vec3 uCloudLitColor;
+        uniform vec3 uCloudShadowColor;
+        uniform vec3 uSunDirection;
+        uniform float uLightningFlash;
+        varying vec3 vLocalPos;
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        float valueNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          float a = hash21(i);
+          float b = hash21(i + vec2(1.0, 0.0));
+          float c = hash21(i + vec2(0.0, 1.0));
+          float d = hash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+
+        float fbmClouds(vec2 uv) {
+          float v = 0.0;
+          float amp = 0.52;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 4; i++) {
+            v += amp * valueNoise(uv);
+            uv = rot * uv * 2.07 + vec2(0.17, 0.31);
+            amp *= 0.5;
+          }
+          return v;
+        }
+
+        void main() {
+          vec3 dir = normalize(vLocalPos);
+          // Fade out clouds gently near the horizon rim so they blend seamlessly into distance fog
+          float horizonFade = smoothstep(0.03, 0.24, dir.y);
+          if (horizonFade <= 0.001) discard;
+
+          // Project dome direction onto atmospheric cloud plane
+          vec2 cloudUv = dir.xz / (dir.y + 0.32) * 2.35;
+          vec2 windOffset = vec2(uTime * 0.035, uTime * 0.016);
+
+          float nBase = fbmClouds(cloudUv + windOffset);
+          float nDetail = fbmClouds(cloudUv * 2.4 - windOffset * 1.4);
+          float nCombined = nBase * 0.72 + nDetail * 0.28;
+
+          // Map uCloudDensity (0.22 clear .. 0.68 fog .. 0.92 rain) to coverage threshold
+          float threshold = mix(0.68, 0.22, uCloudDensity);
+          float softness = mix(0.22, 0.34, uCloudDensity);
+          float cloudAlpha = smoothstep(threshold, threshold + softness, nCombined);
+
+          // Self-shadowing and directional silver-lining near the sun
+          float thickness = clamp((nCombined - threshold) / max(0.05, softness), 0.0, 1.0);
+          float sunAlign = max(0.0, dot(dir, uSunDirection));
+          float silverLining = pow(sunAlign, 8.0) * (1.0 - thickness * 0.65) * 0.55;
+
+          vec3 col = mix(uCloudLitColor, uCloudShadowColor, thickness * 0.78);
+          col += uCloudLitColor * silverLining;
+          col = mix(col, vec3(0.82, 0.88, 1.0), uLightningFlash * 0.65);
+
+          float finalAlpha = cloudAlpha * horizonFade * clamp(uCloudDensity * 1.08, 0.15, 0.94);
+          gl_FragColor = vec4(col, finalAlpha);
+        }
+      `,
+    });
+    const cloudDomeMesh = new THREE.Mesh(cloudDomeGeo, cloudDomeMat);
+    cloudDomeMesh.renderOrder = -5;
+    cloudDomeMesh.frustumCulled = false;
+    this.skyboxGroup.add(cloudDomeMesh);
+  }
+
   public applySettings(settings: GraphicsSettings): void {
     this.weatherEffectsEnabled = settings.weatherEffects;
     this.shadowsEnabled = settings.shadows;
     if (this.isHeadless) return;
     const scale =
-      settings.quality === 'low' ? 0.75 : settings.quality === 'medium' ? 1.0 : 1.25;
+      settings.quality === 'low' ? 0.75 : settings.quality === 'medium' ? 1.0 : 1.15;
     this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio * scale * settings.resolutionScale, 2)
+      Math.min(window.devicePixelRatio * scale * settings.resolutionScale, 1.75)
     );
     this.renderer.shadowMap.enabled = settings.shadows;
     this.sunLight.castShadow = settings.shadows;
-    for (const pt of this.torchLights) {
-      pt.castShadow = settings.shadows;
+    for (let i = 0; i < this.torchLights.length; i++) {
+      this.torchLights[i].castShadow = i === 0 && settings.shadows;
+      if (i === 0 && settings.shadows) {
+        this.torchLights[i].shadow.needsUpdate = true;
+      }
     }
     if (!settings.weatherEffects) {
       if (this.rainSystem) this.rainSystem.visible = false;
@@ -2744,6 +3119,7 @@ export class SceneManager {
   }
 
   public update(dt: number, elapsed: number, playerX: number, playerZ: number): void {
+    this.frameCounter++;
     // Advance Day/Night cycle smoothly (full 24h cycle in ~8 minutes of real gameplay, or controllable via Meditation/Settings)
     this.timeOfDay = (this.timeOfDay + dt * 0.055) % 24;
 
@@ -2770,53 +3146,78 @@ export class SceneManager {
       this.lightningFlash = Math.max(0, this.lightningFlash - dt * 4.5);
     }
 
-    // Calculate Sun / Moon angle and atmospheric color across 24h cycle
-    const sunAngle = ((this.timeOfDay - 6) / 24) * Math.PI * 2;
-    const sunElev = Math.sin(sunAngle); // +1 at 12:00 Noon, -1 at 00:00 Midnight
-    const sunHoriz = Math.cos(sunAngle);
+    // Calculate Dynamic Skybox State (colors, celestial orbits, starfield, and cloud density)
+    const skyState = computeSkyboxState(
+      this.timeOfDay,
+      this.weather,
+      this.previousWeather,
+      this.weatherTransitionBlend
+    );
+    this.lastSkyboxState = skyState;
+
+    const sunElev = skyState.sunElevation;
+    const sunHoriz = skyState.sunAzimuthX;
+
+    // Center the skybox dome on the player so the horizon is infinitely distant
+    this.skyboxGroup.position.set(playerX, 0, playerZ);
 
     // Position DirectionalLight (acts as Sun during day and Moon at night)
     const isNight = sunElev < -0.05;
-    const lightDirX = isNight ? -sunHoriz : sunHoriz;
+    const lightDirX = isNight ? skyState.moonAzimuthX : sunHoriz;
     const lightElev = Math.max(0.22, Math.abs(sunElev));
 
     this.sunLight.position.set(
-      playerX + lightDirX * 60,
-      lightElev * 68 + 14,
-      playerZ + 32
+      playerX + lightDirX * 52,
+      lightElev * 62 + 14,
+      playerZ + 28
     );
     this.sunLight.target.position.set(playerX, 0, playerZ);
     this.sunLight.target.updateMatrixWorld();
 
-    // Update Celestial Sun/Moon Orb in the sky
-    if (this.celestialOrb) {
-      this.celestialOrb.position.set(
-        playerX + lightDirX * 115,
-        Math.max(16, Math.abs(sunElev) * 92 + 12),
-        playerZ - 75
+    // Update Celestial Sun Rig & Moon Rig in the skybox
+    if (this.sunGroup && this.sunDiscMat && this.sunCoronaMat) {
+      this.sunGroup.visible = skyState.sunVisibility > 0.01;
+      this.sunGroup.position.set(sunHoriz * 142, sunElev * 126 + 12, -88);
+      this.sunGroup.scale.setScalar(skyState.sunScale);
+      this.sunDiscMat.color.setHex(skyState.sunColorHex);
+      this.sunDiscMat.opacity = Math.min(1, skyState.sunVisibility * 1.15);
+      this.sunCoronaMat.color.setHex(skyState.sunCoronaHex);
+      this.sunCoronaMat.opacity = skyState.sunVisibility * 0.44;
+    }
+
+    if (this.moonGroup && this.moonDiscMat && this.moonHaloMat) {
+      this.moonGroup.visible = skyState.moonVisibility > 0.01;
+      this.moonGroup.position.set(
+        skyState.moonAzimuthX * 142,
+        skyState.moonElevation * 126 + 12,
+        -88
       );
-      const orbMat = this.celestialOrb.material as THREE.MeshBasicMaterial;
-      if (isNight) {
-        orbMat.color.setHex(0xcbd5e1); // Pale silver full moon
-        this.celestialOrb.scale.setScalar(0.85);
-      } else if (sunElev < 0.28) {
-        orbMat.color.setHex(0xf97316); // Fiery dawn/dusk sun
-        this.celestialOrb.scale.setScalar(1.25);
-      } else {
-        orbMat.color.setHex(0xfef08a); // Golden midday sun
-        this.celestialOrb.scale.setScalar(1.0);
+      // In Northern Eclipse Crater / Starfall Valley, tint the moon with an astral/blood-eclipse aura
+      const isEclipseZone = playerZ <= -435;
+      this.moonDiscMat.color.setHex(isEclipseZone ? 0xfda4af : skyState.moonColorHex);
+      this.moonDiscMat.opacity = Math.min(1, skyState.moonVisibility * 1.1);
+      this.moonHaloMat.color.setHex(isEclipseZone ? 0xf43f5e : skyState.moonHaloHex);
+      this.moonHaloMat.opacity = skyState.moonVisibility * 0.38;
+    }
+
+    // Update Twinkling Night Starfield
+    if (this.starfieldPoints && this.starfieldMat) {
+      this.starfieldPoints.visible = skyState.starVisibility > 0.01;
+      if (this.starfieldPoints.visible) {
+        this.starfieldPoints.rotation.y = elapsed * 0.008;
+        const twinkle = 0.88 + Math.sin(elapsed * 2.4) * 0.12;
+        this.starfieldMat.opacity = skyState.starVisibility * twinkle;
       }
     }
 
     // Base Dawn / Day / Dusk / Night sky color, sun color, and light intensities
     let baseSunIntensity = 2.25;
     let baseHemiIntensity = 1.05;
-    const targetSunColor = new THREE.Color();
 
     if (sunElev > 0.28) {
       // Midday (08:00 - 16:00)
-      _color.copy(_skyDay);
-      targetSunColor.copy(_sunNoon);
+      _color.setHex(skyState.horizonHex);
+      _targetSunColor.copy(_sunNoon);
       baseSunIntensity = 2.35;
       baseHemiIntensity = 1.1;
       this.hemiLight.color.setHex(0x9bb8d3);
@@ -2825,35 +3226,35 @@ export class SceneManager {
       // Dawn (05:30 - 08:00) or Dusk (16:00 - 19:00)
       const t = (sunElev + 0.08) / 0.36; // 0 at night edge, 1 at day edge
       const isDawn = this.timeOfDay < 12;
-      const horizonSky = isDawn ? _skyDawn : _skyDusk;
       const horizonSun = isDawn ? _sunDawn : _sunDusk;
 
-      _color.copy(_skyNight).lerp(horizonSky, Math.sin(t * Math.PI)).lerp(_skyDay, t);
-      targetSunColor.copy(_moonNight).lerp(horizonSun, Math.sin(t * Math.PI)).lerp(_sunNoon, t);
+      _color.setHex(skyState.horizonHex);
+      _targetSunColor.copy(_moonNight).lerp(horizonSun, Math.sin(t * Math.PI)).lerp(_sunNoon, t);
       baseSunIntensity = 0.85 + t * 1.5;
       baseHemiIntensity = 0.62 + t * 0.48;
       this.hemiLight.color.setHex(isDawn ? 0xd99b78 : 0xc2784e);
       this.hemiLight.groundColor.setHex(0x211b15);
     } else {
       // Night (19:00 - 05:30)
-      _color.copy(_skyNight);
-      targetSunColor.copy(_moonNight);
+      _color.setHex(skyState.horizonHex);
+      _targetSunColor.copy(_moonNight);
       baseSunIntensity = 0.68; // Atmospheric moonlight
       baseHemiIntensity = 0.48;
       this.hemiLight.color.setHex(0x3b5278);
       this.hemiLight.groundColor.setHex(0x111318);
     }
 
-    this.sunLight.color.lerp(targetSunColor, Math.min(1, dt * 3.0));
+    this.sunLight.color.lerp(_targetSunColor, Math.min(1, dt * 3.0));
 
-    // Blend sky color with weather atmospheric tint
+    // Blend sky color with weather atmospheric tint (zero allocation)
     const prevTint = WEATHER_PRESETS[this.previousWeather]?.skyTintHex ?? 0x3b526b;
     const targetTint = WEATHER_PRESETS[this.weather]?.skyTintHex ?? 0x3b526b;
+    _targetTintColor.setHex(targetTint);
     _weatherTint.setHex(prevTint).lerp(
-      new THREE.Color(targetTint),
+      _targetTintColor,
       this.weatherTransitionBlend
     );
-    _color.lerp(_weatherTint, isNight ? 0.28 : 0.48);
+    _color.lerp(_weatherTint, isNight ? 0.25 : 0.38);
 
     // Smoothly blend biome-specific fog & sky atmosphere across all 12 biomes
     let targetBiomeFogHex = 0x1e242b;
@@ -2880,13 +3281,53 @@ export class SceneManager {
       targetBiomeFogHex = 0x1e293b;
       mistParticleHex = 0xfef08a;
     }
-    this.biomeFogTint.lerp(new THREE.Color(targetBiomeFogHex), Math.min(1, dt * 1.8));
+    _targetBiomeFogColor.setHex(targetBiomeFogHex);
+    this.biomeFogTint.lerp(_targetBiomeFogColor, Math.min(1, dt * 1.8));
     if (playerZ <= -105 || Math.abs(playerX) > 105) {
-      _color.lerp(this.biomeFogTint, 0.62);
+      _color.lerp(this.biomeFogTint, 0.55);
     }
 
     if (this.lightningFlash > 0) {
-      _color.lerp(new THREE.Color(0xc7d2fe), this.lightningFlash * 0.45);
+      _color.lerp(_lightningColor, this.lightningFlash * 0.45);
+    }
+
+    // Update Sky Gradient Dome & Volumetric Cloud Canopy Shader Uniforms
+    if (this.skyDomeUniforms) {
+      this.skyDomeUniforms.uZenithColor.value.setHex(skyState.zenithHex);
+      if (playerZ <= -105 || Math.abs(playerX) > 105) {
+        this.skyDomeUniforms.uZenithColor.value.lerp(this.biomeFogTint, 0.38);
+      }
+      if (this.lightningFlash > 0) {
+        this.skyDomeUniforms.uZenithColor.value.lerp(_lightningColor, this.lightningFlash * 0.35);
+      }
+      this.skyDomeUniforms.uHorizonColor.value.copy(_color);
+      this.skyDomeUniforms.uNadirColor.value.setHex(skyState.nadirHex);
+      this.skyDomeUniforms.uSunDirection.value
+        .set(
+          isNight ? skyState.moonAzimuthX * 142 : sunHoriz * 142,
+          (isNight ? skyState.moonElevation : sunElev) * 126 + 12,
+          -88
+        )
+        .normalize();
+      this.skyDomeUniforms.uSunGlowColor.value.setHex(
+        isNight ? skyState.moonHaloHex : skyState.sunCoronaHex
+      );
+      this.skyDomeUniforms.uSunGlowIntensity.value = isNight
+        ? skyState.moonVisibility * 0.32
+        : skyState.sunVisibility * 0.75;
+    }
+
+    if (this.cloudDomeUniforms) {
+      this.cloudDomeUniforms.uTime.value += dt * skyState.cloudWindSpeed;
+      this.cloudDomeUniforms.uCloudDensity.value = skyState.cloudDensity;
+      this.cloudDomeUniforms.uCloudLitColor.value.setHex(skyState.cloudLitHex);
+      this.cloudDomeUniforms.uCloudShadowColor.value.setHex(skyState.cloudShadowHex);
+      if (this.skyDomeUniforms) {
+        this.cloudDomeUniforms.uSunDirection.value.copy(
+          this.skyDomeUniforms.uSunDirection.value
+        );
+      }
+      this.cloudDomeUniforms.uLightningFlash.value = this.lightningFlash;
     }
 
     this.sunLight.intensity =
@@ -2895,22 +3336,46 @@ export class SceneManager {
       baseHemiIntensity * wMetrics.hemiIntensityMultiplier + this.lightningFlash * 0.9;
 
     // Update Dynamic World Light Sources (Torches, Campfires, Braziers, Sanctuary Altar)
-    // Light sources shine brighter at Dusk/Night and during gloomy Fog/Rain weather
+    // Zero-allocation single-pass top-4 closest anchor selection
     if (this.torchLights.length > 0 && this.worldLightAnchors.length > 0) {
       const darknessBoost = sunElev < 0.15 ? 1.45 + Math.max(0, -sunElev) * 0.65 : 0.72;
       const weatherBoost = this.weather === 'rain' ? 1.2 : this.weather === 'fog' ? 1.12 : 1.0;
 
-      // Sort anchors by squared distance to player and bind the closest 4 to the pooled PointLights
-      const sorted = [...this.worldLightAnchors].sort(
-        (a, b) =>
-          (a.x - playerX) * (a.x - playerX) +
-          (a.z - playerZ) * (a.z - playerZ) -
-          ((b.x - playerX) * (b.x - playerX) + (b.z - playerZ) * (b.z - playerZ))
-      );
+      let a0: WorldLightAnchor | null = null;
+      let a1: WorldLightAnchor | null = null;
+      let a2: WorldLightAnchor | null = null;
+      let a3: WorldLightAnchor | null = null;
+      let d0 = Infinity;
+      let d1 = Infinity;
+      let d2 = Infinity;
+      let d3 = Infinity;
 
+      for (let i = 0; i < this.worldLightAnchors.length; i++) {
+        const anc = this.worldLightAnchors[i];
+        const dx = anc.x - playerX;
+        const dz = anc.z - playerZ;
+        const dSq = dx * dx + dz * dz;
+        if (dSq < d0) {
+          d3 = d2; a3 = a2;
+          d2 = d1; a2 = a1;
+          d1 = d0; a1 = a0;
+          d0 = dSq; a0 = anc;
+        } else if (dSq < d1) {
+          d3 = d2; a3 = a2;
+          d2 = d1; a2 = a1;
+          d1 = dSq; a1 = anc;
+        } else if (dSq < d2) {
+          d3 = d2; a3 = a2;
+          d2 = dSq; a2 = anc;
+        } else if (dSq < d3) {
+          d3 = dSq; a3 = anc;
+        }
+      }
+
+      const closestAnchors = [a0, a1, a2, a3];
       for (let i = 0; i < this.torchLights.length; i++) {
         const pt = this.torchLights[i];
-        const anchor = sorted[i];
+        const anchor = closestAnchors[i];
         if (!anchor) {
           pt.intensity = 0;
           continue;
@@ -2923,6 +3388,14 @@ export class SceneManager {
           Math.sin(elapsed * 11.5 + i * 2.1) * 0.12 +
           Math.cos(elapsed * 19.3 + i * 3.7) * 0.07;
         pt.intensity = anchor.baseIntensity * darknessBoost * weatherBoost * flicker;
+
+        if (i === 0 && this.shadowsEnabled) {
+          const anchorChanged = this.lastPrimaryTorchAnchor !== anchor;
+          this.lastPrimaryTorchAnchor = anchor;
+          if (anchorChanged || (d0 < 784 && this.frameCounter % 4 === 0)) {
+            pt.shadow.needsUpdate = true;
+          }
+        }
       }
     }
 

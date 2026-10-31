@@ -197,11 +197,19 @@ func perform_sword_attack(is_heavy: bool) -> void:
 	if is_heavy:
 		base_atk = int(round(float(base_atk) * 1.45))
 
+	var is_crit := randf() < 0.15
+	if is_crit:
+		base_atk = int(round(float(base_atk) * 1.5))
+
 	if attack_area:
 		for body in attack_area.get_overlapping_bodies():
 			if body.has_method("take_combat_damage"):
-				body.call("take_combat_damage", base_atk, active_sword == "silver", false)
-				add_camera_shake(0.12 if is_heavy else 0.06, 0.15)
+				body.call("take_combat_damage", base_atk, active_sword == "silver", is_crit)
+				if is_crit:
+					add_camera_shake(0.36 if is_heavy else 0.28, 0.30)
+					trigger_mobile_haptic(85 if is_heavy else 65)
+				else:
+					add_camera_shake(0.18 if is_heavy else 0.08, 0.18 if is_heavy else 0.12)
 	GameState.hud_updated.emit()
 
 func cycle_magic_sign() -> void:
@@ -259,15 +267,35 @@ func take_player_damage(raw_damage: int) -> void:
 	var defense := int(GameState.player_stats.get("defense", 8))
 	var final_dmg := maxi(1, raw_damage - int(defense * 0.4))
 	GameState.player_stats["hp"] = maxi(0, int(GameState.player_stats["hp"]) - final_dmg)
-	add_camera_shake(0.16, 0.2)
+	var is_heavy_damage := (raw_damage >= 26 or final_dmg >= 22)
+	if is_heavy_damage:
+		add_camera_shake(0.38, 0.34)
+		trigger_mobile_haptic(120)
+	else:
+		add_camera_shake(0.16, 0.18)
 	AudioManager.play_sfx("hit")
 	GameState.hud_updated.emit()
 
 func add_camera_shake(intensity: float, duration: float) -> void:
-	shake_intensity = intensity
-	shake_timer = duration
+	shake_intensity = maxf(shake_intensity, intensity)
+	shake_timer = maxf(shake_timer, duration)
+
+func trigger_mobile_haptic(duration_ms: int) -> void:
+	var is_mobile := (
+		OS.has_feature("mobile")
+		or OS.has_feature("web_android")
+		or OS.has_feature("web_ios")
+		or DisplayServer.is_touchscreen_available()
+		or str(GameState.settings.get("control_mode", "auto")) == "mobile"
+	)
+	if not is_mobile:
+		return
+	Input.vibrate_handheld(duration_ms)
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("if (typeof navigator !== 'undefined' && navigator.vibrate) { navigator.vibrate(%d); }" % duration_ms)
 
 func trigger_interact() -> void:
 	if nearby_interactable and is_instance_valid(nearby_interactable):
 		if nearby_interactable.has_method("interact"):
 			nearby_interactable.call("interact")
+

@@ -42,11 +42,13 @@ export default function App() {
       setHud(nextHud);
     });
     gameRef.current = game;
+    (window as unknown as { __game?: Game }).__game = game;
     game.start();
 
     return () => {
       game.dispose();
       gameRef.current = null;
+      (window as unknown as { __game?: Game }).__game = undefined;
     };
   }, []);
 

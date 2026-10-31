@@ -1672,12 +1672,6 @@ export class EnemyAI {
         d.astralInvulnerable = d.slowTimer <= 0 && d.stunTimer <= 0;
       }
 
-      // Update 3D Health Bar orientation & fill
-      enemy.hpBarGroup.quaternion.copy(cameraQuaternion);
-      const hpRatio = Math.max(0, Math.min(1, d.hp / d.maxHp));
-      enemy.hpFillMesh.scale.x = Math.max(0.001, hpRatio);
-      enemy.hpFillMesh.position.x = -(1 - hpRatio) * 0.58;
-
       // Burn & Bleed damage over time
       if (d.burnTimer > 0) {
         d.burnTimer = Math.max(0, d.burnTimer - dt);
@@ -1712,12 +1706,35 @@ export class EnemyAI {
       const distToRealPlayer = Math.hypot(playerX - d.x, playerZ - d.z);
       const isTauntedByDecoy =
         decoyTarget !== null && Math.hypot(decoyTarget.x - d.x, decoyTarget.z - d.z) <= 18;
+
+      // Distance culling: hide and skip heavy collision/bone math for unalerted patrolling enemies > 110m away
+      if (
+        distToRealPlayer > 110 &&
+        d.state === 'PATROL' &&
+        d.hp === d.maxHp &&
+        !isTauntedByDecoy &&
+        !(d.packId && alertedPacks.has(d.packId))
+      ) {
+        enemy.rig.root.visible = false;
+        enemy.hpBarGroup.visible = false;
+        if (enemy.aoeTelegraphGroup) enemy.aoeTelegraphGroup.visible = false;
+        continue;
+      }
+      enemy.rig.root.visible = true;
+
+      // Update 3D Health Bar orientation & fill (only for visible nearby enemies)
+      enemy.hpBarGroup.visible = distToRealPlayer < 24 || d.hp < d.maxHp;
+      if (enemy.hpBarGroup.visible) {
+        enemy.hpBarGroup.quaternion.copy(cameraQuaternion);
+        const hpRatio = Math.max(0, Math.min(1, d.hp / d.maxHp));
+        enemy.hpFillMesh.scale.x = Math.max(0.001, hpRatio);
+        enemy.hpFillMesh.position.x = -(1 - hpRatio) * 0.58;
+      }
+
       const aggroX = isTauntedByDecoy && decoyTarget ? decoyTarget.x : playerX;
       const aggroZ = isTauntedByDecoy && decoyTarget ? decoyTarget.z : playerZ;
       const distToTarget = Math.hypot(aggroX - d.x, aggroZ - d.z);
       const distToSpawn = Math.hypot(d.spawnX - d.x, d.spawnZ - d.z);
-
-      enemy.hpBarGroup.visible = distToRealPlayer < 24 || d.hp < d.maxHp;
 
       // Show top-screen Boss Health Bar when fighting any Boss or Contract Mini-Boss
       if (

@@ -39,6 +39,10 @@ import {
   isPointInSettlementSafeZone,
   clampEnemySpawnOutsideSettlements,
   clampEnemyPositionOutsideSettlements,
+  computeSkyboxState,
+  computeCombatScreenShake,
+  computeCombatHapticPattern,
+  isHeavyEnemyAttack,
 } from './rules.ts';
 import { t } from './i18n.ts';
 import { ASH_ECHOES, CODEX_ARTICLES, PROLOGUE_SLIDES, WORLD_LORE_NOTES } from './loreData.ts';
@@ -963,4 +967,167 @@ test('All waystones, lore notes, ash echoes, and swamp/port chests sit above wat
   assert.ok(getGroundHeight(-160, 21) > -1.0, 'chest_solheim_admiral must be above sea water');
 });
 
+test('computeSkyboxState dynamically updates sky colors, celestial bodies, and cloud density by time and weather', () => {
+  const clearNoon = computeSkyboxState(12.0, 'clear');
+  const clearDawn = computeSkyboxState(6.2, 'clear');
+  const clearDusk = computeSkyboxState(18.0, 'clear');
+  const clearMidnight = computeSkyboxState(0.0, 'clear');
 
+  assert.equal(clearNoon.phase, 'day');
+  assert.equal(clearDawn.phase, 'dawn');
+  assert.equal(clearDusk.phase, 'dusk');
+  assert.equal(clearMidnight.phase, 'night');
+
+  // Celestial bodies swap visibility between day and night
+  assert.ok(clearNoon.sunElevation > 0.95);
+  assert.ok(clearNoon.sunVisibility > 0.7);
+  assert.equal(clearNoon.moonVisibility, 0);
+  assert.equal(clearNoon.starVisibility, 0);
+
+  assert.ok(clearMidnight.moonElevation > 0.95);
+  assert.ok(clearMidnight.moonVisibility > 0.7);
+  assert.equal(clearMidnight.sunVisibility, 0);
+  assert.ok(clearMidnight.starVisibility > 0.7, 'Stars must be bright on a clear midnight');
+
+  // Horizon/zenith colors differ across dawn, noon, dusk, and midnight
+  assert.notEqual(clearDawn.horizonHex, clearNoon.horizonHex);
+  assert.notEqual(clearDusk.horizonHex, clearNoon.horizonHex);
+  assert.notEqual(clearMidnight.zenithHex, clearNoon.zenithHex);
+
+  // Weather conditions scale cloud density and attenuate celestial visibility
+  const fogNoon = computeSkyboxState(12.0, 'fog');
+  const rainNoon = computeSkyboxState(12.0, 'rain');
+  const rainMidnight = computeSkyboxState(0.0, 'rain');
+
+  assert.ok(
+    clearNoon.cloudDensity < fogNoon.cloudDensity &&
+      fogNoon.cloudDensity < rainNoon.cloudDensity,
+    'Cloud density must increase from clear -> fog -> rain'
+  );
+  assert.ok(
+    clearNoon.sunVisibility > fogNoon.sunVisibility &&
+      fogNoon.sunVisibility > rainNoon.sunVisibility,
+    'Sun visibility must be attenuated by fog and rain clouds'
+  );
+  assert.ok(
+    rainMidnight.starVisibility < clearMidnight.starVisibility * 0.2,
+    'Heavy storm clouds at midnight must obscure most stars'
+  );
+
+  // Smooth transition blending between weather states
+  const halfBlend = computeSkyboxState(12.0, 'rain', 'clear', 0.5);
+  assert.ok(
+    halfBlend.cloudDensity > clearNoon.cloudDensity &&
+      halfBlend.cloudDensity < rainNoon.cloudDensity
+  );
+});
+
+test('computeCombatScreenShake triggers stronger screen-shake on critical player hits and heavy enemy attacks', () => {
+  // Verify heavy enemy attack classification
+  assert.equal(isHeavyEnemyAttack('wolf', 14), false);
+  assert.equal(isHeavyEnemyAttack('wolf', 30), true);
+  assert.equal(isHeavyEnemyAttack('boss_colossus', 20), true);
+  assert.equal(isHeavyEnemyAttack('gargoyle', 22), true);
+  assert.equal(isHeavyEnemyAttack('ghoul', 16, true), true);
+
+  // Player attacks: Light < Heavy < Crit < Heavy+Crit
+  const lightHit = computeCombatScreenShake({ source: 'player', isCrit: false, isHeavy: false });
+  const heavyHit = computeCombatScreenShake({ source: 'player', isCrit: false, isHeavy: true });
+  const critHit = computeCombatScreenShake({ source: 'player', isCrit: true, isHeavy: false });
+  const heavyCritHit = computeCombatScreenShake({ source: 'player', isCrit: true, isHeavy: true });
+
+  assert.equal(lightHit.kind, 'light_hit');
+  assert.equal(heavyHit.kind, 'heavy_hit');
+  assert.equal(critHit.kind, 'critical_hit');
+  assert.equal(heavyCritHit.kind, 'critical_hit');
+  assert.ok(lightHit.intensity < heavyHit.intensity);
+  assert.ok(heavyHit.intensity < critHit.intensity);
+  assert.ok(critHit.intensity < heavyCritHit.intensity);
+  assert.ok(critHit.rollAmplitude > lightHit.rollAmplitude);
+  assert.equal(critHit.flashColor, '#facc15');
+
+  // Enemy attacks: Light enemy vs Heavy enemy / Boss slam
+  const enemyLight = computeCombatScreenShake({
+    source: 'enemy',
+    enemyType: 'wolf',
+    rawDamage: 14,
+  });
+  const enemyHeavy = computeCombatScreenShake({
+    source: 'enemy',
+    enemyType: 'boss_colossus',
+    rawDamage: 48,
+  });
+  const enemyParried = computeCombatScreenShake({
+    source: 'enemy',
+    enemyType: 'boss_colossus',
+    rawDamage: 48,
+    parried: true,
+  });
+
+  assert.equal(enemyLight.kind, 'light_hit');
+  assert.equal(enemyHeavy.kind, 'heavy_enemy_attack');
+  assert.ok(enemyHeavy.intensity > enemyLight.intensity * 2);
+  assert.ok(enemyHeavy.duration > enemyLight.duration);
+  assert.ok(enemyHeavy.rollAmplitude > enemyLight.rollAmplitude * 2);
+  assert.equal(enemyHeavy.flashColor, '#ef4444');
+  assert.ok(enemyParried.intensity < enemyHeavy.intensity);
+});
+
+test('computeCombatHapticPattern triggers vibration patterns on mobile for critical hits and heavy damage while ignoring desktop and light hits', () => {
+  // Desktop ('pc') never triggers navigator.vibrate patterns
+  assert.deepEqual(
+    computeCombatHapticPattern({ platform: 'pc', kind: 'critical_hit', isHeavy: true }),
+    []
+  );
+  assert.deepEqual(
+    computeCombatHapticPattern({ platform: 'pc', kind: 'heavy_enemy_attack', hpDamage: 45 }),
+    []
+  );
+
+  // Mobile ('mobile') light hits and regular heavy attacks without crit do not vibrate
+  assert.deepEqual(
+    computeCombatHapticPattern({ platform: 'mobile', kind: 'light_hit' }),
+    []
+  );
+  assert.deepEqual(
+    computeCombatHapticPattern({ platform: 'mobile', kind: 'heavy_hit' }),
+    []
+  );
+
+  // Mobile ('mobile') critical player hits return distinct multi-pulse vibration patterns
+  const mobileCrit = computeCombatHapticPattern({
+    platform: 'mobile',
+    kind: 'critical_hit',
+    isHeavy: false,
+  });
+  const mobileHeavyCrit = computeCombatHapticPattern({
+    platform: 'mobile',
+    kind: 'critical_hit',
+    isHeavy: true,
+  });
+  assert.deepEqual(mobileCrit, [40, 25, 70]);
+  assert.deepEqual(mobileHeavyCrit, [55, 30, 95]);
+
+  // Mobile ('mobile') heavy enemy attack or heavy HP damage (>=22) returns strong damage vibration pattern
+  const mobileHeavyDamage = computeCombatHapticPattern({
+    platform: 'mobile',
+    kind: 'heavy_enemy_attack',
+  });
+  const mobileHighHpDamage = computeCombatHapticPattern({
+    platform: 'mobile',
+    kind: 'light_hit',
+    hpDamage: 28,
+  });
+  assert.deepEqual(mobileHeavyDamage, [85, 40, 125]);
+  assert.deepEqual(mobileHighHpDamage, [85, 40, 125]);
+
+  // Verify ScreenShakeProfile carries hapticPattern metadata
+  const critShake = computeCombatScreenShake({ source: 'player', isCrit: true, isHeavy: false });
+  const heavyEnemyShake = computeCombatScreenShake({
+    source: 'enemy',
+    enemyType: 'boss_colossus',
+    rawDamage: 42,
+  });
+  assert.deepEqual(critShake.hapticPattern, [40, 25, 70]);
+  assert.deepEqual(heavyEnemyShake.hapticPattern, [85, 40, 125]);
+});

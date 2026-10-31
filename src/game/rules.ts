@@ -9,6 +9,7 @@ import type {
   ControlPlatform,
   DeviceEnvironmentSnapshot,
   EnemyData,
+  EnemyType,
   EquipmentSlot,
   GameItem,
   GameLanguage,
@@ -1413,6 +1414,436 @@ export function interpolateWeatherMetrics(
     groundRoughness: lerp(a.groundRoughness, b.groundRoughness),
   };
 }
+
+export type SkyboxPhase = 'dawn' | 'day' | 'dusk' | 'night';
+
+export interface SkyboxState {
+  phase: SkyboxPhase;
+  zenithHex: number;
+  horizonHex: number;
+  nadirHex: number;
+  sunColorHex: number;
+  sunCoronaHex: number;
+  moonColorHex: number;
+  moonHaloHex: number;
+  sunElevation: number;
+  sunAzimuthX: number;
+  sunVisibility: number;
+  sunScale: number;
+  moonElevation: number;
+  moonAzimuthX: number;
+  moonVisibility: number;
+  starVisibility: number;
+  cloudDensity: number;
+  cloudDarkness: number;
+  cloudLitHex: number;
+  cloudShadowHex: number;
+  cloudWindSpeed: number;
+}
+
+function lerpRgbHex(hexA: number, hexB: number, t: number): number {
+  const c = Math.max(0, Math.min(1, t));
+  const rA = (hexA >> 16) & 0xff;
+  const gA = (hexA >> 8) & 0xff;
+  const bA = hexA & 0xff;
+  const rB = (hexB >> 16) & 0xff;
+  const gB = (hexB >> 8) & 0xff;
+  const bB = hexB & 0xff;
+  const r = Math.round(rA + (rB - rA) * c);
+  const g = Math.round(gA + (gB - gA) * c);
+  const b = Math.round(bA + (bB - bA) * c);
+  return (r << 16) | (g << 8) | b;
+}
+
+function smoothstepRange(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Pure deterministic calculation of the dynamic skybox state (sky gradient colors,
+ * sun/moon celestial trajectories & visibility, starfield opacity, and volumetric
+ * cloud density/tint) from in-game time (0..24) and weather conditions.
+ */
+export function computeSkyboxState(
+  timeOfDay: number,
+  weather: WeatherType,
+  previousWeather: WeatherType = weather,
+  weatherBlend = 1.0
+): SkyboxState {
+  const hour = ((timeOfDay % 24) + 24) % 24;
+  const blend = Math.max(0, Math.min(1, weatherBlend));
+  const sBlend = blend * blend * (3 - 2 * blend);
+
+  // Orbital mechanics across 24-hour cycle
+  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  const sunElevation = Math.sin(sunAngle); // +1 at 12:00 Noon, -1 at 00:00 Midnight
+  const sunAzimuthX = Math.cos(sunAngle); // +1 East at 06:00, -1 West at 18:00
+  const moonElevation = -sunElevation;
+  const moonAzimuthX = -sunAzimuthX;
+
+  let phase: SkyboxPhase = 'night';
+  if (sunElevation > 0.28) {
+    phase = 'day';
+  } else if (sunElevation >= -0.08) {
+    phase = hour < 12 ? 'dawn' : 'dusk';
+  }
+
+  // Cloud density & storm darkness per weather preset
+  const cloudPreset = (w: WeatherType) => {
+    switch (w) {
+      case 'clear':
+        return { density: 0.22, darkness: 0.12, wind: 0.28 };
+      case 'fog':
+        return { density: 0.68, darkness: 0.48, wind: 0.46 };
+      case 'rain':
+        return { density: 0.92, darkness: 0.82, wind: 1.15 };
+    }
+  };
+  const cpA = cloudPreset(previousWeather);
+  const cpB = cloudPreset(weather);
+  const baseCloudDensity = cpA.density + (cpB.density - cpA.density) * sBlend;
+  // Subtle dawn/dusk atmospheric condensation boost
+  const twilightFactor = Math.max(0, 1 - Math.abs(sunElevation) * 2.5) * 0.04;
+  const cloudDensity = Math.max(0, Math.min(1, baseCloudDensity + twilightFactor));
+  const cloudDarkness = cpA.darkness + (cpB.darkness - cpA.darkness) * sBlend;
+  const cloudWindSpeed = cpA.wind + (cpB.wind - cpA.wind) * sBlend;
+
+  // Base clear-sky zenith, horizon, nadir, sun, and cloud colors by time-of-day
+  let zenithHex: number;
+  let horizonHex: number;
+  let nadirHex: number;
+  let sunColorHex: number;
+  let sunCoronaHex: number;
+  let cloudLitHex: number;
+  let cloudShadowHex: number;
+
+  if (sunElevation > 0.28) {
+    // Full Day (08:00 - 16:00)
+    const noonFactor = smoothstepRange(0.28, 0.95, sunElevation);
+    zenithHex = lerpRgbHex(0x224c87, 0x1b4580, noonFactor);
+    horizonHex = lerpRgbHex(0x6e9bc4, 0x7fb0d6, noonFactor);
+    nadirHex = 0x1a2430;
+    sunColorHex = lerpRgbHex(0xffe099, 0xfff7d6, noonFactor);
+    sunCoronaHex = lerpRgbHex(0xf59e0b, 0xfef08a, noonFactor);
+    cloudLitHex = lerpRgbHex(0xf1f5f9, 0xffffff, noonFactor);
+    cloudShadowHex = lerpRgbHex(0x64748b, 0x798ba3, noonFactor);
+  } else if (sunElevation >= -0.08) {
+    // Dawn (05:30 - 08:00) or Dusk (16:00 - 19:00)
+    const t = (sunElevation + 0.08) / 0.36; // 0 at night edge, 1 at day edge
+    const peakGlow = Math.sin(t * Math.PI);
+    const isDawn = hour < 12;
+
+    const twilightZenith = isDawn ? 0x263868 : 0x241e42;
+    const twilightHorizon = isDawn ? 0xe07a4b : 0xd45232;
+    const twilightCloudLit = isDawn ? 0xffb380 : 0xf97316;
+    const twilightCloudShadow = isDawn ? 0x3b2d4a : 0x332038;
+
+    const nightToDayZenith = lerpRgbHex(0x060b16, 0x224c87, t);
+    const nightToDayHorizon = lerpRgbHex(0x101c2e, 0x6e9bc4, t);
+    zenithHex = lerpRgbHex(nightToDayZenith, twilightZenith, peakGlow * 0.72);
+    horizonHex = lerpRgbHex(nightToDayHorizon, twilightHorizon, peakGlow * 0.88);
+    nadirHex = lerpRgbHex(0x050811, 0x1a2028, t);
+
+    sunColorHex = lerpRgbHex(0xff5722, 0xffe099, t);
+    sunCoronaHex = lerpRgbHex(0xea580c, 0xf59e0b, t);
+
+    const baseCloudLit = lerpRgbHex(0x283852, 0xf1f5f9, t);
+    const baseCloudShadow = lerpRgbHex(0x0f172a, 0x64748b, t);
+    cloudLitHex = lerpRgbHex(baseCloudLit, twilightCloudLit, peakGlow * 0.85);
+    cloudShadowHex = lerpRgbHex(baseCloudShadow, twilightCloudShadow, peakGlow * 0.7);
+  } else {
+    // Night (19:00 - 05:30)
+    const midnightDepth = smoothstepRange(-0.08, -0.85, sunElevation);
+    zenithHex = lerpRgbHex(0x091122, 0x040812, midnightDepth);
+    horizonHex = lerpRgbHex(0x142238, 0x0c1626, midnightDepth);
+    nadirHex = 0x04070e;
+    sunColorHex = 0xff6b35;
+    sunCoronaHex = 0xea580c;
+    cloudLitHex = lerpRgbHex(0x2e405c, 0x22324a, midnightDepth);
+    cloudShadowHex = lerpRgbHex(0x101827, 0x0a101d, midnightDepth);
+  }
+
+  // Modulate sky gradient & clouds by weather state (fog desaturates/hazes; rain darkens to storm slate)
+  const isNight = sunElevation < -0.05;
+  const fogSkyHex = isNight ? 0x141e27 : 0x526573;
+  const rainSkyHex = isNight ? 0x080e16 : 0x24313d;
+
+  const weatherSkyHex = (w: WeatherType) => {
+    if (w === 'fog') return fogSkyHex;
+    if (w === 'rain') return rainSkyHex;
+    return zenithHex;
+  };
+  const wHexA = weatherSkyHex(previousWeather);
+  const wHexB = weatherSkyHex(weather);
+  const targetWeatherSky = lerpRgbHex(wHexA, wHexB, sBlend);
+
+  const weatherInfluence = (cloudDensity - 0.22) / 0.7; // 0 in clear, ~0.65 in fog, 1.0 in rain
+  const clampedInfluence = Math.max(0, Math.min(1, weatherInfluence));
+
+  zenithHex = lerpRgbHex(zenithHex, targetWeatherSky, clampedInfluence * 0.78);
+  horizonHex = lerpRgbHex(horizonHex, targetWeatherSky, clampedInfluence * 0.68);
+  cloudLitHex = lerpRgbHex(
+    cloudLitHex,
+    isNight ? 0x16202e : 0x475569,
+    cloudDarkness * 0.76
+  );
+  cloudShadowHex = lerpRgbHex(
+    cloudShadowHex,
+    isNight ? 0x070b12 : 0x1e293b,
+    cloudDarkness * 0.85
+  );
+
+  // Celestial visibility & scaling
+  const rawSunVis = smoothstepRange(-0.12, 0.14, sunElevation);
+  const sunWeatherAttenuation = Math.max(0.08, 1 - cloudDensity * 0.82);
+  const sunVisibility = rawSunVis * sunWeatherAttenuation;
+  const sunScale = 1.0 + Math.max(0, 1 - Math.max(0, sunElevation) * 2.2) * 0.35;
+
+  const rawMoonVis = smoothstepRange(-0.1, 0.14, moonElevation);
+  const moonWeatherAttenuation = Math.max(0.12, 1 - cloudDensity * 0.74);
+  const moonVisibility = rawMoonVis * moonWeatherAttenuation;
+
+  const rawStarVis = smoothstepRange(0.06, -0.22, sunElevation);
+  const starWeatherAttenuation = Math.max(0, 1 - cloudDensity * 0.92);
+  const starVisibility = rawStarVis * starWeatherAttenuation;
+
+  return {
+    phase,
+    zenithHex,
+    horizonHex,
+    nadirHex,
+    sunColorHex,
+    sunCoronaHex,
+    moonColorHex: 0xdbeafe,
+    moonHaloHex: 0x60a5fa,
+    sunElevation,
+    sunAzimuthX,
+    sunVisibility,
+    sunScale,
+    moonElevation,
+    moonAzimuthX,
+    moonVisibility,
+    starVisibility,
+    cloudDensity,
+    cloudDarkness,
+    cloudLitHex,
+    cloudShadowHex,
+    cloudWindSpeed,
+  };
+}
+
+export type ScreenShakeKind =
+  | 'none'
+  | 'light_hit'
+  | 'heavy_hit'
+  | 'critical_hit'
+  | 'heavy_enemy_attack';
+
+export interface ScreenShakeProfile {
+  kind: ScreenShakeKind;
+  intensity: number;
+  duration: number;
+  rollAmplitude: number;
+  fovPunch: number;
+  flashColor: string | null;
+  flashOpacity: number;
+  hapticPattern: number[];
+}
+
+const HEAVY_ENEMY_TYPES: ReadonlySet<EnemyType> = new Set<EnemyType>([
+  'boss',
+  'malakor',
+  'boss_hydra',
+  'boss_colossus',
+  'boss_vesper',
+  'boss_avatar',
+  'demon',
+  'werewolf',
+  'gargoyle',
+  'troglodyte',
+  'void_knight',
+  'plague_reaper',
+]);
+
+/**
+ * Determines whether an enemy strike qualifies as a heavy/visceral attack
+ * based on enemy archetype, contract boss status, or raw/actual damage threshold.
+ */
+export function isHeavyEnemyAttack(
+  enemyType: EnemyType,
+  rawDamage: number,
+  isContractBoss = false,
+  hpDamage = 0
+): boolean {
+  if (isContractBoss) return true;
+  if (rawDamage >= 26 || hpDamage >= 22) return true;
+  return HEAVY_ENEMY_TYPES.has(enemyType);
+}
+
+/**
+ * Pure calculation of mobile haptic feedback vibration pattern (in milliseconds for navigator.vibrate)
+ * triggered when the player lands a critical hit or takes heavy damage on mobile platforms.
+ * Returns an empty array [] on desktop ('pc') or for non-qualifying hits.
+ */
+export function computeCombatHapticPattern(params: {
+  platform: ControlPlatform;
+  kind: ScreenShakeKind;
+  isHeavy?: boolean;
+  hpDamage?: number;
+}): number[] {
+  if (params.platform !== 'mobile') {
+    return [];
+  }
+  if (params.kind === 'critical_hit') {
+    return params.isHeavy ? [55, 30, 95] : [40, 25, 70];
+  }
+  if (params.kind === 'heavy_enemy_attack' || (params.hpDamage ?? 0) >= 22) {
+    return [85, 40, 125];
+  }
+  return [];
+}
+
+/**
+ * Pure calculation of screen-shake impulse parameters (camera trauma intensity,
+ * duration, rotational Dutch roll amplitude, FOV punch, screen vignette flash,
+ * and mobile haptic vibration pattern) triggered by critical player hits,
+ * heavy player attacks, or heavy enemy attacks.
+ */
+export function computeCombatScreenShake(params: {
+  source: 'player' | 'enemy' | 'barrier';
+  isCrit?: boolean;
+  isHeavy?: boolean;
+  enemyType?: EnemyType;
+  rawDamage?: number;
+  hpDamage?: number;
+  isContractBoss?: boolean;
+  parried?: boolean;
+}): ScreenShakeProfile {
+  if (params.source === 'barrier') {
+    return {
+      kind: 'heavy_hit',
+      intensity: 0.26,
+      duration: 0.26,
+      rollAmplitude: 0.018,
+      fovPunch: 2.1,
+      flashColor: '#eab308',
+      flashOpacity: 0.28,
+      hapticPattern: [],
+    };
+  }
+
+  if (params.source === 'player') {
+    const isCrit = Boolean(params.isCrit);
+    const isHeavy = Boolean(params.isHeavy);
+    if (isCrit && isHeavy) {
+      return {
+        kind: 'critical_hit',
+        intensity: 0.44,
+        duration: 0.36,
+        rollAmplitude: 0.032,
+        fovPunch: 3.5,
+        flashColor: '#facc15',
+        flashOpacity: 0.38,
+        hapticPattern: [55, 30, 95],
+      };
+    }
+    if (isCrit) {
+      return {
+        kind: 'critical_hit',
+        intensity: 0.34,
+        duration: 0.3,
+        rollAmplitude: 0.024,
+        fovPunch: 2.6,
+        flashColor: '#facc15',
+        flashOpacity: 0.3,
+        hapticPattern: [40, 25, 70],
+      };
+    }
+    if (isHeavy) {
+      return {
+        kind: 'heavy_hit',
+        intensity: 0.22,
+        duration: 0.22,
+        rollAmplitude: 0.015,
+        fovPunch: 1.6,
+        flashColor: '#fb923c',
+        flashOpacity: 0.18,
+        hapticPattern: [],
+      };
+    }
+    return {
+      kind: 'light_hit',
+      intensity: 0.08,
+      duration: 0.12,
+      rollAmplitude: 0.005,
+      fovPunch: 0.4,
+      flashColor: null,
+      flashOpacity: 0,
+      hapticPattern: [],
+    };
+  }
+
+  // Enemy attack on player
+  const heavyEnemy = isHeavyEnemyAttack(
+    params.enemyType ?? 'wolf',
+    params.rawDamage ?? 15,
+    params.isContractBoss,
+    params.hpDamage ?? 0
+  );
+
+  if (params.parried) {
+    if (heavyEnemy) {
+      return {
+        kind: 'heavy_hit',
+        intensity: 0.19,
+        duration: 0.19,
+        rollAmplitude: 0.013,
+        fovPunch: -1.2,
+        flashColor: '#fbbf24',
+        flashOpacity: 0.2,
+        hapticPattern: [],
+      };
+    }
+    return {
+      kind: 'light_hit',
+      intensity: 0.09,
+      duration: 0.11,
+      rollAmplitude: 0.006,
+      fovPunch: -0.5,
+      flashColor: null,
+      flashOpacity: 0,
+      hapticPattern: [],
+    };
+  }
+
+  if (heavyEnemy) {
+    // Scale intensity slightly with rawDamage for massive boss slams (e.g., 30..65 dmg)
+    const dmgScale = Math.min(1.25, Math.max(1.0, (params.rawDamage ?? 32) / 35));
+    return {
+      kind: 'heavy_enemy_attack',
+      intensity: Number((0.38 * dmgScale).toFixed(3)),
+      duration: Number((0.35 * Math.min(1.15, dmgScale)).toFixed(3)),
+      rollAmplitude: Number((0.028 * dmgScale).toFixed(4)),
+      fovPunch: Number((-3.0 * dmgScale).toFixed(2)),
+      flashColor: '#ef4444',
+      flashOpacity: 0.44,
+      hapticPattern: [85, 40, 125],
+    };
+  }
+
+  return {
+    kind: 'light_hit',
+    intensity: 0.16,
+    duration: 0.18,
+    rollAmplitude: 0.011,
+    fovPunch: -1.0,
+    flashColor: '#ef4444',
+    flashOpacity: 0.22,
+    hapticPattern: [],
+  };
+}
+
 
 /**
  * Pure helper for unlocking a world lore note / codex entry:

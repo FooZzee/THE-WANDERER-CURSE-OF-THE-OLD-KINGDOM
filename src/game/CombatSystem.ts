@@ -5,9 +5,11 @@ import type { PlayerController } from './PlayerController';
 import {
   calculateIncomingPlayerDamage,
   calculatePlayerAttackDamage,
+  computeCombatScreenShake,
   getGroundHeight,
   getSwordEffectiveness,
   isTargetInAttackCone,
+  type ScreenShakeProfile,
 } from './rules';
 import type { CollisionCylinder } from './SceneManager';
 import type { EnemyData } from './types';
@@ -143,7 +145,11 @@ export class CombatSystem {
     obstacles: CollisionCylinder[],
     onEnemyKilled: (enemy: EnemyData) => void,
     onCombatLog: (msg: string, type: 'info' | 'damage' | 'quest' | 'loot') => void,
-    onCameraShake?: (intensity: number, duration: number) => void,
+    onCameraShake?: (
+      intensity: number,
+      duration: number,
+      profile?: ScreenShakeProfile
+    ) => void,
     onFloatingDamage?: (
       text: string,
       isCrit: boolean,
@@ -365,11 +371,23 @@ export class CombatSystem {
             ed.y + 1.15,
             ed.z,
             activeSword === 'silver' ? 0x38bdf8 : 0xf59e0b,
-            18
+            isCrit ? 28 : 18
           );
-          this.spawnHitParticles(ed.x, ed.y + 1.0, ed.z, 0xdc2626, 14);
+          if (isCrit) {
+            this.spawnHitParticles(ed.x, ed.y + 1.3, ed.z, 0xfacc15, 24);
+          }
+          this.spawnHitParticles(ed.x, ed.y + 1.0, ed.z, 0xdc2626, isCrit ? 20 : 14);
           this.audio.playHitImpact(swordEff < 1.0);
-          onCameraShake?.(player.isHeavyAttack ? 0.16 : 0.08, 0.14);
+          const shakeProfile = computeCombatScreenShake({
+            source: 'player',
+            isCrit,
+            isHeavy: player.isHeavyAttack,
+          });
+          onCameraShake?.(
+            shakeProfile.intensity,
+            shakeProfile.duration,
+            shakeProfile
+          );
 
           const strikeLabel = player.isHeavyAttack
             ? 'Тяжёлый удар'
@@ -450,7 +468,11 @@ export class CombatSystem {
     player: PlayerController,
     effectiveDefense: number,
     onCombatLog: (msg: string, type: 'info' | 'damage' | 'quest' | 'loot') => void,
-    onCameraShake?: (intensity: number, duration: number) => void,
+    onCameraShake?: (
+      intensity: number,
+      duration: number,
+      profile?: ScreenShakeProfile
+    ) => void,
     onBarrierShatter?: () => void,
     activeSet?: string | null
   ): void {
@@ -469,7 +491,8 @@ export class CombatSystem {
         32
       );
       this.audio.playHitImpact(true);
-      onCameraShake?.(0.14, 0.16);
+      const barrierShake = computeCombatScreenShake({ source: 'barrier' });
+      onCameraShake?.(barrierShake.intensity, barrierShake.duration, barrierShake);
       onBarrierShatter?.();
       return;
     }
@@ -521,16 +544,41 @@ export class CombatSystem {
         20
       );
       this.audio.playHitImpact(true);
-      onCameraShake?.(0.08, 0.1);
+      const parryShake = computeCombatScreenShake({
+        source: 'enemy',
+        enemyType: enemy.type,
+        rawDamage,
+        isContractBoss: enemy.isContractBoss,
+        parried: true,
+      });
+      onCameraShake?.(parryShake.intensity, parryShake.duration, parryShake);
       onCombatLog(`Блок мечом! Урон снижен (-${res.hpDamage} ОЗ)`, 'info');
     } else if (res.hpDamage > 0) {
+      const hitShake = computeCombatScreenShake({
+        source: 'enemy',
+        enemyType: enemy.type,
+        rawDamage,
+        hpDamage: res.hpDamage,
+        isContractBoss: enemy.isContractBoss,
+        parried: false,
+      });
+      const isHeavyEnemyStrike = hitShake.kind === 'heavy_enemy_attack';
       this.spawnHitParticles(
         player.stats.x,
         player.stats.y + 1.1,
         player.stats.z,
         0xef4444,
-        18
+        isHeavyEnemyStrike ? 32 : 18
       );
+      if (isHeavyEnemyStrike) {
+        this.spawnHitParticles(
+          player.stats.x,
+          player.stats.y + 1.25,
+          player.stats.z,
+          0xf97316,
+          20
+        );
+      }
       this.audio.playHitImpact(false);
       // Obsidian Set & Colossus Decoction grant hyperarmor (no stagger interruption)
       const hasHyperarmor =
@@ -539,8 +587,11 @@ export class CombatSystem {
       if (!hasHyperarmor) {
         player.triggerHitReaction();
       }
-      onCameraShake?.(0.18, 0.18);
-      onCombatLog(`${enemy.name} наносит вам ${res.hpDamage} урона!`, 'damage');
+      onCameraShake?.(hitShake.intensity, hitShake.duration, hitShake);
+      onCombatLog(
+        `${enemy.name} наносит вам ${isHeavyEnemyStrike ? 'ТЯЖЁЛЫЙ УДАР: ' : ''}${res.hpDamage} урона!`,
+        'damage'
+      );
     }
 
     player.stats.hp = Math.max(0, player.stats.hp - res.hpDamage);

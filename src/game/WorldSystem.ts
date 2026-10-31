@@ -16,9 +16,37 @@ import type {
   WorldInteractable,
 } from './types';
 
+const _rayOrigin = new THREE.Vector3();
+const _rayDown = new THREE.Vector3(0, -1, 0);
+
+interface CachedInteractableParts {
+  questIndicatorRoot?: THREE.Object3D;
+  questExclamation?: THREE.Object3D;
+  questQuestion?: THREE.Object3D;
+  chestLidPivot?: THREE.Object3D;
+  chestTreasureGlow?: THREE.Object3D;
+  chestInnerAura?: THREE.Mesh;
+  npcTorso?: THREE.Object3D;
+  npcLeftLeg?: THREE.Object3D;
+  npcRightLeg?: THREE.Object3D;
+  npcLeftArm?: THREE.Object3D;
+  npcRightArm?: THREE.Object3D;
+  npcHead?: THREE.Object3D;
+  npcTorch?: THREE.Object3D;
+  npcTorchFlame?: THREE.Object3D;
+  smithHammer?: THREE.Object3D;
+  npcWeapon?: THREE.Object3D;
+  lootBeacon?: THREE.Object3D;
+  poiBeacon?: THREE.Object3D;
+  waystoneBeacon?: THREE.Object3D;
+  echoBeacon?: THREE.Object3D;
+  loreBeacon?: THREE.Mesh;
+}
+
 export class WorldSystem {
   public interactables: WorldInteractable[] = [];
   private meshes: Map<string, THREE.Object3D> = new Map();
+  private surfaceOffsets: Map<string, number> = new Map();
   private scene: THREE.Scene;
   private assetManager: AssetManager;
   private lastAnvilStrikeTime = 0;
@@ -39,15 +67,45 @@ export class WorldSystem {
     this.snapInteractablesToSurface(this.colliderMeshes);
   }
 
+  private getCachedParts(mesh: THREE.Object3D): CachedInteractableParts {
+    let parts = mesh.userData.parts as CachedInteractableParts | undefined;
+    if (!parts) {
+      const qRoot = mesh.getObjectByName('questIndicatorRoot');
+      parts = {
+        questIndicatorRoot: qRoot,
+        questExclamation: qRoot?.getObjectByName('questExclamation'),
+        questQuestion: qRoot?.getObjectByName('questQuestion'),
+        chestLidPivot: mesh.getObjectByName('chestLidPivot'),
+        chestTreasureGlow: mesh.getObjectByName('chestTreasureGlow'),
+        chestInnerAura: mesh.getObjectByName('chestInnerAura') as THREE.Mesh | undefined,
+        npcTorso: mesh.getObjectByName('npcTorso'),
+        npcLeftLeg: mesh.getObjectByName('npcLeftLeg'),
+        npcRightLeg: mesh.getObjectByName('npcRightLeg'),
+        npcLeftArm: mesh.getObjectByName('npcLeftArm'),
+        npcRightArm: mesh.getObjectByName('npcRightArm'),
+        npcHead: mesh.getObjectByName('npcHead'),
+        npcTorch: mesh.getObjectByName('npcTorch'),
+        npcTorchFlame: mesh.getObjectByName('npcTorchFlame'),
+        smithHammer: mesh.getObjectByName('smithHammer'),
+        npcWeapon: mesh.getObjectByName('npcWeapon'),
+        lootBeacon: mesh.getObjectByName('lootBeacon'),
+        poiBeacon: mesh.getObjectByName('poiBeacon'),
+        waystoneBeacon: mesh.getObjectByName('waystoneBeacon'),
+        echoBeacon: mesh.getObjectByName('echoBeacon'),
+        loreBeacon: mesh.getObjectByName('loreBeacon') as THREE.Mesh | undefined,
+      };
+      mesh.userData.parts = parts;
+    }
+    return parts;
+  }
+
   public getSurfaceHeightAt(x: number, z: number): number {
     const baseGround = getGroundHeight(x, z);
     if (!this.colliderMeshes || this.colliderMeshes.length === 0) {
       return baseGround;
     }
-    this.surfaceRaycaster.set(
-      new THREE.Vector3(x, baseGround + 1.35, z),
-      new THREE.Vector3(0, -1, 0)
-    );
+    _rayOrigin.set(x, baseGround + 1.35, z);
+    this.surfaceRaycaster.set(_rayOrigin, _rayDown);
     this.surfaceRaycaster.near = 0;
     this.surfaceRaycaster.far = 3.5;
     const hits = this.surfaceRaycaster.intersectObjects(this.colliderMeshes, false);
@@ -66,10 +124,13 @@ export class WorldSystem {
     this.colliderMeshes = colliderMeshes;
     this.scene.updateMatrixWorld(true);
     for (const item of this.interactables) {
+      const baseGround = getGroundHeight(item.x, item.z);
       const surfaceY = this.getSurfaceHeightAt(item.x, item.z);
       item.y = surfaceY;
+      this.surfaceOffsets.set(item.id, Math.max(0, surfaceY - baseGround));
       const mesh = this.meshes.get(item.id);
       if (mesh) {
+        this.getCachedParts(mesh);
         if (item.type === 'clue' || item.type === 'signpost') {
           mesh.position.set(item.x, item.y + 1.1, item.z);
         } else if (item.type === 'herb') {
@@ -2753,7 +2814,7 @@ export class WorldSystem {
     for (const item of this.interactables) {
       if (item.interacted && !item.repeatable) continue;
       const mesh = this.meshes.get(item.id);
-      if (mesh && !mesh.visible) continue;
+      if (mesh && mesh.userData.hiddenByGameLogic) continue;
 
       const dist = Math.hypot(playerX - item.x, playerZ - item.z);
       if (dist <= item.radius && dist < minDist) {
@@ -2775,11 +2836,12 @@ export class WorldSystem {
         continue;
       }
       const mesh = this.meshes.get(item.id);
-      if (!mesh) continue;
-      const qRoot = mesh.getObjectByName('questIndicatorRoot');
+      if (!mesh || !mesh.visible) continue;
+      const parts = this.getCachedParts(mesh);
+      const qRoot = parts.questIndicatorRoot;
       if (!qRoot) continue;
-      const ex = qRoot.getObjectByName('questExclamation');
-      const qu = qRoot.getObjectByName('questQuestion');
+      const ex = parts.questExclamation;
+      const qu = parts.questQuestion;
       const state = getActorQuestIndicatorState(item.id, quests, contracts);
       if (ex) ex.visible = state === 'exclamation';
       if (qu) qu.visible = state === 'question';
@@ -2817,48 +2879,26 @@ export class WorldSystem {
     }
 
     for (const item of this.interactables) {
-      if (item.isPOI && !item.discovered) {
-        const d = Math.hypot(playerX - item.x, playerZ - item.z);
-        if (d <= 15) {
-          item.discovered = true;
-          onPOIDiscovered?.(item);
-        }
+      const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
+
+      if (item.isPOI && !item.discovered && dPlayer <= 15) {
+        item.discovered = true;
+        onPOIDiscovered?.(item);
       }
 
       const mesh = this.meshes.get(item.id);
 
-      // Animate detailed 3D Chest lid opening & inner gold glow (even after chest is interacted)
-      if (item.type === 'chest' && mesh) {
-        const lidPivot = mesh.getObjectByName('chestLidPivot');
-        const targetAngle = item.interacted ? -1.92 : (mesh.userData.targetLidAngle ?? 0);
-        if (lidPivot) {
-          lidPivot.rotation.x = THREE.MathUtils.damp(
-            lidPivot.rotation.x,
-            targetAngle,
-            7.5,
-            dt
-          );
-        }
-        const treasure = mesh.getObjectByName('chestTreasureGlow');
-        if (treasure) {
-          treasure.visible = item.interacted || (lidPivot ? lidPivot.rotation.x < -0.25 : false);
-        }
-        const aura = mesh.getObjectByName('chestInnerAura') as THREE.Mesh | undefined;
-        if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
-          aura.material.opacity = 0.28 + Math.sin(elapsed * 3.5) * 0.1;
-        }
-      }
-
-      if (item.interacted && !item.repeatable) continue;
-
       // Hide NPC stand-ins for the currently recruited companion
-      if (livingWorldOpts && item.type === 'npc') {
-        if (item.id === 'npc_companion_lyra' && mesh) {
-          mesh.visible = livingWorldOpts.activeCompanionId !== 'lyra';
-        } else if (item.id === 'npc_companion_thorvald' && mesh) {
-          mesh.visible = livingWorldOpts.activeCompanionId !== 'thorvald';
-        } else if (item.id === 'npc_companion_vesper' && mesh) {
-          mesh.visible = livingWorldOpts.activeCompanionId !== 'vesper';
+      if (livingWorldOpts && item.type === 'npc' && mesh) {
+        if (item.id === 'npc_companion_lyra') {
+          const isHidden = livingWorldOpts.activeCompanionId === 'lyra';
+          mesh.userData.hiddenByGameLogic = isHidden;
+        } else if (item.id === 'npc_companion_thorvald') {
+          const isHidden = livingWorldOpts.activeCompanionId === 'thorvald';
+          mesh.userData.hiddenByGameLogic = isHidden;
+        } else if (item.id === 'npc_companion_vesper') {
+          const isHidden = livingWorldOpts.activeCompanionId === 'vesper';
+          mesh.userData.hiddenByGameLogic = isHidden;
           if (livingWorldOpts.vesperSpared && item.z < -100) {
             item.x = 5.2;
             item.z = 1.8;
@@ -2868,8 +2908,47 @@ export class WorldSystem {
         }
       }
 
+      // Distance culling: hide meshes > 110m from the player and skip per-frame animations/bone math
+      if (mesh) {
+        if (mesh.userData.hiddenByGameLogic) {
+          mesh.visible = false;
+          continue;
+        }
+        if (dPlayer > 110) {
+          mesh.visible = false;
+          continue;
+        }
+        mesh.visible = true;
+      }
+
+      const parts = mesh ? this.getCachedParts(mesh) : undefined;
+
+      // Animate detailed 3D Chest lid opening & inner gold glow (even after chest is interacted)
+      if (item.type === 'chest' && mesh && parts) {
+        const lidPivot = parts.chestLidPivot;
+        const targetAngle = item.interacted ? -1.92 : (mesh.userData.targetLidAngle ?? 0);
+        if (lidPivot) {
+          lidPivot.rotation.x = THREE.MathUtils.damp(
+            lidPivot.rotation.x,
+            targetAngle,
+            7.5,
+            dt
+          );
+        }
+        const treasure = parts.chestTreasureGlow;
+        if (treasure) {
+          treasure.visible = item.interacted || (lidPivot ? lidPivot.rotation.x < -0.25 : false);
+        }
+        const aura = parts.chestInnerAura;
+        if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
+          aura.material.opacity = 0.28 + Math.sin(elapsed * 3.5) * 0.1;
+        }
+      }
+
+      if (item.interacted && !item.repeatable) continue;
+
       // Update AI Daily Schedules, Weather Sheltering, Combat Defense & Panic Fleeing
-      if (livingWorldOpts && item.type === 'npc' && item.npcScheduleRole && mesh) {
+      if (livingWorldOpts && item.type === 'npc' && item.npcScheduleRole && mesh && parts) {
         let nearestEnemy: EnemyInstance | null = null;
         let nearestEnemyDist = Infinity;
         for (const e of livingWorldOpts.enemies) {
@@ -2916,13 +2995,13 @@ export class WorldSystem {
             ? 2.8
             : 2.3;
 
-        const leftLeg = mesh.getObjectByName('npcLeftLeg');
-        const rightLeg = mesh.getObjectByName('npcRightLeg');
-        const leftArm = mesh.getObjectByName('npcLeftArm');
-        const rightArm = mesh.getObjectByName('npcRightArm');
-        const head = mesh.getObjectByName('npcHead');
+        const leftLeg = parts.npcLeftLeg;
+        const rightLeg = parts.npcRightLeg;
+        const leftArm = parts.npcLeftArm;
+        const rightArm = parts.npcRightArm;
+        const head = parts.npcHead;
+        const torso = parts.npcTorso;
 
-        const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
         const isConversingOrGreeting =
           dPlayer < 3.6 &&
           schedule.state !== 'PANIC_FLEE' &&
@@ -2940,24 +3019,25 @@ export class WorldSystem {
           item.promptText = `Поговорить с ${shortName} [${contextNote}]`;
         }
 
+        const surfaceOffset = this.surfaceOffsets.get(item.id) ?? 0;
+
         if (dPlayer < 1.3 && schedule.state !== 'COMBAT_DEFEND') {
-          // Politely step aside if standing too close to the player
+          // Politely step aside if standing too close to the player (O(1) height lookup, zero raycast)
           const awayX = item.x - playerX;
           const awayZ = item.z - playerZ;
           const awayDist = Math.max(0.01, Math.hypot(awayX, awayZ));
           item.x += (awayX / awayDist) * 1.5 * livingWorldOpts.dt;
           item.z += (awayZ / awayDist) * 1.5 * livingWorldOpts.dt;
-          item.y = this.getSurfaceHeightAt(item.x, item.z);
+          item.y = getGroundHeight(item.x, item.z) + surfaceOffset;
           mesh.position.set(item.x, item.y, item.z);
         } else if (distToTarget > 0.18 && !isConversingOrGreeting) {
           const step = Math.min(distToTarget, moveSpeed * livingWorldOpts.dt);
           item.x += (dx / distToTarget) * step;
           item.z += (dz / distToTarget) * step;
-          item.y = this.getSurfaceHeightAt(item.x, item.z);
+          item.y = getGroundHeight(item.x, item.z) + surfaceOffset;
           mesh.position.set(item.x, item.y, item.z);
           mesh.rotation.y = Math.atan2(dx, dz);
           const stride = Math.sin(elapsed * 8.5);
-          const torso = mesh.getObjectByName('npcTorso');
           if (torso) {
             torso.position.y = 1.15 + Math.abs(Math.cos(elapsed * 8.5)) * 0.045;
             torso.rotation.z = stride * 0.05;
@@ -2974,7 +3054,6 @@ export class WorldSystem {
               head.rotation.y = Math.sin(elapsed * 1.5) * 0.08;
             }
           }
-          const torso = mesh.getObjectByName('npcTorso');
           if (torso) {
             torso.position.y = 1.15 + Math.sin(elapsed * 2.2) * 0.015;
             torso.rotation.z = schedule.state === 'SLEEP_INDOORS' ? 0.18 : 0;
@@ -3004,10 +3083,10 @@ export class WorldSystem {
         }
 
         // Guard torch visibility
-        const torch = mesh.getObjectByName('npcTorch');
+        const torch = parts.npcTorch;
         if (torch) {
           torch.visible = schedule.torchLit;
-          const flame = mesh.getObjectByName('npcTorchFlame');
+          const flame = parts.npcTorchFlame;
           if (flame) {
             const s = 0.9 + Math.sin(elapsed * 14) * 0.15;
             flame.scale.set(s, s * 1.15, s);
@@ -3016,7 +3095,7 @@ export class WorldSystem {
 
         // Blacksmith anvil hammering animation + metallic clang audio
         if (item.npcScheduleRole === 'blacksmith') {
-          const hammer = mesh.getObjectByName('smithHammer');
+          const hammer = parts.smithHammer;
           if (hammer) {
             if (schedule.state === 'ANVIL_FORGE' || schedule.state === 'WORK') {
               const swing = Math.sin(elapsed * 6.8);
@@ -3027,7 +3106,6 @@ export class WorldSystem {
               }
               if (swing < -0.92 && elapsed - this.lastAnvilStrikeTime > 0.85) {
                 this.lastAnvilStrikeTime = elapsed;
-                const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
                 if (dPlayer < 32) {
                   livingWorldOpts.onAnvilStrike?.(1 - dPlayer / 32);
                 }
@@ -3046,7 +3124,7 @@ export class WorldSystem {
           nearestEnemy &&
           nearestEnemyDist <= 3.6
         ) {
-          const weapon = mesh.getObjectByName('npcWeapon') ?? mesh.getObjectByName('smithHammer');
+          const weapon = parts.npcWeapon ?? parts.smithHammer;
           if (weapon) {
             weapon.rotation.x = Math.sin(elapsed * 14) * 0.85;
           }
@@ -3059,18 +3137,17 @@ export class WorldSystem {
             livingWorldOpts.onGuardAttackEnemy?.(shortName, nearestEnemy, 24);
           }
         }
-      } else if (item.type === 'npc' && mesh) {
+      } else if (item.type === 'npc' && mesh && parts) {
         // Static quest/camp NPCs: idle breathing, subtle arm sway, and turning toward player when nearby
-        const dPlayer = Math.hypot(playerX - item.x, playerZ - item.z);
         if (dPlayer < 6.5) {
           mesh.lookAt(playerX, item.y, playerZ);
         }
-        const torso = mesh.getObjectByName('npcTorso');
+        const torso = parts.npcTorso;
         if (torso) {
           torso.position.y = 1.15 + Math.sin(elapsed * 2.1 + item.x) * 0.016;
         }
-        const leftArm = mesh.getObjectByName('npcLeftArm');
-        const rightArm = mesh.getObjectByName('npcRightArm');
+        const leftArm = parts.npcLeftArm;
+        const rightArm = parts.npcRightArm;
         if (leftArm) leftArm.rotation.x = Math.sin(elapsed * 1.8 + item.z) * 0.04;
         if (rightArm) rightArm.rotation.x = -Math.sin(elapsed * 1.8 + item.z) * 0.04;
       }
@@ -3078,38 +3155,39 @@ export class WorldSystem {
       if (mesh && (item.type === 'clue' || item.type === 'signpost')) {
         mesh.rotation.y = elapsed * 1.6;
         mesh.position.y = item.y + 1.1 + Math.sin(elapsed * 2.5) * 0.12;
-      } else if (mesh && item.type === 'loot') {
-        const beacon = mesh.getObjectByName('lootBeacon');
+      } else if (mesh && parts && item.type === 'loot') {
+        const beacon = parts.lootBeacon;
         if (beacon) {
           beacon.rotation.y = elapsed * 2.4;
           beacon.position.y = 0.92 + Math.sin(elapsed * 3.2) * 0.12;
         }
       } else if (
         mesh &&
+        parts &&
         (item.type === 'monster_nest' ||
           item.type === 'place_of_power' ||
           item.type === 'obstacle_clearing' ||
           item.type === 'shrine')
       ) {
-        const beacon = mesh.getObjectByName('poiBeacon');
+        const beacon = parts.poiBeacon;
         if (beacon) {
           beacon.rotation.y = elapsed * 1.8;
         }
-      } else if (mesh && item.type === 'waystone') {
-        const beacon = mesh.getObjectByName('waystoneBeacon');
+      } else if (mesh && parts && item.type === 'waystone') {
+        const beacon = parts.waystoneBeacon;
         if (beacon) {
           beacon.rotation.y = elapsed * 2.2;
           beacon.position.y = 3.45 + Math.sin(elapsed * 2.5) * 0.12;
         }
-      } else if (mesh && item.type === 'ash_echo') {
-        const beacon = mesh.getObjectByName('echoBeacon');
+      } else if (mesh && parts && item.type === 'ash_echo') {
+        const beacon = parts.echoBeacon;
         if (beacon) {
           beacon.rotation.z = elapsed * (witcherSenseActive ? 3.5 : 1.5);
         }
         const s = witcherSenseActive ? 1.18 + Math.sin(elapsed * 5) * 0.1 : 0.85;
         mesh.scale.set(s, s, s);
-      } else if (mesh && item.type === 'lore_note') {
-        const beacon = mesh.getObjectByName('loreBeacon') as THREE.Mesh | undefined;
+      } else if (mesh && parts && item.type === 'lore_note') {
+        const beacon = parts.loreBeacon;
         if (beacon) {
           beacon.rotation.y = elapsed * (witcherSenseActive ? 4.2 : 2.1);
           beacon.position.y = 1.52 + Math.sin(elapsed * 2.8) * 0.12;
@@ -3130,7 +3208,8 @@ export class WorldSystem {
     const mesh = this.meshes.get(id);
     if (item.type === 'chest' && mesh) {
       mesh.userData.targetLidAngle = -1.92;
-      const treasure = mesh.getObjectByName('chestTreasureGlow');
+      const parts = this.getCachedParts(mesh);
+      const treasure = parts.chestTreasureGlow;
       if (treasure) treasure.visible = true;
       return;
     }
@@ -3143,6 +3222,7 @@ export class WorldSystem {
           item.type === 'clue' ||
           item.type === 'obstacle_clearing')
       ) {
+        mesh.userData.hiddenByGameLogic = true;
         mesh.visible = false;
       }
     }
