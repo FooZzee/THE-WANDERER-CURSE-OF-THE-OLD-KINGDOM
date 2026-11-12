@@ -24,6 +24,7 @@ import {
   createInitialDicePokerState,
   discoverLoreEntry,
   evaluateDiceHand,
+  EXPLORATION_FOG_SURGE_PROFILES,
   getBiomeAt,
   getBrowserDeviceSnapshot,
   getCompanionCommandLabel,
@@ -38,9 +39,12 @@ import {
   resolveDicePokerOutcome,
   resolveInvestigationQuestChoice,
   rollDiceArray,
+  shouldEmitGuardCombatFeedback,
   validateAshExamRitual,
   WAYSTONES,
   WEATHER_PRESETS,
+  type ExplorationFogEventType,
+  type NpcSocialActionType,
 } from './rules';
 import { SaveSystem } from './SaveSystem';
 import { SceneManager } from './SceneManager';
@@ -65,6 +69,7 @@ import type {
   SignType,
   WeatherType,
 } from './types';
+import { VoiceAISystem } from './VoiceAISystem';
 import { WorldSystem } from './WorldSystem';
 
 const SIGN_KEYS: Record<string, SignType> = {
@@ -89,6 +94,7 @@ export class Game {
   public inventorySystem: InventorySystem;
   public world: WorldSystem;
   public audio: AudioManager;
+  public voiceAI: VoiceAISystem;
 
   public activeModal: HUDState['activeModal'] = 'none';
   public activeDialogueNode: DialogueNode | null = null;
@@ -112,6 +118,10 @@ export class Game {
   private roadEventTimer = 42;
   private weatherCycleTimer = 45;
   private lastBiomeId = 'crows_hollow';
+  private explorationFogSurge = 0;
+  private explorationFogTimer = 0;
+  private explorationFogDuration = 1;
+  private explorationFogEventType: ExplorationFogEventType = 'none';
   private triggeredRoadEventIds: Set<string> = new Set();
   private defeatedQuestTags: Set<string> = new Set();
 
@@ -120,6 +130,8 @@ export class Game {
     resolutionScale: 1.0,
     shadows: true,
     weatherEffects: true,
+    fogIntensity: 1.0,
+    bloomIntensity: 1.0,
     audioEnabled: true,
     musicEnabled: true,
     masterVolume: 0.6,
@@ -139,7 +151,8 @@ export class Game {
   };
 
   private lastInputType: 'mouse_keyboard' | 'touch' | null = null;
-  private clock = new THREE.Clock();
+  private lastFrameTimeMs = 0;
+  private elapsedSeconds = 0;
   private rafId = 0;
   private isRunning = false;
   private isPaused = false;
@@ -186,9 +199,43 @@ export class Game {
     return false;
   }
 
+  /**
+   * Triggers a dynamic fog surge in response to in-game exploration events
+   * (biome transitions, POI discoveries, Waystones, Ash Echoes, Catacombs, Rituals, Road Events).
+   */
+  public triggerExplorationFogEvent(eventType: ExplorationFogEventType): void {
+    const profile =
+      EXPLORATION_FOG_SURGE_PROFILES[eventType] ?? EXPLORATION_FOG_SURGE_PROFILES.none;
+    if (eventType === 'none' || profile.duration <= 0) {
+      this.explorationFogEventType = 'none';
+      this.explorationFogTimer = 0;
+      this.explorationFogSurge = 0;
+    } else {
+      this.explorationFogEventType = eventType;
+      this.explorationFogDuration = profile.duration;
+      this.explorationFogTimer = profile.duration;
+      this.explorationFogSurge = 1.0;
+    }
+    this.sceneManager.setExplorationFogState(
+      this.lastBiomeId,
+      this.explorationFogSurge,
+      this.explorationFogEventType
+    );
+  }
+
   constructor(container: HTMLElement, onHUDUpdate: (state: HUDState) => void) {
     this.onHUDUpdate = onHUDUpdate;
     this.audio = new AudioManager();
+    this.voiceAI = new VoiceAISystem(
+      () => this.emitHUD(),
+      () => {
+        if (this.activeModal === 'dialogue') {
+          this.setModal('none');
+        } else {
+          this.emitHUD();
+        }
+      }
+    );
     this.sceneManager = new SceneManager(container);
     this.cameraController = new ThirdPersonCamera(
       (container.clientWidth || window.innerWidth) /
@@ -322,7 +369,7 @@ export class Game {
   public start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.clock.start();
+    this.lastFrameTimeMs = performance.now();
     this.audio.startAmbient();
     this.loop();
   }
@@ -342,6 +389,10 @@ export class Game {
     }
   }
 
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
+  };
+
   private bindEvents(): void {
     const canvas = this.sceneManager.renderer.domElement;
 
@@ -356,7 +407,7 @@ export class Game {
     window.addEventListener('touchmove', this.onTouchMove, { passive: true });
     window.addEventListener('touchend', this.onTouchEnd, { passive: true });
     window.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   private onWindowResize = (): void => {
@@ -368,6 +419,13 @@ export class Game {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    const targetTag = (e.target as HTMLElement | null)?.tagName;
+    if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') {
+      if (e.code === 'Escape') {
+        (e.target as HTMLElement).blur();
+      }
+      return;
+    }
     if (this.lastInputType !== 'mouse_keyboard') {
       const prevPlatform = this.getResolvedPlatform();
       this.lastInputType = 'mouse_keyboard';
@@ -624,7 +682,7 @@ export class Game {
     this.activeCompanion.lastBark = profile.campfireDialogue.text;
     this.activeCompanion.lastBarkTimer = 10;
     this.audio.playQuestChime();
-    this.activeDialogueNode = {
+    const campfireNode: DialogueNode = {
       id: `campfire_bond_${this.activeCompanion.id}`,
       speaker: profile.name,
       role: `${profile.title} · Разговор у костра`,
@@ -645,7 +703,7 @@ export class Game {
       `Беседа у костра с ${profile.name}: боевой дух укреплён (+35% к атаке на 90 сек)!`,
       'quest'
     );
-    this.setModal('dialogue');
+    this.openDialogueNode(campfireNode);
   }
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -1227,6 +1285,7 @@ export class Game {
     const chosen = available[Math.floor(Math.random() * available.length)];
     this.triggeredRoadEventIds.add(chosen.id);
     this.roadEventPopup = chosen;
+    this.triggerExplorationFogEvent('road_encounter');
     this.setModal('road_event');
   }
 
@@ -1303,6 +1362,7 @@ export class Game {
     // 2. Underground Catacombs Portal
     if (nearest.type === 'catacombs_portal') {
       this.audio.playQuestChime();
+      this.triggerExplorationFogEvent('catacombs_descent');
       if (nearest.id === 'catacombs_entrance') {
         this.player.stats.x = 105;
         this.player.stats.z = 95;
@@ -1427,6 +1487,7 @@ export class Game {
     if (nearest.type === 'waystone') {
       this.audio.playQuestChime();
       this.world.markInteracted(nearest.id);
+      this.triggerExplorationFogEvent('waystone_activation');
       const wsId = nearest.waystoneId ?? nearest.id;
       const unlocked = new Set(this.player.stats.unlockedWaystones ?? []);
       unlocked.add(wsId);
@@ -1451,6 +1512,7 @@ export class Game {
       if (echo) {
         this.audio.playQuestChime();
         this.world.markInteracted(nearest.id);
+        this.triggerExplorationFogEvent('ash_echo_vision');
         this.activeAshEcho = echo;
         const viewed = new Set(this.player.stats.viewedAshEchoIds ?? []);
         if (!viewed.has(echo.id)) {
@@ -1568,11 +1630,10 @@ export class Game {
           this.player.stats.blacksmithClosedTimer ?? 0
         );
         if (node) {
-          this.activeDialogueNode = node;
           this.cameraController.setDialogueTarget(
             new THREE.Vector3(nearest.x, (nearest.y ?? 0) + 1.2, nearest.z)
           );
-          this.setModal('dialogue');
+          this.openDialogueNode(node);
         }
       }
       return;
@@ -1608,6 +1669,7 @@ export class Game {
     if (nearest.type === 'place_of_power') {
       this.world.markInteracted(nearest.id);
       this.audio.playQuestChime();
+      this.triggerExplorationFogEvent('cursed_ritual');
       this.player.stats.skillPoints += 1;
       this.player.stats.placeOfPowerTimer = 180;
       this.showBanner(
@@ -2231,6 +2293,62 @@ export class Game {
       );
       this.setModal('none');
       return;
+    } else if (option.action === 'start_quest_emerald_weald') {
+      this.quests.activateQuest('quest_act4_emerald_dream');
+      this.advanceQuestAndReward('quest_act4_emerald_dream', 'q_emerald_talk_archdruid');
+      this.showBanner(
+        'Акт IV (Биом I): «Кошмар Изумрудного Сна»',
+        'Очистите Осквернённый Корень Мирового Древа (0, -772) и победите Архидруида Ксавия-Вальда'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_emerald_weald') {
+      this.advanceQuestAndReward('quest_act4_emerald_dream', 'q_emerald_return_archdruid');
+      this.adjustReputation(22, 'Исцелён Изумрудный Сон Вечнолесья и Приют Сильверглейд');
+      this.quests.activateQuest('quest_act4_aether_sanctum');
+      this.showBanner(
+        'Изумрудный Сон Вечнолесья Исцелён!',
+        '+2100 Опыта · +1350 Золота · Путь в Небесный Предел Элизиума открыт!'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_aether_sanctum') {
+      this.quests.activateQuest('quest_act4_aether_sanctum');
+      this.advanceQuestAndReward('quest_act4_aether_sanctum', 'q_aether_talk_legate');
+      this.showBanner(
+        'Акт IV (Биом II): «Крылья Расколотой Вечности»',
+        'Активируйте Печать Эфирного Резонатора (0, -912) и сокрушите Падшего Серафима Азраэля'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_aether_sanctum') {
+      this.advanceQuestAndReward('quest_act4_aether_sanctum', 'q_aether_return_legate');
+      this.adjustReputation(25, 'Спасён Небесный Предел Элизиума и Башня Вечности');
+      this.quests.activateQuest('quest_act4_titan_cauldron');
+      this.showBanner(
+        'Башня Вечности Элизиума Стабилизирована!',
+        '+2400 Опыта · +1550 Золота · Путь в Котёл Древних Машин «ГЕФЕСТ» открыт!'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'start_quest_titan_cauldron') {
+      this.quests.activateQuest('quest_act4_titan_cauldron');
+      this.advanceQuestAndReward('quest_act4_titan_cauldron', 'q_cauldron_talk_seeker');
+      this.showBanner(
+        'Акт IV (Биом III): «Протокол Котла ГЕФЕСТ»',
+        'Перехватите Терминал Ядра (0, -1048) и уничтожьте Первородного Громозева'
+      );
+      this.setModal('none');
+      return;
+    } else if (option.action === 'complete_quest_titan_cauldron') {
+      this.advanceQuestAndReward('quest_act4_titan_cauldron', 'q_cauldron_return_seeker');
+      this.adjustReputation(30, 'Покорён Котёл Древних Машин «ГЕФЕСТ»');
+      this.showBanner(
+        'Триумф Акта IV: Котёл Древних Машин «ГЕФЕСТ» Покорён!',
+        '+2800 Опыта · +1900 Золота · Получен реликтовый клинок «Пожиратель Солнца»!'
+      );
+      this.setModal('none');
+      return;
     } else if (option.action === 'close') {
       this.setModal('none');
       return;
@@ -2250,8 +2368,7 @@ export class Game {
         this.player.stats.blacksmithClosedTimer ?? 0
       );
       if (next) {
-        this.activeDialogueNode = next;
-        this.emitHUD();
+        this.openDialogueNode(next);
         return;
       }
     }
@@ -2336,6 +2453,9 @@ export class Game {
       q7_duel_vesper: 'q7_vesper',
       q8_kill_avatar: 'q8_avatar',
       q_star_defeat_archon: 'q_star_archon',
+      q_emerald_defeat_archon: 'q_emerald_archon',
+      q_aether_defeat_seraph: 'q_aether_seraph',
+      q_cauldron_defeat_behemoth: 'q_cauldron_behemoth',
     };
     const requiredTag = stageToTag[activeStageId];
     if (requiredTag && this.defeatedQuestTags.has(requiredTag)) {
@@ -2509,11 +2629,10 @@ export class Game {
           true
         );
         if (choiceNode) {
-          this.activeDialogueNode = choiceNode;
           this.cameraController.setDialogueTarget(
             new THREE.Vector3(enemy.x, (enemy.y ?? 0) + 1.2, enemy.z)
           );
-          this.setModal('dialogue');
+          this.openDialogueNode(choiceNode);
         }
       }
     }
@@ -2550,8 +2669,59 @@ export class Game {
       );
     }
 
+    if (enemy.questTag === 'q_emerald_archon') {
+      this.defeatedQuestTags.add('q_emerald_archon');
+      this.quests.activateQuest('quest_act4_emerald_dream');
+      this.advanceQuestAndReward('quest_act4_emerald_dream', 'q_emerald_talk_archdruid');
+      this.advanceQuestAndReward('quest_act4_emerald_dream', 'q_emerald_cleanse_roots');
+      this.advanceQuestAndReward('quest_act4_emerald_dream', 'q_emerald_defeat_archon');
+      this.showBanner(
+        'Архидруид Изумрудного Кошмара повержен!',
+        'Вернитесь к Хранительнице Сна Изераэль в деревню Приют Сильверглейд (-36, -750)'
+      );
+    }
+
+    if (enemy.questTag === 'q_aether_seraph') {
+      this.defeatedQuestTags.add('q_aether_seraph');
+      this.quests.activateQuest('quest_act4_aether_sanctum');
+      this.advanceQuestAndReward('quest_act4_aether_sanctum', 'q_aether_talk_legate');
+      this.advanceQuestAndReward('quest_act4_aether_sanctum', 'q_aether_restore_relay');
+      this.advanceQuestAndReward('quest_act4_aether_sanctum', 'q_aether_defeat_seraph');
+      this.showBanner(
+        'Падший Серафим Вечности Азраэль повержен!',
+        'Вернитесь к Легату Даэвов Серафине в Заставу Серафимов Элизиум (36, -888)'
+      );
+    }
+
+    if (enemy.questTag === 'q_cauldron_behemoth') {
+      this.defeatedQuestTags.add('q_cauldron_behemoth');
+      this.quests.activateQuest('quest_act4_titan_cauldron');
+      this.advanceQuestAndReward('quest_act4_titan_cauldron', 'q_cauldron_talk_seeker');
+      this.advanceQuestAndReward('quest_act4_titan_cauldron', 'q_cauldron_override_core');
+      this.advanceQuestAndReward('quest_act4_titan_cauldron', 'q_cauldron_defeat_behemoth');
+      this.showBanner(
+        'Первородный Громозев Котла ГЕФЕСТ сокрушён!',
+        'Вернитесь к Матриарху Искателей Алойе-Вальд в Железный Очаг (-36, -1023)'
+      );
+    }
+
     this.emitHUD();
   };
+
+  public openDialogueNode(node: DialogueNode): void {
+    this.activeDialogueNode = node;
+    this.activeModal = 'dialogue';
+    this.cameraController.unlockPointer();
+    this.voiceAI.clearConversationOverlay();
+    this.emitHUD();
+    if (this.settings.audioEnabled) {
+      void this.voiceAI.speakNpcDialogueLine(node.speaker, node.role, node.text);
+    }
+  }
+
+  public closeDialogue(): void {
+    this.setModal('none');
+  }
 
   public openModal(modal: HUDState['activeModal']): void {
     this.setModal(modal);
@@ -2559,12 +2729,156 @@ export class Game {
 
   public setModal(modal: HUDState['activeModal']): void {
     if (this.activeModal === 'dialogue' && modal !== 'dialogue') {
+      this.activeDialogueNode = null;
       this.cameraController.clearDialogueTarget();
+      this.voiceAI.clearConversationOverlay();
+    } else if (modal === 'none') {
+      this.voiceAI.clearConversationOverlay();
     }
     this.activeModal = modal;
     if (modal !== 'none') {
       this.cameraController.unlockPointer();
     }
+    this.emitHUD();
+  }
+
+  public resolveVoiceTarget(): {
+    name: string;
+    role: string;
+    biomeName: string;
+    activeQuestTitle: string;
+  } {
+    const biome = getBiomeAt(this.player.stats.x, this.player.stats.z);
+    const activeQuestTitle = this.quests.getActiveQuest()?.title ?? '';
+
+    if (this.activeModal === 'dialogue' && this.activeDialogueNode) {
+      return {
+        name: this.activeDialogueNode.speaker,
+        role: this.activeDialogueNode.role,
+        biomeName: biome.name,
+        activeQuestTitle,
+      };
+    }
+
+    const nearest = this.world.getNearestInteractable(
+      this.player.stats.x,
+      this.player.stats.z
+    );
+    if (nearest && nearest.type === 'npc') {
+      return {
+        name: nearest.name,
+        role: nearest.roleOrSubtitle ?? 'Житель Вальдмарка',
+        biomeName: biome.name,
+        activeQuestTitle,
+      };
+    }
+
+    if (this.activeCompanion) {
+      return {
+        name: this.activeCompanion.name,
+        role: this.activeCompanion.title ?? 'Боевой спутник Корвуса',
+        biomeName: biome.name,
+        activeQuestTitle,
+      };
+    }
+
+    // Fallback to closest NPC within 25m or Elder Borimir
+    let closestNpcName = 'Староста Боримир';
+    let closestNpcRole = 'Старейшина деревни Воронья Падь';
+    let bestDist = 25;
+    for (const inter of this.world.interactables) {
+      if (inter.type !== 'npc') continue;
+      const d = Math.hypot(
+        inter.x - this.player.stats.x,
+        inter.z - this.player.stats.z
+      );
+      if (d < bestDist) {
+        bestDist = d;
+        closestNpcName = inter.name;
+        closestNpcRole = inter.roleOrSubtitle ?? 'Житель Вальдмарка';
+      }
+    }
+
+    return {
+      name: closestNpcName,
+      role: closestNpcRole,
+      biomeName: biome.name,
+      activeQuestTitle,
+    };
+  }
+
+  public async toggleVoiceMic(): Promise<void> {
+    const target = this.resolveVoiceTarget();
+    await this.voiceAI.toggleMicrophone(
+      target.name,
+      target.role,
+      target.biomeName,
+      target.activeQuestTitle
+    );
+    const status = this.voiceAI.getStatus(target.name, target.role);
+    if (status.lastNpcReply) {
+      this.addLog(`🎙️ ${target.name}: «${status.lastNpcReply}»`, 'quest');
+      if (this.activeModal === 'dialogue' && this.activeDialogueNode) {
+        this.activeDialogueNode = {
+          ...this.activeDialogueNode,
+          text: status.lastNpcReply,
+        };
+      }
+    }
+    this.emitHUD();
+  }
+
+  public async sendVoiceTextToNpc(
+    userText: string,
+    socialAction?: NpcSocialActionType
+  ): Promise<void> {
+    if (!userText.trim()) return;
+    const target = this.resolveVoiceTarget();
+    const prevStage = this.voiceAI.getStatus(target.name, target.role).activeNpcRelationship?.stage;
+    const reply = await this.voiceAI.sendTextMessage(
+      userText.trim(),
+      target.name,
+      target.role,
+      target.biomeName,
+      target.activeQuestTitle,
+      socialAction
+    );
+    const nextStatus = this.voiceAI.getStatus(target.name, target.role);
+    if (reply) {
+      this.addLog(`🎙️ ${target.name}: «${reply}»`, 'quest');
+      if (this.activeModal === 'dialogue' && this.activeDialogueNode) {
+        this.activeDialogueNode = {
+          ...this.activeDialogueNode,
+          text: reply,
+        };
+      }
+      const nextRel = nextStatus.activeNpcRelationship;
+      if (nextRel && prevStage && nextRel.stage !== prevStage) {
+        this.showBanner(
+          `Отношения с ${target.name}: ${nextRel.statusTitleRu}`,
+          `Дружба: ${nextRel.affinity} · Романтика: ${nextRel.romance}%`
+        );
+      }
+    }
+    this.emitHUD();
+  }
+
+  public async sendSocialActionToNpc(action: NpcSocialActionType): Promise<void> {
+    const target = this.resolveVoiceTarget();
+    const defaultPrompts: Record<NpcSocialActionType, string> = {
+      chat: 'Расскажи мне о своей жизни, мечтах и о том, что у тебя на душе.',
+      befriend: 'Ты отличный человек! Давай будем настоящими верными друзьями и всегда поддерживать друг друга.',
+      flirt: 'Знаешь, у тебя удивительно притягательный взгляд и улыбка. Рядом с тобой моё сердце бьётся быстрее.',
+      confess_love: 'Я давно хотел признаться: я по-настоящему влюбился в тебя! Моё сердце принадлежит тебе навсегда.',
+      gift: 'Прими от меня этот особенный подарок и знак искреннего внимания от всего сердца!',
+      quarrel: 'Хватит нести чушь! Ты меня жутко раздражаешь своими словами!',
+      apologize: 'Прости меня, пожалуйста, за резкие слова. Я не хотел тебя обидеть, давай помиримся.',
+    };
+    await this.sendVoiceTextToNpc(defaultPrompts[action], action);
+  }
+
+  public stopVoiceSpeaking(): void {
+    this.voiceAI.stopSpeaking();
     this.emitHUD();
   }
 
@@ -2601,6 +2915,7 @@ export class Game {
       timestamp: Date.now(),
       player: this.player.stats,
       quests: this.quests.quests,
+      contracts: this.quests.contracts,
       activeQuestId: this.quests.activeQuestId,
       inventory: this.inventory.items,
       skills: this.inventory.skills,
@@ -2615,6 +2930,8 @@ export class Game {
       deadEnemyIds: this.enemyAI.enemies
         .filter((e) => e.data.state === 'DEAD')
         .map((e) => e.data.id),
+      defeatedQuestTags: Array.from(this.defeatedQuestTags),
+      npcRelationships: this.voiceAI.exportRelationships(),
       settings: this.settings,
     });
     if (ok) {
@@ -2642,6 +2959,9 @@ export class Game {
       this.player.stats.z
     );
     this.quests.quests = saved.quests;
+    if (saved.contracts && Array.isArray(saved.contracts)) {
+      this.quests.contracts = saved.contracts;
+    }
     this.quests.activeQuestId = saved.activeQuestId;
     this.inventory.items = saved.inventory;
     this.inventory.sanitizeEquipment();
@@ -2657,9 +2977,23 @@ export class Game {
         if (poi) poi.discovered = true;
       }
     }
+    if (saved.pillarStates) {
+      for (const [id, state] of Object.entries(saved.pillarStates)) {
+        const pillar = this.world.interactables.find((i) => i.id === id);
+        if (pillar && typeof state === 'number') {
+          pillar.pillarState = state;
+        }
+      }
+    }
     if (saved.catacombsGateUnlocked) {
       this.catacombsGateUnlocked = true;
       this.sceneManager.setCatacombsGateOpen(true);
+    }
+    if (saved.defeatedQuestTags && Array.isArray(saved.defeatedQuestTags)) {
+      this.defeatedQuestTags = new Set(saved.defeatedQuestTags);
+    }
+    if (saved.npcRelationships) {
+      this.voiceAI.importRelationships(saved.npcRelationships);
     }
     for (const enemy of this.enemyAI.enemies) {
       if (saved.deadEnemyIds.includes(enemy.data.id)) {
@@ -2704,14 +3038,24 @@ export class Game {
   }
 
   public teleportToBiome(x: number, z: number, label: string): void {
-    const y = x > 75 && z > 75 ? 0 : getGroundHeight(x, z);
-    this.player.stats.x = x;
-    this.player.stats.z = z;
+    let destX = x;
+    let destZ = z;
+    // Ensure fast-travel never places the player directly inside a Waystone obelisk mesh
+    for (const ws of WAYSTONES) {
+      const dist = Math.hypot(destX - ws.x, destZ - ws.z);
+      if (dist < 1.8) {
+        destZ = ws.z + 2.4;
+        break;
+      }
+    }
+    const y = destX > 75 && destZ > 75 ? 0 : getGroundHeight(destX, destZ);
+    this.player.stats.x = destX;
+    this.player.stats.z = destZ;
     this.player.stats.y = y;
-    this.player.rig.root.position.set(x, y, z);
+    this.player.rig.root.position.set(destX, y, destZ);
     if (this.activeCompanion && this.companionMesh) {
-      this.activeCompanion.x = x - 2.2;
-      this.activeCompanion.z = z + 1.8;
+      this.activeCompanion.x = destX - 2.2;
+      this.activeCompanion.z = destZ + 1.8;
       this.activeCompanion.y = y;
       this.companionMesh.position.set(this.activeCompanion.x, y, this.activeCompanion.z);
     }
@@ -2991,12 +3335,14 @@ export class Game {
     if (!this.isRunning) return;
     this.rafId = requestAnimationFrame(this.loop);
 
-    const rawDt = this.clock.getDelta();
+    const nowMs = performance.now();
+    const rawDt = this.lastFrameTimeMs > 0 ? Math.max(0, (nowMs - this.lastFrameTimeMs) / 1000) : 0.016;
+    this.lastFrameTimeMs = nowMs;
     const dt = Math.min(rawDt, 0.08);
-    const elapsed = this.clock.getElapsedTime();
+    this.elapsedSeconds += dt;
+    const elapsed = this.elapsedSeconds;
 
     // Clean up expired floating damage numbers
-    const nowMs = performance.now();
     if (this.floatingDamages.length > 0) {
       this.floatingDamages = this.floatingDamages.filter(
         (d) => nowMs - (d.createdAt ?? nowMs) < 1150
@@ -3094,6 +3440,7 @@ export class Game {
       if (curBiome.id !== this.lastBiomeId) {
         this.lastBiomeId = curBiome.id;
         this.audio.setBiomeAtmosphere(curBiome.id);
+        this.triggerExplorationFogEvent('biome_transition');
         if (this.activeCompanion) {
           const profile = COMPANION_PROFILES[this.activeCompanion.id];
           const bark = profile?.biomeBarks[curBiome.id];
@@ -3112,6 +3459,12 @@ export class Game {
             'Северный Поход · Биом III: Горная твердыня Братства Пепла и двор павших клинков',
           eclipse_crater:
             'Северный Поход · Биом IV: Эпицентр Ночи Пепельного Затмения и Зал Трона Пустоты',
+          emerald_weald:
+            'Акт IV (Стиль WoW) · Изумрудный Сон Вечнолесья, Приют Сильверглейд и Лунный Колодец',
+          aether_sanctum:
+            'Акт IV (Стиль Aion) · Небесный Предел Элизиума, Застава Серафимов и Башня Вечности',
+          titan_cauldron:
+            'Акт IV (Стиль Horizon) · Котёл Древних Машин «ГЕФЕСТ» и Железный Очаг Искателей',
         };
         if (biomeSubtitles[curBiome.id]) {
           this.audio.playQuestChime();
@@ -3154,6 +3507,7 @@ export class Game {
               this.player.stats.unlockedWaystones = Array.from(unlocked);
               poi.discovered = true;
               this.audio.playQuestChime();
+              this.triggerExplorationFogEvent('waystone_activation');
               this.addLog(
                 `Открыт Дорожный Путевой Камень: «${poi.name}» (доступен быстрый переход [M])`,
                 'quest'
@@ -3165,6 +3519,7 @@ export class Game {
           if (Math.hypot(poi.x - this.player.stats.x, poi.z - this.player.stats.z) < 16) {
             poi.discovered = true;
             this.audio.playQuestChime();
+            this.triggerExplorationFogEvent('poi_discovery');
             this.showBanner(
               `Открыта точка интереса: ${poi.name}`,
               poi.roleOrSubtitle ?? 'Исследуйте объект [E]'
@@ -3240,18 +3595,31 @@ export class Game {
             if (activeTarget && activeTarget.data.state !== 'DEAD') {
               activeTarget.data.hp = Math.max(0, activeTarget.data.hp - dmg);
               activeTarget.hitFlashTimer = 0.16;
-              this.audio.playSwordSwing(false);
-              this.addFloatingDamage(
-                new THREE.Vector3(activeTarget.data.x, activeTarget.data.y, activeTarget.data.z),
-                dmg,
-                false,
-                '#fbbf24',
-                guardName.toUpperCase()
+              const isPlayerNearGuardFight = shouldEmitGuardCombatFeedback(
+                this.player.stats.x,
+                this.player.stats.z,
+                activeTarget.data.x,
+                activeTarget.data.z
               );
+              if (isPlayerNearGuardFight) {
+                this.audio.playSwordSwing(false);
+                this.addFloatingDamage(
+                  new THREE.Vector3(activeTarget.data.x, activeTarget.data.y, activeTarget.data.z),
+                  dmg,
+                  false,
+                  '#fbbf24',
+                  guardName.toUpperCase()
+                );
+              }
               if (activeTarget.data.hp <= 0) {
                 activeTarget.data.state = 'DEAD';
                 activeTarget.data.isDead = true;
-                this.addLog(`${guardName} защищает деревню и добивает: ${activeTarget.data.name}!`, 'info');
+                if (isPlayerNearGuardFight) {
+                  this.addLog(
+                    `${guardName} защищает деревню и добивает: ${activeTarget.data.name}!`,
+                    'info'
+                  );
+                }
                 this.handleEnemyKilled(activeTarget.data);
               }
             }
@@ -3360,6 +3728,27 @@ export class Game {
       );
     }
 
+    // Decay active exploration fog surge over time and sync with SceneManager
+    if (this.explorationFogTimer > 0) {
+      this.explorationFogTimer = Math.max(0, this.explorationFogTimer - dt);
+      this.explorationFogSurge =
+        this.explorationFogTimer > 0
+          ? this.explorationFogTimer / Math.max(1, this.explorationFogDuration)
+          : 0;
+      if (this.explorationFogTimer === 0) {
+        this.explorationFogEventType = 'none';
+      }
+    }
+    const activeBiomeId =
+      this.player.stats.x > 75 && this.player.stats.z > 75
+        ? 'catacombs'
+        : getBiomeAt(this.player.stats.x, this.player.stats.z).id;
+    this.sceneManager.setExplorationFogState(
+      activeBiomeId,
+      this.explorationFogSurge,
+      this.explorationFogEventType
+    );
+
     this.sceneManager.update(dt, elapsed, this.player.stats.x, this.player.stats.z);
 
     if (this.sceneManager.isHeadless) {
@@ -3367,17 +3756,11 @@ export class Game {
         this.headlessRenderTimer += dt;
         if (this.headlessRenderTimer >= 0.25) {
           this.headlessRenderTimer = 0;
-          this.sceneManager.renderer.render(
-            this.sceneManager.scene,
-            this.cameraController.camera
-          );
+          this.sceneManager.renderScene(this.cameraController.camera);
         }
       }
     } else {
-      this.sceneManager.renderer.render(
-        this.sceneManager.scene,
-        this.cameraController.camera
-      );
+      this.sceneManager.renderScene(this.cameraController.camera);
     }
 
     this.hudSyncTimer += dt;
@@ -3428,7 +3811,10 @@ export class Game {
         e.data.type === 'boss_hydra' ||
         e.data.type === 'boss_colossus' ||
         e.data.type === 'boss_vesper' ||
-        e.data.type === 'boss_avatar';
+        e.data.type === 'boss_avatar' ||
+        e.data.type === 'boss_emerald_archon' ||
+        e.data.type === 'boss_aether_seraph' ||
+        e.data.type === 'boss_cauldron_behemoth';
       if (isMajorBoss && (d < 34 || biome.id === 'ruined_fortress')) {
         bossEnemy = { ...e.data };
       }
@@ -3498,22 +3884,31 @@ export class Game {
       },
       detectedPlatform: this.getResolvedPlatform(),
       screenShake: this.cameraController.getShakeState(),
+      fogState: this.sceneManager.getLastFogState(),
+      bloomState: this.sceneManager.getLastBloomState(),
+      voiceAI: (() => {
+        const vt = this.resolveVoiceTarget();
+        return this.voiceAI.getStatus(vt.name, vt.role);
+      })(),
     });
   }
 
   public dispose(): void {
     this.stop();
+    this.voiceAI.dispose();
     const canvas = this.sceneManager.renderer.domElement;
     window.removeEventListener('resize', this.onWindowResize);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('wheel', this.onMouseWheel);
+    canvas.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     canvas.removeEventListener('touchstart', this.onTouchStart);
     canvas.removeEventListener('touchmove', this.onTouchMove);
     canvas.removeEventListener('touchend', this.onTouchEnd);
     canvas.removeEventListener('touchcancel', this.onTouchEnd);
+    canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.audio.dispose();
     this.sceneManager.dispose();
   }

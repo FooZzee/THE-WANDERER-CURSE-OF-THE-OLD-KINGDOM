@@ -9,5 +9,7 @@ release/
 public/assets/aistudio/
 .DS_Store
 *.log
+*.tsbuildinfo
+.playwright-cli/
 .env*
 !.env.example

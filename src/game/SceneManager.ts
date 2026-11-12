@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { AssetManager } from './AssetManager';
 import {
+  computeBloomParameters,
+  computeDynamicFogIntensity,
   computeSkyboxState,
+  getBiomeAt,
   getGroundHeight,
   getNextWeatherState,
   interpolateWeatherMetrics,
   SETTLEMENT_ZONES,
   WEATHER_PRESETS,
+  type BloomState,
+  type DynamicFogState,
+  type ExplorationFogEventType,
   type SkyboxState,
 } from './rules';
 import type { CollisionBox, GraphicsSettings, WeatherType } from './types';
@@ -105,6 +114,29 @@ export class SceneManager {
   private previousWeather: WeatherType = 'fog';
   private weatherTransitionBlend = 1.0;
   private weatherEffectsEnabled = true;
+  private userFogIntensity = 1.0;
+  private userBloomIntensity = 1.0;
+  private qualityLevel: 'low' | 'medium' | 'high' = 'high';
+  private currentBiomeId = 'village';
+  private explorationFogSurge = 0;
+  private explorationFogEventType: ExplorationFogEventType = 'none';
+  private lastFogState: DynamicFogState = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 14.5,
+    biomeId: 'village',
+    userFogIntensity: 1.0,
+  });
+  private lastBloomState: BloomState = computeBloomParameters({
+    bloomIntensity: 1.0,
+    quality: 'high',
+    timeOfDay: 14.5,
+    weather: 'fog',
+    biomeId: 'village',
+  });
+  private composer: EffectComposer | null = null;
+  private renderPass: RenderPass | null = null;
+  private bloomPass: UnrealBloomPass | null = null;
+  private aetherSanctumRings: THREE.Group | null = null;
   private shadowsEnabled = true;
   private lightningFlash = 0;
   private lightningTimer = 14;
@@ -129,7 +161,7 @@ export class SceneManager {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 0.86;
     this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
     this.renderer.setPixelRatio(
       this.isHeadless ? 0.5 : Math.min(window.devicePixelRatio, 2)
@@ -179,7 +211,7 @@ export class SceneManager {
     // Primary torchLight[0] casts dynamic shadows with throttled cubemap updates to guarantee 60 FPS.
     if (!this.isHeadless) {
       for (let i = 0; i < 4; i++) {
-        const pt = new THREE.PointLight(0xf97316, 6.2, 24, 1.45);
+        const pt = new THREE.PointLight(0xf97316, 4.2, 22, 1.55);
         pt.castShadow = i === 0 && this.shadowsEnabled;
         if (i === 0) {
           pt.shadow.mapSize.width = 512;
@@ -209,6 +241,7 @@ export class SceneManager {
     this.buildSunkenPortSolheim();
     this.buildSunMonastery();
     this.buildStarfallValleyAndForge();
+    this.buildAct4FrontierBiomes();
     this.buildSettlementFencesAndGates();
     this.buildWeatherSystem();
     this.freezeStaticWorldMatrices();
@@ -225,6 +258,7 @@ export class SceneManager {
     if (this.lighthouseBeamMesh) dynamicObjects.add(this.lighthouseBeamMesh);
     if (this.monasteryAstrolabeMesh) dynamicObjects.add(this.monasteryAstrolabeMesh);
     if (this.starfallCoreMesh) dynamicObjects.add(this.starfallCoreMesh);
+    if (this.aetherSanctumRings) dynamicObjects.add(this.aetherSanctumRings);
     if (this.rainSystem) dynamicObjects.add(this.rainSystem);
     if (this.rainSplashSystem) dynamicObjects.add(this.rainSplashSystem);
     if (this.mistSystem) dynamicObjects.add(this.mistSystem);
@@ -2759,6 +2793,431 @@ export class SceneManager {
     }
   }
 
+  /**
+   * Builds the 3 new Act IV Biomes and their 3 new fortified settlements beyond Starfall Valley (z < -705):
+   * 1. Emerald Dreamweald (`emerald_weald`, z in [-840, -705)) — World of Warcraft style (Ardenweald/Suramar):
+   *    Bioluminescent mana-trees, glowing Moonwell, floating arcane crystals, and Silverglade Dreamer Haven at (-34, -748).
+   * 2. Celestial Aether Sanctum (`aether_sanctum`, z in [-975, -840)) — Aion style (Elysea/Tower of Eternity):
+   *    White-gold marble terraces, floating sky-islands tethered by chains of light, rotating Aether rings, and Elysean Seraph Outpost at (34, -885).
+   * 3. Primeval Machine Cauldron HEPHAESTUS (`titan_cauldron`, z in [-1120, -975)) — Horizon style:
+   *    Rusted ancient machine ribs/antennas, hexagonal basalt-steel plates with cyan/crimson power conduits, and Ironhearth Seeker Camp at (-34, -1020).
+   */
+  private buildAct4FrontierBiomes(): void {
+    // Shared continuous terrain strip for z in [-1120, -700] (length 420m, width 190m)
+    const segX = this.isHeadless ? 32 : 56;
+    const segZ = this.isHeadless ? 64 : 112;
+    const frontierGeo = new THREE.PlaneGeometry(190, 425, segX, segZ);
+    frontierGeo.rotateX(-Math.PI / 2);
+    const pos = frontierGeo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i) - 912; // Centered at z = -912 (covers -700 to -1124)
+      pos.setZ(i, vz);
+      pos.setY(i, getGroundHeight(vx, vz));
+
+      // Vertex color tinting per biome
+      if (vz >= -840) {
+        // WoW Emerald Dreamweald: rich bioluminescent teal-emerald moss
+        colors[i * 3] = 0.08;
+        colors[i * 3 + 1] = 0.34;
+        colors[i * 3 + 2] = 0.28;
+      } else if (vz >= -975) {
+        // Aion Celestial Aether Sanctum: luminous alabaster-gold marble
+        colors[i * 3] = 0.78;
+        colors[i * 3 + 1] = 0.82;
+        colors[i * 3 + 2] = 0.9;
+      } else {
+        // Horizon Machine Cauldron: dark hexagonal basalt-steel with rust
+        colors[i * 3] = 0.16;
+        colors[i * 3 + 1] = 0.19;
+        colors[i * 3 + 2] = 0.24;
+      }
+    }
+    frontierGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    frontierGeo.computeVertexNormals();
+
+    const frontierMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.68,
+      metalness: 0.22,
+    });
+    const frontierMesh = new THREE.Mesh(frontierGeo, frontierMat);
+    frontierMesh.receiveShadow = true;
+    this.scene.add(frontierMesh);
+    this.colliderMeshes.push(frontierMesh);
+
+    const stoneMat = this.assetManager.getMaterial('stone');
+    const woodMat = this.assetManager.getMaterial('wood');
+
+    // =========================================================================
+    // 1. BIOME 6 (WOW STYLE): EMERALD DREAMWEALD & SILVERGLADE HAVEN (z: -705..-840)
+    // =========================================================================
+    const emeraldBarkMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.78,
+    });
+    const emeraldCanopyMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x059669,
+      emissiveIntensity: 1.6,
+      roughness: 0.35,
+    });
+    const cyanCrystalMat = new THREE.MeshStandardMaterial({
+      color: 0x22d3ee,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 2.2,
+      roughness: 0.2,
+    });
+    const nightmareRootMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e,
+      emissive: 0xe11d48,
+      emissiveIntensity: 1.9,
+      roughness: 0.35,
+    });
+
+    // Giant Bioluminescent Mana-Trees across Emerald Weald
+    const manaTreeCoords: [number, number, number][] = [
+      [-58, -722, 1.2],
+      [48, -725, 1.35],
+      [-62, -775, 1.4],
+      [54, -768, 1.25],
+      [-48, -818, 1.3],
+      [56, -822, 1.45],
+      [-14, -732, 1.15],
+      [26, -745, 1.2],
+    ];
+    for (const [tx, tz, scale] of manaTreeCoords) {
+      const ty = getGroundHeight(tx, tz);
+      const treeGroup = new THREE.Group();
+      treeGroup.position.set(tx, ty, tz);
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.65 * scale, 1.15 * scale, 7.5 * scale, 8),
+        emeraldBarkMat
+      );
+      trunk.position.y = 3.75 * scale;
+      trunk.castShadow = true;
+
+      const canopy1 = new THREE.Mesh(
+        new THREE.SphereGeometry(3.4 * scale, 10, 8),
+        emeraldCanopyMat
+      );
+      canopy1.scale.set(1.2, 0.55, 1.2);
+      canopy1.position.y = 7.4 * scale;
+
+      const floatingShard = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.65 * scale, 0),
+        cyanCrystalMat
+      );
+      floatingShard.position.set(0, 9.5 * scale, 0);
+
+      treeGroup.add(trunk, canopy1, floatingShard);
+      this.scene.add(treeGroup);
+      this.obstacles.push({ x: tx, z: tz, radius: 1.2 * scale, height: 8 * scale });
+    }
+
+    // Village 1: Silverglade Dreamer Haven at (-34, -748)
+    const sgX = -34;
+    const sgZ = -748;
+    const sgY = getGroundHeight(sgX, sgZ);
+
+    // Elven Moonwell in the center of Silverglade Haven
+    const moonwellBasin = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.2, 3.6, 0.85, 14),
+      stoneMat
+    );
+    moonwellBasin.position.set(sgX, sgY + 0.42, sgZ);
+    const moonwellWater = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.8, 2.8, 0.9, 14),
+      cyanCrystalMat
+    );
+    moonwellWater.position.set(sgX, sgY + 0.46, sgZ);
+    this.scene.add(moonwellBasin, moonwellWater);
+    this.worldLightAnchors.push({
+      x: sgX,
+      y: sgY + 2.4,
+      z: sgZ,
+      color: 0x22d3ee,
+      baseIntensity: 7.5,
+      distance: 28,
+    });
+
+    // 3 High-Fantasy Elven Spire Pavilions inside Silverglade fence
+    const sgHouses: [number, number, number][] = [
+      [sgX - 7.5, sgZ - 5.5, 0.4],
+      [sgX + 7.5, sgZ - 5.5, -0.4],
+      [sgX, sgZ - 9.0, 0],
+    ];
+    for (const [hx, hz, rot] of sgHouses) {
+      const hy = getGroundHeight(hx, hz);
+      const lodge = new THREE.Group();
+      lodge.position.set(hx, hy, hz);
+      lodge.rotation.y = rot;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 3.4, 8), woodMat);
+      base.position.y = 1.7;
+      base.castShadow = true;
+      const spireRoof = new THREE.Mesh(
+        new THREE.ConeGeometry(3.4, 4.2, 8),
+        emeraldCanopyMat
+      );
+      spireRoof.position.y = 5.4;
+      lodge.add(base, spireRoof);
+      this.scene.add(lodge);
+      this.obstacles.push({ x: hx, z: hz, radius: 2.9, height: 6.5 });
+    }
+
+    // Emerald Boss Arena at (18, -802) — Nightmare Roots & Corrupted World-Tree Shrine
+    const emBossX = 18;
+    const emBossZ = -802;
+    const emBossY = getGroundHeight(emBossX, emBossZ);
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const rx = emBossX + Math.cos(ang) * 14;
+      const rz = emBossZ + Math.sin(ang) * 14;
+      const ry = getGroundHeight(rx, rz);
+      const spike = new THREE.Mesh(
+        new THREE.ConeGeometry(1.1, 5.8, 6),
+        i % 2 === 0 ? nightmareRootMat : cyanCrystalMat
+      );
+      spike.position.set(rx, ry + 2.7, rz);
+      spike.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.22;
+      this.scene.add(spike);
+    }
+
+    // =========================================================================
+    // 2. BIOME 7 (AION STYLE): CELESTIAL AETHER SANCTUM & ELYSIUM OUTPOST (z: -840..-975)
+    // =========================================================================
+    const marbleMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.25,
+      metalness: 0.35,
+    });
+    const seraphGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xd97706,
+      emissiveIntensity: 1.4,
+      roughness: 0.2,
+      metalness: 0.9,
+    });
+    const aetherBeamMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 2.3,
+      transparent: true,
+      opacity: 0.85,
+    });
+
+    // Rotating Aether Vortex Rings above the shattered Tower of Eternity spire (0, -912)
+    this.aetherSanctumRings = new THREE.Group();
+    const towerY = getGroundHeight(0, -912);
+    this.aetherSanctumRings.position.set(0, towerY + 14, -912);
+    const ring1 = new THREE.Mesh(new THREE.TorusGeometry(8.5, 0.32, 8, 28), seraphGoldMat);
+    ring1.rotation.x = Math.PI / 3;
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(6.2, 0.26, 8, 24), aetherBeamMat);
+    ring2.rotation.y = Math.PI / 4;
+    const coreSun = new THREE.Mesh(new THREE.OctahedronGeometry(2.4, 1), aetherBeamMat);
+    this.aetherSanctumRings.add(ring1, ring2, coreSun);
+    this.scene.add(this.aetherSanctumRings);
+
+    // Floating Sky-Islands tethered by Chains of Light
+    const skyIslands: [number, number, number][] = [
+      [-48, 19, -868],
+      [52, 22, -922],
+      [-46, 21, -955],
+      [44, 18, -855],
+    ];
+    for (const [ix, iy, iz] of skyIslands) {
+      const islGroup = new THREE.Group();
+      islGroup.position.set(ix, iy, iz);
+      const rockCone = new THREE.Mesh(new THREE.ConeGeometry(6.5, 7.5, 7), marbleMat);
+      rockCone.rotation.x = Math.PI;
+      const topDeck = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 6.2, 1.2, 8), seraphGoldMat);
+      topDeck.position.y = 4.2;
+      const lightChain = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 18, 6),
+        aetherBeamMat
+      );
+      lightChain.position.y = -6.0;
+      islGroup.add(rockCone, topDeck, lightChain);
+      this.scene.add(islGroup);
+    }
+
+    // Village 2: Elysean Seraph Outpost at (34, -885)
+    const aeX = 34;
+    const aeZ = -885;
+    const aeY = getGroundHeight(aeX, aeZ);
+
+    const aetherFountain = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.6, 3.2, 1.2, 12),
+      marbleMat
+    );
+    aetherFountain.position.set(aeX, aeY + 0.6, aeZ);
+    const aetherPillar = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.35, 0),
+      aetherBeamMat
+    );
+    aetherPillar.position.set(aeX, aeY + 2.8, aeZ);
+    this.scene.add(aetherFountain, aetherPillar);
+    this.worldLightAnchors.push({
+      x: aeX,
+      y: aeY + 3.2,
+      z: aeZ,
+      color: 0x38bdf8,
+      baseIntensity: 8.0,
+      distance: 28,
+    });
+
+    const aeHouses: [number, number, number][] = [
+      [aeX - 7.5, aeZ - 5.5, 0.3],
+      [aeX + 7.5, aeZ - 5.5, -0.3],
+      [aeX, aeZ - 9.0, 0],
+    ];
+    for (const [hx, hz, rot] of aeHouses) {
+      const hy = getGroundHeight(hx, hz);
+      const sanctumHouse = new THREE.Group();
+      sanctumHouse.position.set(hx, hy, hz);
+      sanctumHouse.rotation.y = rot;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.9, 3.8, 10), marbleMat);
+      body.position.y = 1.9;
+      body.castShadow = true;
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(2.85, 12, 8), seraphGoldMat);
+      dome.position.y = 3.8;
+      sanctumHouse.add(body, dome);
+      this.scene.add(sanctumHouse);
+      this.obstacles.push({ x: hx, z: hz, radius: 3.0, height: 6.5 });
+    }
+
+    // Aether Boss Arena Colonnade at (-18, -938)
+    const aeBossX = -18;
+    const aeBossZ = -938;
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const cx = aeBossX + Math.cos(ang) * 14.5;
+      const cz = aeBossZ + Math.sin(ang) * 14.5;
+      const cy = getGroundHeight(cx, cz);
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.85, 6.8, 10), marbleMat);
+      col.position.set(cx, cy + 3.4, cz);
+      col.castShadow = true;
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 1.9), seraphGoldMat);
+      cap.position.set(cx, cy + 6.9, cz);
+      this.scene.add(col, cap);
+      this.obstacles.push({ x: cx, z: cz, radius: 0.9, height: 7.0 });
+    }
+
+    // =========================================================================
+    // 3. BIOME 8 (HORIZON STYLE): TITAN CAULDRON HEPHAESTUS & IRONHEARTH CAMP (z: -975..-1120)
+    // =========================================================================
+    const titanSteelMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.34,
+      metalness: 0.88,
+    });
+    const redBlightMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0xdc2626,
+      emissiveIntensity: 2.3,
+      roughness: 0.25,
+    });
+    const holoCyanMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 2.2,
+      roughness: 0.2,
+    });
+
+    // Giant Ancient Machine Ribs & Conduit Pylons arching along the Cauldron
+    for (const rz of [-995, -1035, -1075, -1102]) {
+      for (const side of [-1, 1]) {
+        const rx = side * 42;
+        const ry = getGroundHeight(rx, rz);
+        const rib = new THREE.Mesh(
+          new THREE.BoxGeometry(2.2, 14.5, 3.2),
+          titanSteelMat
+        );
+        rib.position.set(rx, ry + 6.8, rz);
+        rib.rotation.z = -side * 0.34;
+        rib.castShadow = true;
+
+        const conduitStrip = new THREE.Mesh(
+          new THREE.BoxGeometry(0.45, 12.5, 0.65),
+          side < 0 ? holoCyanMat : redBlightMat
+        );
+        conduitStrip.position.set(rx - side * 1.1, ry + 6.8, rz);
+        conduitStrip.rotation.z = -side * 0.34;
+        this.scene.add(rib, conduitStrip);
+      }
+    }
+
+    // Village 3: Ironhearth Seeker Camp at (-34, -1020)
+    const caX = -34;
+    const caZ = -1020;
+    const caY = getGroundHeight(caX, caZ);
+
+    const holoBeacon = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.4, 2.8, 0.9, 6),
+      titanSteelMat
+    );
+    holoBeacon.position.set(caX, caY + 0.45, caZ);
+    const holoCore = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.15, 0),
+      holoCyanMat
+    );
+    holoCore.position.set(caX, caY + 2.4, caZ);
+    this.scene.add(holoBeacon, holoCore);
+    this.worldLightAnchors.push({
+      x: caX,
+      y: caY + 2.8,
+      z: caZ,
+      color: 0x38bdf8,
+      baseIntensity: 7.8,
+      distance: 28,
+    });
+
+    const caHouses: [number, number, number][] = [
+      [caX - 7.5, caZ - 5.5, 0.35],
+      [caX + 7.5, caZ - 5.5, -0.35],
+      [caX, caZ - 9.0, 0],
+    ];
+    for (const [hx, hz, rot] of caHouses) {
+      const hy = getGroundHeight(hx, hz);
+      const seekerHut = new THREE.Group();
+      seekerHut.position.set(hx, hy, hz);
+      seekerHut.rotation.y = rot;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 3.1, 3.2, 6), titanSteelMat);
+      base.position.y = 1.6;
+      base.castShadow = true;
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 2.8, 6), woodMat);
+      roof.position.y = 4.4;
+      seekerHut.add(base, roof);
+      this.scene.add(seekerHut);
+      this.obstacles.push({ x: hx, z: hz, radius: 3.0, height: 5.8 });
+    }
+
+    // Cauldron Boss Arena at (18, -1075) — Hexagonal Reactor Pylons
+    const caBossX = 18;
+    const caBossZ = -1075;
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const px = caBossX + Math.cos(ang) * 15;
+      const pz = caBossZ + Math.sin(ang) * 15;
+      const py = getGroundHeight(px, pz);
+      const hexPylon = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.1, 1.3, 5.5, 6),
+        titanSteelMat
+      );
+      hexPylon.position.set(px, py + 2.75, pz);
+      const redNode = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.85, 0),
+        redBlightMat
+      );
+      redNode.position.set(px, py + 6.1, pz);
+      this.scene.add(hexPylon, redNode);
+      this.obstacles.push({ x: px, z: pz, radius: 1.2, height: 6.2 });
+    }
+  }
+
   public setWeather(weather: WeatherType, immediate = false): void {
     if (weather === this.weather && !immediate) return;
     this.previousWeather = immediate ? weather : this.weather;
@@ -3094,9 +3553,106 @@ export class SceneManager {
     this.skyboxGroup.add(cloudDomeMesh);
   }
 
+  public setFogIntensity(intensity: number): void {
+    if (typeof intensity === 'number' && Number.isFinite(intensity)) {
+      this.userFogIntensity = Math.max(0, Math.min(2.0, intensity));
+    }
+  }
+
+  public getFogIntensity(): number {
+    return this.userFogIntensity;
+  }
+
+  public setExplorationFogState(
+    biomeId: string,
+    surge: number,
+    eventType: ExplorationFogEventType = 'none'
+  ): void {
+    this.currentBiomeId = biomeId || 'forgotten_lands';
+    this.explorationFogSurge = Math.max(0, Math.min(1, surge || 0));
+    this.explorationFogEventType =
+      this.explorationFogSurge > 0.001 ? eventType : 'none';
+  }
+
+  public getLastFogState(): DynamicFogState {
+    return this.lastFogState;
+  }
+
+  public setBloomIntensity(intensity: number): void {
+    if (typeof intensity === 'number' && Number.isFinite(intensity)) {
+      this.userBloomIntensity = Math.max(0, Math.min(2.0, intensity));
+      this.syncBloomPass();
+    }
+  }
+
+  public getBloomIntensity(): number {
+    return this.userBloomIntensity;
+  }
+
+  public getLastBloomState(): BloomState {
+    return this.lastBloomState;
+  }
+
+  private ensurePostProcessing(camera: THREE.Camera): void {
+    if (this.isHeadless || this.composer) return;
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.composer = new EffectComposer(this.renderer);
+    this.renderPass = new RenderPass(this.scene, camera);
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(Math.max(1, size.x), Math.max(1, size.y)),
+      this.lastBloomState.strength,
+      this.lastBloomState.radius,
+      this.lastBloomState.threshold
+    );
+    this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.bloomPass);
+  }
+
+  private syncBloomPass(): void {
+    const resolvedBiomeId = this.currentBiomeId || 'village';
+    this.lastBloomState = computeBloomParameters({
+      bloomIntensity: this.userBloomIntensity,
+      quality: this.qualityLevel,
+      timeOfDay: this.timeOfDay,
+      weather: this.weather,
+      biomeId: resolvedBiomeId,
+    });
+    this.renderer.toneMappingExposure = Math.max(
+      0.72,
+      Math.min(0.96, 0.85 + this.lastBloomState.exposureBoost)
+    );
+    if (this.bloomPass) {
+      this.bloomPass.enabled = this.lastBloomState.enabled;
+      this.bloomPass.strength = this.lastBloomState.strength;
+      this.bloomPass.radius = this.lastBloomState.radius;
+      this.bloomPass.threshold = this.lastBloomState.threshold;
+    }
+  }
+
+  public renderScene(camera: THREE.Camera): void {
+    this.syncBloomPass();
+    if (!this.isHeadless && this.lastBloomState.enabled) {
+      this.ensurePostProcessing(camera);
+      if (this.composer && this.renderPass && this.bloomPass) {
+        this.renderPass.camera = camera;
+        this.composer.render();
+        return;
+      }
+    }
+    this.renderer.render(this.scene, camera);
+  }
+
   public applySettings(settings: GraphicsSettings): void {
     this.weatherEffectsEnabled = settings.weatherEffects;
     this.shadowsEnabled = settings.shadows;
+    this.qualityLevel = settings.quality;
+    if (typeof settings.fogIntensity === 'number' && Number.isFinite(settings.fogIntensity)) {
+      this.userFogIntensity = Math.max(0, Math.min(2.0, settings.fogIntensity));
+    }
+    if (typeof settings.bloomIntensity === 'number' && Number.isFinite(settings.bloomIntensity)) {
+      this.userBloomIntensity = Math.max(0, Math.min(2.0, settings.bloomIntensity));
+    }
+    this.syncBloomPass();
     if (this.isHeadless) return;
     const scale =
       settings.quality === 'low' ? 0.75 : settings.quality === 'medium' ? 1.0 : 1.15;
@@ -3111,9 +3667,11 @@ export class SceneManager {
         this.torchLights[i].shadow.needsUpdate = true;
       }
     }
-    if (!settings.weatherEffects) {
-      if (this.rainSystem) this.rainSystem.visible = false;
-      if (this.rainSplashSystem) this.rainSplashSystem.visible = false;
+    if (!settings.weatherEffects || this.userFogIntensity <= 0.001) {
+      if (!settings.weatherEffects) {
+        if (this.rainSystem) this.rainSystem.visible = false;
+        if (this.rainSplashSystem) this.rainSplashSystem.visible = false;
+      }
       if (this.mistSystem) this.mistSystem.visible = false;
     }
   }
@@ -3211,17 +3769,17 @@ export class SceneManager {
     }
 
     // Base Dawn / Day / Dusk / Night sky color, sun color, and light intensities
-    let baseSunIntensity = 2.25;
-    let baseHemiIntensity = 1.05;
+    let baseSunIntensity = 1.55;
+    let baseHemiIntensity = 0.78;
 
     if (sunElev > 0.28) {
       // Midday (08:00 - 16:00)
       _color.setHex(skyState.horizonHex);
       _targetSunColor.copy(_sunNoon);
-      baseSunIntensity = 2.35;
-      baseHemiIntensity = 1.1;
-      this.hemiLight.color.setHex(0x9bb8d3);
-      this.hemiLight.groundColor.setHex(0x2d2820);
+      baseSunIntensity = 1.65;
+      baseHemiIntensity = 0.82;
+      this.hemiLight.color.setHex(0x8ba7c2);
+      this.hemiLight.groundColor.setHex(0x242019);
     } else if (sunElev >= -0.08) {
       // Dawn (05:30 - 08:00) or Dusk (16:00 - 19:00)
       const t = (sunElev + 0.08) / 0.36; // 0 at night edge, 1 at day edge
@@ -3230,18 +3788,18 @@ export class SceneManager {
 
       _color.setHex(skyState.horizonHex);
       _targetSunColor.copy(_moonNight).lerp(horizonSun, Math.sin(t * Math.PI)).lerp(_sunNoon, t);
-      baseSunIntensity = 0.85 + t * 1.5;
-      baseHemiIntensity = 0.62 + t * 0.48;
-      this.hemiLight.color.setHex(isDawn ? 0xd99b78 : 0xc2784e);
-      this.hemiLight.groundColor.setHex(0x211b15);
+      baseSunIntensity = 0.68 + t * 0.97;
+      baseHemiIntensity = 0.48 + t * 0.34;
+      this.hemiLight.color.setHex(isDawn ? 0xc88d6c : 0xb36c44);
+      this.hemiLight.groundColor.setHex(0x1c1712);
     } else {
       // Night (19:00 - 05:30)
       _color.setHex(skyState.horizonHex);
       _targetSunColor.copy(_moonNight);
-      baseSunIntensity = 0.68; // Atmospheric moonlight
-      baseHemiIntensity = 0.48;
-      this.hemiLight.color.setHex(0x3b5278);
-      this.hemiLight.groundColor.setHex(0x111318);
+      baseSunIntensity = 0.54; // Atmospheric moonlight
+      baseHemiIntensity = 0.4;
+      this.hemiLight.color.setHex(0x334769);
+      this.hemiLight.groundColor.setHex(0x0e1015);
     }
 
     this.sunLight.color.lerp(_targetSunColor, Math.min(1, dt * 3.0));
@@ -3256,10 +3814,22 @@ export class SceneManager {
     );
     _color.lerp(_weatherTint, isNight ? 0.25 : 0.38);
 
-    // Smoothly blend biome-specific fog & sky atmosphere across all 12 biomes
+    // Smoothly blend biome-specific fog & sky atmosphere across all 15 biomes
     let targetBiomeFogHex = 0x1e242b;
     let mistParticleHex = 0x94a3b8;
-    if (playerZ <= -550) {
+    if (playerZ <= -975) {
+      // Horizon Titan Cauldron: deep basalt-crimson industrial haze
+      targetBiomeFogHex = 0x1c1524;
+      mistParticleHex = 0xf43f5e;
+    } else if (playerZ <= -840) {
+      // Aion Celestial Aether Sanctum: radiant azure-gold sky mist
+      targetBiomeFogHex = 0x172b42;
+      mistParticleHex = 0x7dd3fc;
+    } else if (playerZ <= -705) {
+      // WoW Emerald Dreamweald: bioluminescent emerald-cyan dream mist
+      targetBiomeFogHex = 0x0b2924;
+      mistParticleHex = 0x34d399;
+    } else if (playerZ <= -550) {
       targetBiomeFogHex = 0x0c192c;
       mistParticleHex = 0x38bdf8;
     } else if (playerZ <= -435) {
@@ -3313,8 +3883,8 @@ export class SceneManager {
         isNight ? skyState.moonHaloHex : skyState.sunCoronaHex
       );
       this.skyDomeUniforms.uSunGlowIntensity.value = isNight
-        ? skyState.moonVisibility * 0.32
-        : skyState.sunVisibility * 0.75;
+        ? skyState.moonVisibility * 0.22
+        : skyState.sunVisibility * 0.38;
     }
 
     if (this.cloudDomeUniforms) {
@@ -3331,14 +3901,14 @@ export class SceneManager {
     }
 
     this.sunLight.intensity =
-      baseSunIntensity * wMetrics.sunIntensityMultiplier + this.lightningFlash * 2.2;
+      baseSunIntensity * wMetrics.sunIntensityMultiplier + this.lightningFlash * 1.35;
     this.hemiLight.intensity =
-      baseHemiIntensity * wMetrics.hemiIntensityMultiplier + this.lightningFlash * 0.9;
+      baseHemiIntensity * wMetrics.hemiIntensityMultiplier + this.lightningFlash * 0.55;
 
     // Update Dynamic World Light Sources (Torches, Campfires, Braziers, Sanctuary Altar)
     // Zero-allocation single-pass top-4 closest anchor selection
     if (this.torchLights.length > 0 && this.worldLightAnchors.length > 0) {
-      const darknessBoost = sunElev < 0.15 ? 1.45 + Math.max(0, -sunElev) * 0.65 : 0.72;
+      const darknessBoost = sunElev < 0.15 ? 1.05 + Math.max(0, -sunElev) * 0.42 : 0.58;
       const weatherBoost = this.weather === 'rain' ? 1.2 : this.weather === 'fog' ? 1.12 : 1.0;
 
       let a0: WorldLightAnchor | null = null;
@@ -3399,10 +3969,38 @@ export class SceneManager {
       }
     }
 
+    // Resolve active biome if not explicitly pushed yet
+    const resolvedBiomeId =
+      playerX > 75 && playerZ > 75
+        ? 'catacombs'
+        : this.currentBiomeId || getBiomeAt(playerX, playerZ).id;
+
+    // Compute dynamic fog intensity reacting to weather, time of day, biome & exploration events, and user settings
+    const fogState = computeDynamicFogIntensity({
+      weather: this.weather,
+      previousWeather: this.previousWeather,
+      weatherBlend: this.weatherTransitionBlend,
+      timeOfDay: this.timeOfDay,
+      biomeId: resolvedBiomeId,
+      explorationSurge: this.explorationFogSurge,
+      explorationEventType: this.explorationFogEventType,
+      userFogIntensity: this.userFogIntensity,
+      weatherEffectsEnabled: this.weatherEffectsEnabled,
+    });
+    this.lastFogState = fogState;
+
+    // Blend horizon haze into sky dome zenith when fog is dense
+    if (this.skyDomeUniforms && fogState.horizonHazeBlend > 0.05) {
+      this.skyDomeUniforms.uZenithColor.value.lerp(
+        _color,
+        Math.min(0.65, fogState.horizonHazeBlend * 0.45)
+      );
+    }
+
     this.scene.background = _color;
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_color);
-      this.scene.fog.density = playerZ <= -105 ? Math.max(wMetrics.fogDensity, 0.015) : wMetrics.fogDensity;
+      this.scene.fog.density = fogState.fogDensity;
     }
 
     // Wet ground reflection adjustment during rain
@@ -3433,6 +4031,10 @@ export class SceneManager {
       this.starfallCoreMesh.rotation.y = elapsed * 0.9;
       this.starfallCoreMesh.rotation.x = Math.sin(elapsed * 1.1) * 0.35;
     }
+    if (this.aetherSanctumRings) {
+      this.aetherSanctumRings.rotation.y = elapsed * 0.65;
+      this.aetherSanctumRings.rotation.z = Math.sin(elapsed * 0.8) * 0.25;
+    }
 
     // Animate Toxic Swamp Water Bubbles (Biome 1)
     if (playerZ < -95 && playerZ > -230) {
@@ -3448,7 +4050,7 @@ export class SceneManager {
     if (playerZ < -205 && playerZ > -340) {
       for (const mc of this.mineCrystals) {
         const mat = mc.mesh.material as THREE.MeshStandardMaterial;
-        mat.emissiveIntensity = 1.2 + Math.sin(elapsed * 3.4 + mc.phase) * 0.65;
+        mat.emissiveIntensity = 0.55 + Math.sin(elapsed * 3.4 + mc.phase) * 0.25;
       }
     }
 
@@ -3519,15 +4121,14 @@ export class SceneManager {
     // Update Volumetric Ground Mist / Fog Wisps around player
     if (this.mistSystem && this.mistPhases) {
       const showMist =
-        this.weatherEffectsEnabled && (wMetrics.mistIntensity > 0.05 || playerZ <= -105);
+        this.weatherEffectsEnabled &&
+        this.userFogIntensity > 0.01 &&
+        (fogState.mistOpacity > 0.02 || playerZ <= -105);
       this.mistSystem.visible = showMist;
       if (showMist) {
         const mistMat = this.mistSystem.material as THREE.PointsMaterial;
         mistMat.color.setHex(mistParticleHex);
-        mistMat.opacity =
-          playerZ <= -105
-            ? Math.max(0.32, wMetrics.mistIntensity * 0.42)
-            : wMetrics.mistIntensity * 0.36;
+        mistMat.opacity = fogState.mistOpacity;
         const posAttr = this.mistSystem.geometry.attributes.position as THREE.BufferAttribute;
         const driftSpeed = (0.4 + wMetrics.windStrength * 1.1) * dt;
 
@@ -3573,6 +4174,12 @@ export class SceneManager {
 
   public handleResize(width: number, height: number): void {
     this.renderer.setSize(width, height);
+    if (this.composer) {
+      this.composer.setSize(width, height);
+    }
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(width, height);
+    }
   }
 
   public dispose(): void {

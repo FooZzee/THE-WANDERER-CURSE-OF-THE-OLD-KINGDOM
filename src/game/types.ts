@@ -118,7 +118,16 @@ export type EnemyType =
   | 'boss_colossus'
   | 'boss_vesper'
   | 'boss_avatar'
-  | 'bounty_hunter';
+  | 'bounty_hunter'
+  | 'mana_wyrm'
+  | 'corrupted_treant'
+  | 'boss_emerald_archon'
+  | 'aether_construct'
+  | 'daeic_shadow'
+  | 'boss_aether_seraph'
+  | 'scrap_watcher'
+  | 'ravager_stalker'
+  | 'boss_cauldron_behemoth';
 
 export type CompanionId = 'lyra' | 'thorvald' | 'vesper';
 
@@ -475,6 +484,12 @@ export interface DialogueOption {
     | 'start_quest_starfall_forge'
     | 'starfall_reforge_crown'
     | 'starfall_shatter_forge'
+    | 'start_quest_emerald_weald'
+    | 'complete_quest_emerald_weald'
+    | 'start_quest_aether_sanctum'
+    | 'complete_quest_aether_sanctum'
+    | 'start_quest_titan_cauldron'
+    | 'complete_quest_titan_cauldron'
     | 'close';
   conditionQuestId?: string;
   conditionStatus?: 'available' | 'active' | 'completed';
@@ -573,7 +588,10 @@ export type BiomeId =
   | 'eclipse_crater'
   | 'sunken_port'
   | 'sun_monastery'
-  | 'starfall_valley';
+  | 'starfall_valley'
+  | 'emerald_weald'
+  | 'aether_sanctum'
+  | 'titan_cauldron';
 
 export type WeatherType = 'clear' | 'fog' | 'rain';
 
@@ -608,6 +626,8 @@ export interface GraphicsSettings {
   resolutionScale: number;
   shadows: boolean;
   weatherEffects: boolean;
+  fogIntensity?: number; // 0.0 (off) .. 1.0 (default) .. 2.0 (200% dense fog)
+  bloomIntensity?: number; // 0.0 (off) .. 1.0 (default) .. 2.0 (200% intense glow)
   audioEnabled: boolean;
   musicEnabled: boolean;
   masterVolume: number;
@@ -775,7 +795,43 @@ export interface HUDState {
     flashColor: string | null;
     flashOpacity: number;
   };
+  fogState?: {
+    fogDensity: number;
+    normalizedIntensity: number;
+    timeMultiplier: number;
+    biomeMultiplier: number;
+    explorationMultiplier: number;
+    userMultiplier: number;
+    mistOpacity: number;
+    horizonHazeBlend: number;
+    activeEventType: string;
+    activeEventLabelRu: string;
+    activeEventLabelEn: string;
+  };
+  bloomState?: {
+    settingIntensity: number;
+    strength: number;
+    radius: number;
+    threshold: number;
+    enabled: boolean;
+  };
+  voiceAI?: {
+    state: 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
+    activeNpcName: string;
+    activeNpcRole: string;
+    activeNpcGender?: 'male' | 'female';
+    activeNpcVoiceLabel?: string;
+    lastUserTranscript: string;
+    lastNpcReply: string;
+    lastNpcThought?: string;
+    errorMessage: string | null;
+    conversationHistory: { role: 'user' | 'npc'; text: string; thought?: string }[];
+    activeNpcPersona?: import('./npcPersonas').NpcPersonaProfile;
+    activeNpcRelationship?: import('./npcPersonas').NpcRelationshipState;
+  };
 }
+
+
 
 
 

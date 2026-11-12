@@ -1,10 +1,12 @@
 import type {
   GameItem,
   GraphicsSettings,
+  HunterContract,
   PlayerStats,
   Quest,
   SkillNode,
 } from './types';
+import type { NpcRelationshipState } from './npcPersonas';
 
 const SAVE_KEY = 'thewanderer_save_v1';
 
@@ -13,15 +15,18 @@ export interface SavePayload {
   timestamp: number;
   player: PlayerStats;
   quests: Quest[];
+  contracts?: HunterContract[];
   activeQuestId: string;
   inventory: GameItem[];
   skills: SkillNode[];
   deadEnemyIds: string[];
+  defeatedQuestTags?: string[];
   interactedIds: string[];
   settings: GraphicsSettings;
   discoveredPOIs?: string[];
   pillarStates?: Record<string, number>;
   catacombsGateUnlocked?: boolean;
+  npcRelationships?: Record<string, NpcRelationshipState>;
 }
 
 export class SaveSystem {

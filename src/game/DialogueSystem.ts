@@ -134,6 +134,79 @@ export class DialogueSystem {
       ],
     },
 
+    foozzee_root: {
+      id: 'foozzee_root',
+      speaker: 'Стример FooZzee (Андрей)',
+      role: 'Хроно-Стример из Будущего · Twitch: https://www.twitch.tv/foozzee',
+      text: 'Йоу, Корвус! Привет тебе и всему чату! Я FooZzee — Андрей, стример и путешественник из будущего! Мой голографический дрон сейчас ведёт прямой эфир прямо из Вороньей Пади на https://www.twitch.tv/foozzee ! Подходи ближе, дружище: у меня неоновая экзо-броня 3099 года, плазменный клинок «Квазар-Фуззи» и самая тёплая компания на Твиче. Залетай к нам на огонёк или давай просто поболтаем обо всём через микрофон!',
+      options: [
+        {
+          id: 'opt_foozzee_stream',
+          text: '🎥 Расскажи про свой стрим на Twitch (https://www.twitch.tv/foozzee) и портал foozzee.ru!',
+          nextNodeId: 'foozzee_stream_info',
+        },
+        {
+          id: 'opt_foozzee_games',
+          text: '🚛 Во что ты обычно играешь на стримах в своём будущем?',
+          nextNodeId: 'foozzee_games',
+        },
+        {
+          id: 'opt_foozzee_gear',
+          text: '⚡ Откуда у тебя эта модная кибер-броня и футуристическое оружие?',
+          nextNodeId: 'foozzee_future_gear',
+        },
+        {
+          id: 'opt_foozzee_dice',
+          text: '🎲 Сыграем партию в «Кости Судьбы» прямо в прямом эфире для чата?',
+          action: 'open_dice_poker',
+        },
+        {
+          id: 'opt_foozzee_close',
+          text: 'До скорого на стриме, FooZzee!',
+          action: 'close',
+        },
+      ],
+    },
+    foozzee_stream_info: {
+      id: 'foozzee_stream_info',
+      speaker: 'Стример FooZzee (Андрей)',
+      role: 'Хроно-Стример из Будущего · Twitch: https://www.twitch.tv/foozzee',
+      text: 'На моём канале https://www.twitch.tv/foozzee мы каждый вечер собираемся огромной дружной компанией! Общаемся вживую с чатом, шутим, обсуждаем игры и поддерживаем друг друга. А ещё у нас есть собственный портал https://foozzee.ru и паблик ВК FooZzee STREAM — там мы отслеживаем бесплатные раздачи игр в Steam и Epic Games и делимся крутыми модами. Обязательно заглядывай и жми фоллоу!',
+      options: [
+        {
+          id: 'opt_foozzee_back_1',
+          text: 'Звучит отлично! Вернёмся к разговору.',
+          nextNodeId: 'foozzee_root',
+        },
+      ],
+    },
+    foozzee_games: {
+      id: 'foozzee_games',
+      speaker: 'Стример FooZzee (Андрей)',
+      role: 'Хроно-Стример из Будущего · Twitch: https://www.twitch.tv/foozzee',
+      text: 'Обожаю крутить баранку тягача в Euro Truck Simulator 2 и American Truck Simulator под душевную музыку и разговоры с чатом! Ещё мы часто выживаем в DayZ и Raft, проходим атмосферные сюжетные RPG вроде твоей саги в Вальдмарке и устраиваем совместные конвои со зрителями. Если бы у тебя в Вороньей Пади была фура Scania, мы бы доставили груз до самого Чёрного Бастиона!',
+      options: [
+        {
+          id: 'opt_foozzee_back_2',
+          text: 'Конвой до Чёрного Бастиона — это сильно! Давай обсудим кое-что ещё.',
+          nextNodeId: 'foozzee_root',
+        },
+      ],
+    },
+    foozzee_future_gear: {
+      id: 'foozzee_future_gear',
+      speaker: 'Стример FooZzee (Андрей)',
+      role: 'Хроно-Стример из Будущего · Twitch: https://www.twitch.tv/foozzee',
+      text: 'Это кастомный экзо-костюм «Cyber-Broadcast Mk.IX» в фирменных цветах Twitch — фиолетовый неон и кибер-лазурь! В наплечники встроен квантовый щит, на голове — голографический визор с чатом стрима в реальном времени, а в руке — плазменный клинок-бластер «Квазар-Фуззи». Когда я тестировал хроно-мод, меня затянуло в Вальдмарк, но связь с https://www.twitch.tv/foozzee работает даже сквозь эпохи!',
+      options: [
+        {
+          id: 'opt_foozzee_back_3',
+          text: 'Впечатляющая броня и оружие! Вернёмся к беседе.',
+          nextNodeId: 'foozzee_root',
+        },
+      ],
+    },
+
     blacksmith_root: {
       id: 'blacksmith_root',
       speaker: 'Кузнец Торн (Гром)',
@@ -1424,6 +1497,117 @@ export class DialogueSystem {
         {
           id: 'opt_anvil_leave',
           text: 'Отойти от Звёздной Наковальни.',
+          action: 'close',
+        },
+      ],
+    },
+    emerald_archdruid_root: {
+      id: 'emerald_archdruid_root',
+      speaker: 'Хранительница Сна Изераэль',
+      role: 'Акт IV · Приют Сновидцев Сильверглейд (Изумрудный Сон Вечнолесья)',
+      text: 'Приветствую тебя под сводами Вечнолесья, Зольник Корвус. Когда Звёздный Горн Предтеч содрогнулся, завеса между явью и Изумрудным Сном истончилась. Архидруид Ксавий-Вальд впустил багровую порчу Кошмара в наши Лунные Колодцы: древни обезумели, а мана-змеи терзают путников за частоколом Сильверглейда.',
+      options: [
+        {
+          id: 'opt_emerald_start',
+          text: '🌿 [Начать задание: «Кошмар Изумрудного Сна»] Я очищу корень Мирового Древа и сокрушу Архидруида Ксавия-Вальда.',
+          action: 'start_quest_emerald_weald',
+          conditionQuestId: 'quest_act4_emerald_dream',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_emerald_complete',
+          text: '✨ [Завершить поручение] Архидруид Изумрудного Кошмара повержен, а корень Вечнолесья очищен (+2100 XP, +1350 крон).',
+          action: 'complete_quest_emerald_weald',
+          conditionQuestId: 'quest_act4_emerald_dream',
+          conditionStageIndex: 3,
+        },
+        {
+          id: 'opt_emerald_heal',
+          text: 'Омыть раны водой Лунного Колодца Элуны (Полное исцеление и очищение токсинов)',
+          action: 'heal_player',
+        },
+        {
+          id: 'opt_emerald_shop',
+          text: 'Обменять припасы и эликсиры Сновидцев (Торговля)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_emerald_close',
+          text: 'Да хранит тебя Изумрудный Сон, Изераэль.',
+          action: 'close',
+        },
+      ],
+    },
+    aether_legate_root: {
+      id: 'aether_legate_root',
+      speaker: 'Легат Даэвов Серафина',
+      role: 'Акт IV · Застава Серафимов Элизиум (Небесный Предел Башни Вечности)',
+      text: 'Сложи клинки у белокаменных врат Элизиума, смертный из Братства Пепла! Ты ступил в святилище расколотой Башни Вечности, где парящие острова держатся на цепях чистого Эфира. Наш бывший страж — Падший Серафим Азраэль — перешёл на сторону Теней Бездны и пытается обрушить верхний ярус купола!',
+      options: [
+        {
+          id: 'opt_aether_start',
+          text: '🪽 [Начать задание: «Крылья Расколотой Вечности»] Я восстановлю Эфирный Резонатор и сражу Падшего Серафима Азраэля.',
+          action: 'start_quest_aether_sanctum',
+          conditionQuestId: 'quest_act4_aether_sanctum',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_aether_complete',
+          text: '✨ [Завершить поручение] Падший Серафим Азраэль повержен, поток Эфира в Башне Вечности стабилизирован (+2400 XP, +1550 крон).',
+          action: 'complete_quest_aether_sanctum',
+          conditionQuestId: 'quest_act4_aether_sanctum',
+          conditionStageIndex: 3,
+        },
+        {
+          id: 'opt_aether_forge',
+          text: 'Воспользоваться эфирной наковальней Заставы Серафимов (Кузница и Руны)',
+          action: 'open_blacksmith',
+        },
+        {
+          id: 'opt_aether_shop',
+          text: 'Пополнить запасы у интенданта Элизиума (Торговля)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_aether_close',
+          text: 'Пусть свет Эфира не гаснет над бастионом.',
+          action: 'close',
+        },
+      ],
+    },
+    cauldron_seeker_root: {
+      id: 'cauldron_seeker_root',
+      speaker: 'Матриарх Искателей Алойя-Вальд',
+      role: 'Акт IV · Железный Очаг Искателей (Котёл Древних Машин «ГЕФЕСТ»)',
+      text: 'Ты прошёл сквозь Изумрудный Сон и небеса Элизиума до самого дна мира Предтеч, Корвус! Здесь, под металлическими рёбрами древних Титанов, гудит автономный Котёл Машин «ГЕФЕСТ». Багровая техно-чума переписала его код: по каньонам рыщут бронированные Рыскари и Пилозубы, а в ядре комплекса пробудился Первородный Громозев!',
+      options: [
+        {
+          id: 'opt_cauldron_start',
+          text: '⚙️ [Начать задание: «Протокол Котла ГЕФЕСТ»] Я перехвачу терминал ядра и сокрушу Первородного Громозева.',
+          action: 'start_quest_titan_cauldron',
+          conditionQuestId: 'quest_act4_titan_cauldron',
+          conditionStageIndex: 0,
+        },
+        {
+          id: 'opt_cauldron_complete',
+          text: '🏆 [Завершить поручение] Первородный Громозев уничтожен, а Котёл «ГЕФЕСТ» переведён под контроль Искателей (+2800 XP, +1900 крон).',
+          action: 'complete_quest_titan_cauldron',
+          conditionQuestId: 'quest_act4_titan_cauldron',
+          conditionStageIndex: 3,
+        },
+        {
+          id: 'opt_cauldron_forge',
+          text: 'Закалить оружие в машинном горне Железного Очага (Кузница и Руны)',
+          action: 'open_blacksmith',
+        },
+        {
+          id: 'opt_cauldron_shop',
+          text: 'Обменять трофейные детали машин и эликсиры (Торговля)',
+          action: 'open_shop',
+        },
+        {
+          id: 'opt_cauldron_close',
+          text: 'Удачной охоты в машинном каньоне, Алойя.',
           action: 'close',
         },
       ],

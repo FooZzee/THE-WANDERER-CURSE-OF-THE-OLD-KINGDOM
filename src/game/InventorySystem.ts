@@ -981,6 +981,13 @@ export class InventorySystem {
     };
   }
 
+  public hasItemDefinition(itemId: string): boolean {
+    if (this.items.some((i) => i.id === itemId)) return true;
+    if (this.shopCatalog.some((i) => i.id === itemId)) return true;
+    const defs = this.getItemDefinitions();
+    return Boolean(defs[itemId]);
+  }
+
   public addItemById(itemId: string, count = 1, autoEquip = false): GameItem {
     const existing = this.items.find((i) => i.id === itemId);
     if (existing) {

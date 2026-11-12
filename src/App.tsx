@@ -149,11 +149,11 @@ export default function App() {
               <span>
                 {activePlatform === 'mobile'
                   ? lang === 'en'
-                    ? '28 Lore Chronicles · Codex'
-                    : '28 Летописей Кодекса'
+                    ? '31 Lore Chronicles · Codex'
+                    : '31 Летопись Кодекса'
                   : lang === 'en'
-                  ? '28 Lore Chronicles [L]'
-                  : '28 Летописей Кодекса [L]'}
+                  ? '31 Lore Chronicles [L]'
+                  : '31 Летопись Кодекса [L]'}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -255,6 +255,15 @@ export default function App() {
               >
                 <span>⬇</span>
                 <span>{lang === 'en' ? 'Download Web ZIP' : 'Скачать ZIP (Web)'}</span>
+              </a>
+              <a
+                href="./the-wanderer-github.zip"
+                download="the-wanderer-github.zip"
+                data-testid="download-github-zip-btn"
+                className="px-4 sm:px-5 py-2.5 sm:py-3.5 text-xs sm:text-sm font-semibold medieval-button rounded-xl transition-all cursor-pointer whitespace-nowrap inline-flex items-center gap-2 text-emerald-300 border-emerald-500/40"
+              >
+                <span>⬇</span>
+                <span>{lang === 'en' ? 'Download GitHub Repo ZIP' : 'Скачать ZIP (GitHub)'}</span>
               </a>
               <a
                 href="./the-wanderer-godot.zip"
@@ -630,6 +639,132 @@ export default function App() {
                               : t(lang, 'hud.weather.rain')}
                           </button>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Dynamic Fog Intensity Slider & Presets */}
+                    <div
+                      data-testid="title-fog-intensity-control"
+                      className="pt-2.5 border-t border-stone-800 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-stone-200 font-semibold">
+                            {t(lang, 'pause.fogIntensity')}
+                          </div>
+                          <div className="text-[10px] text-stone-400">
+                            {t(lang, 'pause.fogIntensity.hint')}
+                          </div>
+                        </div>
+                        <span
+                          data-testid="title-fog-intensity-value"
+                          className="font-mono-tabular text-amber-300 font-semibold"
+                        >
+                          {Math.round((settings?.fogIntensity ?? 1.0) * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        data-testid="title-fog-intensity-slider"
+                        type="range"
+                        min={0}
+                        max={200}
+                        step={10}
+                        value={Math.round((settings?.fogIntensity ?? 1.0) * 100)}
+                        onChange={(e) =>
+                          gameRef.current?.updateSettings({
+                            fogIntensity: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex gap-1">
+                          {[0, 0.5, 1.0, 1.5, 2.0].map((mult) => (
+                            <button
+                              key={mult}
+                              onClick={() =>
+                                gameRef.current?.updateSettings({ fogIntensity: mult })
+                              }
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono-tabular cursor-pointer ${
+                                Math.abs((settings?.fogIntensity ?? 1.0) - mult) < 0.05
+                                  ? 'bg-amber-600 text-stone-950 font-bold'
+                                  : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                              }`}
+                            >
+                              {Math.round(mult * 100)}%
+                            </button>
+                          ))}
+                        </div>
+                        {hud?.fogState && (
+                          <span className="text-[10px] font-mono-tabular text-stone-400">
+                            {lang === 'en'
+                              ? `Time ×${hud.fogState.timeMultiplier.toFixed(2)} · Biome ×${hud.fogState.explorationMultiplier.toFixed(2)}`
+                              : `Время ×${hud.fogState.timeMultiplier.toFixed(2)} · Регион ×${hud.fogState.explorationMultiplier.toFixed(2)}`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bloom Intensity Post-Processing Slider & Presets */}
+                    <div
+                      data-testid="title-bloom-intensity-control"
+                      className="pt-2.5 border-t border-stone-800 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-stone-200 font-semibold">
+                            {t(lang, 'pause.bloomIntensity')}
+                          </div>
+                          <div className="text-[10px] text-stone-400">
+                            {t(lang, 'pause.bloomIntensity.hint')}
+                          </div>
+                        </div>
+                        <span
+                          data-testid="title-bloom-intensity-value"
+                          className="font-mono-tabular text-amber-300 font-semibold"
+                        >
+                          {Math.round((settings?.bloomIntensity ?? 1.0) * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        data-testid="title-bloom-intensity-slider"
+                        type="range"
+                        min={0}
+                        max={200}
+                        step={10}
+                        value={Math.round((settings?.bloomIntensity ?? 1.0) * 100)}
+                        onChange={(e) =>
+                          gameRef.current?.updateSettings({
+                            bloomIntensity: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex gap-1">
+                          {[0, 0.5, 1.0, 1.5, 2.0].map((mult) => (
+                            <button
+                              key={mult}
+                              onClick={() =>
+                                gameRef.current?.updateSettings({ bloomIntensity: mult })
+                              }
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono-tabular cursor-pointer ${
+                                Math.abs((settings?.bloomIntensity ?? 1.0) - mult) < 0.05
+                                  ? 'bg-amber-600 text-stone-950 font-bold'
+                                  : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                              }`}
+                            >
+                              {Math.round(mult * 100)}%
+                            </button>
+                          ))}
+                        </div>
+                        {hud?.bloomState && (
+                          <span className="text-[10px] font-mono-tabular text-stone-400">
+                            {hud.bloomState.enabled
+                              ? `Strength ${hud.bloomState.strength.toFixed(2)} · Radius ${hud.bloomState.radius.toFixed(2)}`
+                              : 'OFF'}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

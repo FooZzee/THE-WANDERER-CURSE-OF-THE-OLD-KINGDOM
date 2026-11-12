@@ -15,7 +15,7 @@ export const UI_TEXT: Record<GameLanguage, Record<string, string>> = {
     feat_contracts: 'Контракты и Улики',
     feat_contracts_sub: 'Выслеживание бестий с Чутьём [V]',
     feat_codex: 'Хроники Вальдмарка',
-    feat_codex_sub: '12 летописей мира [L] и 4 финала',
+    feat_codex_sub: '31 летопись мира [L] и 4 финала',
     // HUD
     hud_level: 'Ур.',
     hud_corvus: 'Корвус · Зольник',
@@ -187,6 +187,10 @@ export const UI_TEXT: Record<GameLanguage, Record<string, string>> = {
     'pause.quality.medium': 'Среднее',
     'pause.quality.high': 'Высокое',
     'pause.weather': 'Погода в долине',
+    'pause.fogIntensity': 'Интенсивность тумана',
+    'pause.fogIntensity.hint': 'Динамически реагирует на время суток и события исследования мира',
+    'pause.bloomIntensity': 'Bloom Intensity / Свечение (Bloom)',
+    'pause.bloomIntensity.hint': 'Регулирует яркость пост-обработки свечения рун, эфира и магии',
     'pause.hudHint': 'Включите или скройте отдельные элементы боевого интерфейса (HUD) для максимального погружения.',
     'pause.hud.minimapRadar': 'Радар и компас (сверху справа)',
     'pause.hud.clockWeather': 'Часы, время суток и погода',
@@ -221,7 +225,7 @@ export const UI_TEXT: Record<GameLanguage, Record<string, string>> = {
     feat_contracts: 'Contracts & Clues',
     feat_contracts_sub: 'Track beasts with Hunter Senses [V]',
     feat_codex: 'Chronicles of Valdmark',
-    feat_codex_sub: '12 World Scrolls [L] & 4 Endings',
+    feat_codex_sub: '31 World Scrolls [L] & 4 Endings',
     // HUD
     hud_level: 'Lv.',
     hud_corvus: 'Corvus · Ash-Hunter',
@@ -393,6 +397,10 @@ export const UI_TEXT: Record<GameLanguage, Record<string, string>> = {
     'pause.quality.medium': 'Medium',
     'pause.quality.high': 'High',
     'pause.weather': 'Region Weather',
+    'pause.fogIntensity': 'Dynamic Fog Intensity',
+    'pause.fogIntensity.hint': 'Reacts to time of day and world exploration events',
+    'pause.bloomIntensity': 'Bloom Intensity',
+    'pause.bloomIntensity.hint': 'Adjusts post-processing glow intensity across runes, aether, and magic',
     'pause.hudHint': 'Show or hide individual HUD elements to customize your screen layout.',
     'pause.hud.minimapRadar': 'Minimap Radar & Compass',
     'pause.hud.clockWeather': 'Time of Day & Weather Indicator',
@@ -670,6 +678,9 @@ const EN_BIOME_NAMES: Record<string, string> = {
   'Среброзубый Перевал и Шахты': 'Silvertooth Pass & Dead Mines',
   'Чёрный Бастион Братства Пепла': 'Black Bastion of the Brotherhood',
   'Кратер Затмения (Зал Трона)': 'Eclipse Crater (Throne of the Void)',
+  'Изумрудный Сон Вечнолесья и Приют Сильверглейд': 'Emerald Dream Weald & Silverglade Refuge',
+  'Небесный Предел Элизиума и Башня Вечности': 'Celestial Sanctum of Elysium & Tower of Eternity',
+  'Котёл Древних Машин «ГЕФЕСТ» и Очаг Искателей': 'Titan Machine Cauldron HEPHAESTUS & Seekers’ Hearth',
 };
 
 const EN_TEXT_PHRASES: Record<string, string> = {
@@ -693,6 +704,8 @@ const EN_TEXT_PHRASES: Record<string, string> = {
   'Брат Торвальд': 'Brother Thorvald',
   'Бард Корвин Песнопевец': 'Bard Corwin the Songweaver',
   'Караванщик Радован': 'Caravaneer Radovan',
+  'Стример FooZzee (Андрей)': 'Streamer FooZzee (Andrey)',
+  'Хроно-Странник из Будущего · Повелитель Эфира Twitch': 'Chrono-Traveler from the Future · Lord of the Twitch Aether',
   'Я скоро вернусь.': 'I will return shortly.',
   'В другой раз.': 'Another time.',
   'Прощай.': 'Farewell.',
@@ -736,8 +749,20 @@ export function localizeSkill(skill: SkillNode, lang: GameLanguage): SkillNode {
   if (lang === 'ru') return skill;
   const map: Record<string, { name: string; description: string }> = {
     skill_blade_mastery: {
-      name: 'School of the Raven Blade Mastery',
-      description: 'Increases Steel and Silver sword attack power by +15% per rank.',
+      name: 'Muscle Memory (Blade Mastery)',
+      description: 'Increases base damage of fast and heavy sword strikes (+5 per rank).',
+    },
+    skill_crushing_blow: {
+      name: 'Crushing Onslaught',
+      description: 'Further empowers all attack types (+3 damage per rank).',
+    },
+    skill_runic_focus: {
+      name: 'Runic Sign Mastery',
+      description: 'Boosts the intensity of all 5 Magical Signs by +15% per rank.',
+    },
+    skill_witcher_vitality: {
+      name: 'Endurance Mutation',
+      description: 'Increases Maximum Vitality by +25 HP and Defense by +3 per rank.',
     },
     skill_vitality: {
       name: 'Smoldering Blood Mutation',
@@ -764,7 +789,7 @@ export function localizeQuest(quest: Quest, lang: GameLanguage): Quest {
   if (lang === 'ru') return quest;
   const qMap: Record<string, { title: string; description: string; biome: string; stages?: string[] }> = {
     quest_missing_hunters: {
-      title: 'missing Hunters & Footsteps of Ash',
+      title: 'Missing Hunters & Footsteps of Ash',
       description:
         'Speak with Elder Bran in Crow’s Hollow, inspect Vesper’s abandoned camp with Hunter Senses [V], and slay the ghoul pack near the wrecked wagon.',
       biome: 'Crow’s Hollow / Old Forest',
@@ -776,7 +801,7 @@ export function localizeQuest(quest: Quest, lang: GameLanguage): Quest {
         'Return to Elder Bran for your reward',
       ],
     },
-    quest_cursed_sanctuary: {
+    quest_swamp_whisper: {
       title: 'Whispers of the Cursed Sanctuary',
       description:
         'Herbalist Marfa sensed dark rituals in the southwest marsh. Investigate the Cursed Sanctuary, defeat Swamp Hag Morana, and decide the fate of the Void Crystal.',
@@ -788,25 +813,36 @@ export function localizeQuest(quest: Quest, lang: GameLanguage): Quest {
         'Decide the fate of the Cursed Altar [E]',
       ],
     },
+    quest_cursed_sanctuary: {
+      title: 'Whispers of the Cursed Sanctuary',
+      description:
+        'Herbalist Marfa sensed dark rituals in the southwest marsh. Investigate the Cursed Sanctuary, defeat Swamp Hag Morana, and decide the fate of the Void Crystal.',
+      biome: 'Cursed Sanctuary',
+    },
+    quest_ancient_king: {
+      title: 'Shadow of the Ruined Fortress & Night of the Eclipse',
+      description:
+        'Breach the Ruined Fortress, defeat the Ancient Crown Guardian, and confront Lich King Malakor the Undying in the Ashen Cemetery.',
+      biome: 'Ruined Fortress & Ashen Cemetery (Act II)',
+      stages: [
+        'Explore the Ruined Fortress in the northeast',
+        'Slay the Forest Archdemon at the fortress gate',
+        'Defeat the Ancient Crown Guardian in the throne hall',
+        'Act II: Meet Inquisitor Lazarus at the southern Order camp',
+        'Act II: Defeat or redeem Lich King Malakor the Undying',
+      ],
+    },
     quest_ancient_guardian: {
       title: 'Shadow of the Ruined Fortress',
       description:
         'Breach the Ruined Fortress in the northeast, slay the elite Forest Demon at the gates, and defeat the Ancient Crown Guardian in the throne room.',
       biome: 'Ruined Fortress',
-      stages: [
-        'Slay the Forest Archdemon guarding the fortress gate',
-        'Defeat the Ancient Crown Guardian inside the citadel',
-      ],
     },
-    quest_act2_malakor: {
-      title: 'Act II: Night of the Ashen Eclipse',
+    quest_drowned_path: {
+      title: 'Northern March I: The Drowned Marshes',
       description:
-        'Meet Inquisitor Lazarus at the Order camp in the south, choose your allegiance, and confront Lich King Malakor in the Ashen Cemetery.',
-      biome: 'Ashen Cemetery',
-      stages: [
-        'Speak with Inquisitor Lazarus at the southern camp',
-        'Defeat or redeem Lich King Malakor the Undying',
-      ],
+        'Cross the Northern Outpost to Gallows Road, speak with Ferryman Charon, repair the ferry winch, and slay the Swamp Hydra.',
+      biome: 'Gallows Road & Drowned Marshes',
     },
     quest_north_swamp: {
       title: 'Northern March I: The Drowned Marshes',
@@ -814,11 +850,23 @@ export function localizeQuest(quest: Quest, lang: GameLanguage): Quest {
         'Cross the Northern Outpost to Gallows Road, speak with Ferryman Charon, repair the ferry winch, and slay the Swamp Hydra.',
       biome: 'Gallows Road & Marshes',
     },
+    quest_mountain_blood: {
+      title: 'Northern March II: Blood of the Mountain',
+      description:
+        'Aid Old Miner Brom in Silvertooth Pass, activate the mine lift, shatter the Crystal Colossus’s 3 Black Ore crystals, and defeat it.',
+      biome: 'Silvertooth Pass & Dead Mines',
+    },
     quest_north_mountain: {
       title: 'Northern March II: Silvertooth Pass',
       description:
         'Aid Old Miner Brom in the frozen canyon, activate the mine lift, shatter the Crystal Colossus’s 3 Black Ore crystals with Impulse/Heavy hits, and defeat it.',
       biome: 'Silvertooth Pass',
+    },
+    quest_ash_brotherhood: {
+      title: 'Northern March III: Ashes of the Brotherhood',
+      description:
+        'Return to the ruined fortress of the Brotherhood of Ash, complete the Trial of Three Seals, and duel Grandmaster Vesper.',
+      biome: 'Black Bastion of the Brotherhood',
     },
     quest_north_bastion: {
       title: 'Northern March III: The Black Bastion',
@@ -826,11 +874,53 @@ export function localizeQuest(quest: Quest, lang: GameLanguage): Quest {
         'Return to the ruined fortress of the Brotherhood of Ash, complete the Trial of Three Seals, and duel Grandmaster Vesper.',
       biome: 'Black Bastion',
     },
+    quest_dawn_valdmark: {
+      title: 'Finale: Dawn Over Valdmark',
+      description:
+        'Enter the Eclipse Crater, vanquish the Avatar of the Void, and choose the ultimate fate of Valdmark at the Primordial Altar.',
+      biome: 'Eclipse Crater (Throne of the Void)',
+    },
     quest_north_eclipse: {
       title: 'Finale: Heart of the Void',
       description:
         'Enter the Eclipse Crater, vanquish the Avatar of the Void, and choose the ultimate fate of Valdmark at the Primordial Altar.',
       biome: 'Eclipse Crater',
+    },
+    quest_crimson_harvest: {
+      title: 'Investigation: Blood on the Belltower',
+      description:
+        'Investigate the ritual killings in Crow’s Hollow using Hunter Senses [V], interrogate suspects, and unmask the real culprit.',
+      biome: 'Crow’s Hollow / Old Forest',
+    },
+    quest_smuggler_cellar: {
+      title: 'Investigation: Whisper from the Cellar',
+      description:
+        'Uncover the smuggler ring operating beneath Gallows Road and defeat the Smuggler Ring Leader.',
+      biome: 'Gallows Road & Drowned Marshes',
+    },
+    quest_frost_expedition: {
+      title: 'Investigation: Frozen Expedition',
+      description:
+        'Trace the lost expedition in Silvertooth Pass and vanquish the Ice Wraith.',
+      biome: 'Silvertooth Pass & Dead Mines',
+    },
+    quest_emerald_totems: {
+      title: 'Act III (Teldrassil): Nightmare of the Emerald Dream',
+      description:
+        'Speak with Archdruid Elowen in Silverglade Refuge, cleanse the Emerald Totems, and defeat Sylvanus the Nightmare Lord.',
+      biome: 'Emerald Dream Weald & Silverglade Refuge',
+    },
+    quest_shattered_rift: {
+      title: 'Act III (Elysium): Wings of the Shattered Abyss',
+      description:
+        'Speak with Centurion Cassian at the Tower of Eternity, stabilize the Aether Beacons, and defeat Archon Solaris.',
+      biome: 'Celestial Sanctum of Elysium & Tower of Eternity',
+    },
+    quest_sunken_atlantis: {
+      title: 'Act IV (HEPHAESTUS): Heart of the Machine Cauldron',
+      description:
+        'Speak with Matriarch Rostova at Seekers’ Hearth, override the Data Pylons, and destroy Apex Machine-Titan HEPHAESTUS.',
+      biome: 'Titan Machine Cauldron HEPHAESTUS & Seekers’ Hearth',
     },
   };
   const tr = qMap[quest.id];
@@ -897,6 +987,34 @@ export function localizeDialogueNode(node: DialogueNode | null, lang: GameLangua
         opt_herb_interrogate: '🔍 [Interrogate Suspect] "Villagers blame your tame wolf for the belltower killings."',
         opt_heal: 'Can you dress my wounds and purge alchemical toxicity from my blood?',
         opt_leave_herb: 'Stay safe, Marfa.',
+      },
+    },
+    foozzee_root: {
+      text: 'Yo, greetings, Wanderer! Chat, look who we just met in Crow’s Hollow — Corvus of the School of the Raven himself! My name is Andrey, known across the digital multiverse as streamer FooZzee. While testing a chrono-portal between Path of Exile, PUBG, and Escape from Tarkov, I got pulled right into Valdmark with my cyber-armor and plasma blade! Drop by my stream at https://www.twitch.tv/foozzee — we’ve got the warmest chat, top raids, and giveaways!',
+      options: {
+        opt_foozzee_stream: '📺 Tell me about your streams on Twitch (twitch.tv/foozzee) and foozzee.ru!',
+        opt_foozzee_games: '🎮 What worlds and games have you conquered before arriving in Valdmark?',
+        opt_foozzee_gear: '⚡ Where did you get that neon cyber-armor and futuristic plasma sword?',
+        opt_foozzee_gift: '💎 "Here’s a shoutout to your chat!" (Receive a Streamer’s Blessing & Gold)',
+        opt_foozzee_leave: 'Good luck with the stream, FooZzee! See you on Twitch.',
+      },
+    },
+    foozzee_stream_info: {
+      text: 'On https://www.twitch.tv/foozzee we run high-energy broadcasts almost every evening! And on my portal foozzee.ru you can find stream schedules, guides, and community updates. Whether we are theorycrafting endgame builds, surviving hardcore raids, or just chilling with chat — everyone is welcome!',
+      options: {
+        opt_foozzee_back: 'Awesome, I’ll definitely check out twitch.tv/foozzee!',
+      },
+    },
+    foozzee_games: {
+      text: 'My main arenas are Path of Exile (hundreds of hours of hardcore mapping and bossing), intense tactical raids in Escape from Tarkov, battle-royale clutches in PUBG, plus Dead by Daylight, Rust, and dark fantasy RPGs! Honestly, Valdmark feels like a wild crossover between the Witcher, PoE maps, and Horizon’s Machine Cauldron!',
+      options: {
+        opt_foozzee_back2: 'A true veteran of a hundred worlds! Back to questions.',
+      },
+    },
+    foozzee_future_gear: {
+      text: 'This is a custom Cyber-Vanguard exo-rig from the year 2099 with reactive cyan-magenta LED conduits and a high-frequency plasma katana! Even your Blacksmith Thorn wanted to trade three sacks of Black Ore just to inspect its power core.',
+      options: {
+        opt_foozzee_back3: 'Impressive tech, Andrey! Let’s talk about something else.',
       },
     },
   };

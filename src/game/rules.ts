@@ -99,6 +99,27 @@ export const WAYSTONES: WaystoneData[] = [
     x: 0,
     z: -605,
   },
+  {
+    id: 'waystone_emerald_weald',
+    name: 'Камень Изумрудного Вечнолесья (Акт IV)',
+    biomeName: 'Изумрудный Сон Вечнолесья и Приют Сильверглейд',
+    x: -28,
+    z: -745,
+  },
+  {
+    id: 'waystone_aether_sanctum',
+    name: 'Камень Небесного Элизиума (Акт IV)',
+    biomeName: 'Небесный Предел Элизиума и Башня Вечности',
+    x: 28,
+    z: -882,
+  },
+  {
+    id: 'waystone_titan_cauldron',
+    name: 'Камень Котла Древних Машин (Акт IV)',
+    biomeName: 'Котёл Древних Машин ГЕФЕСТ и Очаг Искателей',
+    x: -28,
+    z: -1017,
+  },
 ];
 
 export const MAGIC_SIGNS: Record<SignType, MagicSignInfo> = {
@@ -398,6 +419,117 @@ export const BESTIARY_ENTRIES: BestiaryEntry[] = [
     trophyBonus: 'Кошель с кровавым золотом и заказ на голову Зольника',
     dangerLevel: 3,
   },
+  // ===========================================================================
+  // АКТ IV: ТРИ НОВЫХ БИОМА ЗА ГРАНЬЮ ЗВЁЗДНОГО ГОРНА (WOW / AION / HORIZON)
+  // ===========================================================================
+  {
+    id: 'bestiary_mana_wyrm',
+    type: 'mana_wyrm',
+    name: 'Мана-Змей Вечнолесья',
+    title: 'Астральный хищник Изумрудного Сна',
+    category: 'Магические Звери',
+    lore: 'Парящие биолюминесцентные змеи, питающиеся росой Лунных Колодцев Сильверглейда. Искажённые Изумрудным Кошмаром, они атакуют стремительными аркановыми разрядами и выжигают энергию Знаков.',
+    weaknessSigns: ['Импульс (Аард)', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Масло против призраков и реликтов (+30% урона)',
+    trophyBonus: 'Пыль пустоты и чешуя Мана-Змея',
+    dangerLevel: 4,
+  },
+  {
+    id: 'bestiary_corrupted_treant',
+    type: 'corrupted_treant',
+    name: 'Искажённый Древень Сна',
+    title: 'Страж рощ Вечнолесья',
+    category: 'Древние Реликты',
+    lore: 'Многовековые древостражи Изумрудного Вечнолесья, чьи корни пропитались багровой порчей Кошмара. В бою оплетают землю шипами и сокрушают врагов ударами узловатых ветвей.',
+    weaknessSigns: ['Пламя (Игнис) — сжигает древесную броню', 'Барьер (Квен)'],
+    weaknessOil: 'Масло против проклятых (+30% урона)',
+    trophyBonus: 'Сердцевина Мирового Древа и рунный янтарь',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_emerald_archon',
+    type: 'boss_emerald_archon',
+    name: 'Архидруид Изумрудного Кошмара Ксавий-Вальд',
+    title: 'Главный Босс Изумрудного Вечнолесья (Акт IV)',
+    category: 'Владыки Сна',
+    lore: 'Верховный хранитель рощ Сильверглейда, чей разум в Ночь Затмения слился с корнями Мирового Древа и тенью Бездны. Обрушивает волны изумрудно-багрового пламени Сна и призывает шипастые корни по всей арене.',
+    weaknessSigns: ['Пламя (Игнис)', 'Барьер (Квен)', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Масло против проклятых (+30% урона)',
+    trophyBonus: 'Рог Изумрудного Сновидца и благословение Сильверглейда',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_aether_construct',
+    type: 'aether_construct',
+    name: 'Эфирный Часовой Элизиума',
+    title: 'Страж парящих колоннад Небесного Предела',
+    category: 'Небесные Конструкты',
+    lore: 'Бело-золотые автоматоны, выкованные древними серафимами для охраны расколотой Башни Вечности. Вращают вокруг себя кольца чистого эфира и наносят размашистые удары световыми глефами.',
+    weaknessSigns: ['Импульс (Аард)', 'Барьер (Квен)'],
+    weaknessOil: 'Масло против призраков и реликтов (+30% урона)',
+    trophyBonus: 'Осколок чистого Эфира и Чёрная руда',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_daeic_shadow',
+    type: 'daeic_shadow',
+    name: 'Крылатый Тень-Асмодиан',
+    title: 'Падший страж Бездны Эфира',
+    category: 'Крылатые Даэвы',
+    lore: 'Некогда благородные крылатые воители Небесного Предела, чьи перья почернели от бури Катаклизма. Стремительно пикируют с воздуха и рассекают броню парными эфирными клинками.',
+    weaknessSigns: ['Ледяная печать (Ирден)', 'Иллюзия (Морок)'],
+    weaknessOil: 'Масло против призраков (+30% урона)',
+    trophyBonus: 'Перо Падшего Серафима и Пыль пустоты',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_aether_seraph',
+    type: 'boss_aether_seraph',
+    name: 'Падший Серафим Вечности Азраэль',
+    title: 'Главный Босс Небесного Предела Эфира (Акт IV)',
+    category: 'Архонты Элизиума',
+    lore: 'Шестикрылый командующий легионами Башни Вечности, сошедший с ума от раскола небесной тверди. В бою взмывает над мраморным святилищем, обрушивая копья солнечного эфира и резонансные бури.',
+    weaknessSigns: ['Барьер (Квен)', 'Импульс (Аард)', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Масло против призраков (+30% урона)',
+    trophyBonus: 'Нимб Расколотой Вечности и крылатая эгида Элизиума',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_scrap_watcher',
+    type: 'scrap_watcher',
+    name: 'Рыскарь Древнего Котла',
+    title: 'Разведывательная машина Предтеч',
+    category: 'Древние Машины',
+    lore: 'Двуногий механический хищник из Котла ГЕФЕСТ, чей оптический визор пылает багровым кодом порчи. Ослепляет охотника вспышками фотонного глаза и совершает молниеносные прыжки стальным хвостом.',
+    weaknessSigns: ['Импульс (Аард) — сбивает оптическое ядро', 'Ледяная печать (Ирден)'],
+    weaknessOil: 'Стальной и серебряный клинок по энергоузлам',
+    trophyBonus: 'Линза Рыскаря и сердечник Древних Машин',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_ravager_stalker',
+    type: 'ravager_stalker',
+    name: 'Пилозуб Багровой Чумы',
+    title: 'Боевой зверь-машина Котла ГЕФЕСТ',
+    category: 'Древние Машины',
+    lore: 'Тяжёлый четвероногий механизм, созданный Предтечами для расчистки рудных кратеров. Его челюсти снабжены вращающимися плазменными резаками, а на спине установлена дуговая пушка.',
+    weaknessSigns: ['Барьер (Квен)', 'Пламя (Игнис) — перегревает реактор'],
+    weaknessOil: 'Масло против реликтов и точные удары в энергоядро',
+    trophyBonus: 'Плазменное ядро Пилозуба и Чёрная руда',
+    dangerLevel: 5,
+  },
+  {
+    id: 'bestiary_boss_cauldron_behemoth',
+    type: 'boss_cauldron_behemoth',
+    name: 'Первородный Громозев Котла ГЕФЕСТ',
+    title: 'Главный Босс Котла Древних Машин (Акт IV)',
+    category: 'Титаны Машин Предтеч',
+    lore: 'Колоссальный апекс-механизм, собранный автоматической кузницей Котла ГЕФЕСТ для защиты ядра терраформирования. Закован в титановые пластины, вооружён дискометами, гравитационным генератором и лучом испепеления.',
+    weaknessSigns: ['Барьер (Квен)', 'Импульс (Аард)', 'Пламя (Игнис)'],
+    weaknessOil: 'Все 5 Печатей Пепла и удары по уязвимому реактору',
+    trophyBonus: 'Матрица ГЕФЕСТА и Корона Древних Машин',
+    dangerLevel: 5,
+  },
 ];
 
 /**
@@ -536,21 +668,68 @@ export function getGroundHeight(x: number, z: number): number {
       return baseCrater + rim;
     }
 
-    // Biome 5 (Act III): Starfall Valley & Precursor Astral Forge (z < -550)
-    const valleyProgress = Math.min(1, Math.max(0, (-550 - z) / 28));
-    const baseStarfall = 3.5 + valleyProgress * 2.3; // Rises to +5.8m astral plateau
-    const distForge = Math.hypot(x - 0, z - -635);
-    const distWestObservatory = Math.hypot(x - -46, z - -618);
-    const distEastSanctum = Math.hypot(x - 46, z - -618);
-    const flatForge =
-      Math.min(1, Math.max(0, (distForge - 34) / 14)) *
-      Math.min(1, Math.max(0, (distWestObservatory - 18) / 8)) *
-      Math.min(1, Math.max(0, (distEastSanctum - 18) / 8));
-    if (Math.abs(x) < 6 && z > -595 && z < -540) {
-      return baseStarfall;
+    // Biome 5 (Act III): Starfall Valley & Precursor Astral Forge (z in [-705, -550))
+    if (z >= -705) {
+      const valleyProgress = Math.min(1, Math.max(0, (-550 - z) / 28));
+      const baseStarfall = 3.5 + valleyProgress * 2.3; // Rises to +5.8m astral plateau
+      const distForge = Math.hypot(x - 0, z - -635);
+      const distWestObservatory = Math.hypot(x - -46, z - -618);
+      const distEastSanctum = Math.hypot(x - 46, z - -618);
+      const flatForge =
+        Math.min(1, Math.max(0, (distForge - 34) / 14)) *
+        Math.min(1, Math.max(0, (distWestObservatory - 18) / 8)) *
+        Math.min(1, Math.max(0, (distEastSanctum - 18) / 8));
+      if (Math.abs(x) < 6 && z > -705 && z < -540) {
+        return baseStarfall;
+      }
+      const astralRidges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.4 * flatForge;
+      return baseStarfall + astralRidges;
     }
-    const astralRidges = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 1.4 * flatForge;
-    return baseStarfall + astralRidges;
+
+    // Biome 6 (Act IV - WoW Style): Emerald Dreamweald & Silverglade Haven (z in [-840, -705))
+    if (z >= -840) {
+      const baseEmerald = 5.8;
+      const distVillage = Math.hypot(x - -34, z - -748);
+      const distBossArena = Math.hypot(x - 18, z - -802);
+      const flatEmerald =
+        Math.min(1, Math.max(0, (distVillage - 20) / 10)) *
+        Math.min(1, Math.max(0, (distBossArena - 24) / 10));
+      if (Math.abs(x) < 6) {
+        return baseEmerald;
+      }
+      const gladeHills = Math.sin(x * 0.038) * Math.cos(z * 0.038) * 1.1 * flatEmerald;
+      return baseEmerald + gladeHills;
+    }
+
+    // Biome 7 (Act IV - Aion Style): Celestial Aether Sanctum & Elysean Outpost (z in [-975, -840))
+    if (z >= -975) {
+      const sanctumLift = Math.min(1, Math.max(0, (-840 - z) / 22));
+      const baseAether = 5.8 + sanctumLift * 2.2; // Rises to +8.0m celestial marble terrace
+      const distVillage = Math.hypot(x - 34, z - -885);
+      const distBossArena = Math.hypot(x - -18, z - -938);
+      const flatAether =
+        Math.min(1, Math.max(0, (distVillage - 20) / 10)) *
+        Math.min(1, Math.max(0, (distBossArena - 24) / 10));
+      if (Math.abs(x) < 6) {
+        return baseAether;
+      }
+      const terraceWaves = Math.sin(x * 0.032) * Math.cos(z * 0.032) * 0.85 * flatAether;
+      return baseAether + terraceWaves;
+    }
+
+    // Biome 8 (Act IV - Horizon Style): Primeval Machine Cauldron HEPHAESTUS & Ironhearth Camp (z < -975)
+    const cauldronProgress = Math.min(1, Math.max(0, (-975 - z) / 22));
+    const baseCauldron = 8.0 - cauldronProgress * 1.6; // Descends slightly into the hexagonal machine caldera (+6.4m)
+    const distVillage = Math.hypot(x - -34, z - -1020);
+    const distBossArena = Math.hypot(x - 18, z - -1075);
+    const flatCauldron =
+      Math.min(1, Math.max(0, (distVillage - 20) / 10)) *
+      Math.min(1, Math.max(0, (distBossArena - 26) / 10));
+    if (Math.abs(x) < 6) {
+      return baseCauldron;
+    }
+    const hexRidges = Math.sin(x * 0.045) * Math.cos(z * 0.045) * 1.15 * flatCauldron;
+    return baseCauldron + hexRidges;
   }
 
   // Western Coastal Biome: Sunken Port Solheim & Abyssal Lighthouse (x < -105)
@@ -626,6 +805,15 @@ export function getGroundHeight(x: number, z: number): number {
 export function getBiomeAt(x: number, z: number): { id: BiomeId; name: string } {
   if (x > 75 && x < 128 && z > 75 && z < 128) {
     return { id: 'catacombs', name: 'Подземные Катакомбы Древних Королей' };
+  }
+  if (z < -975) {
+    return { id: 'titan_cauldron', name: 'Котёл Древних Машин ГЕФЕСТ и Очаг Искателей' };
+  }
+  if (z < -840) {
+    return { id: 'aether_sanctum', name: 'Небесный Предел Элизиума и Башня Вечности' };
+  }
+  if (z < -705) {
+    return { id: 'emerald_weald', name: 'Изумрудный Сон Вечнолесья и Приют Сильверглейд' };
   }
   if (z < -550) {
     return { id: 'starfall_valley', name: 'Долина Звёздного Пепла и Кузница Предтеч' };
@@ -1415,6 +1603,332 @@ export function interpolateWeatherMetrics(
   };
 }
 
+export type ExplorationFogEventType =
+  | 'none'
+  | 'biome_transition'
+  | 'poi_discovery'
+  | 'waystone_activation'
+  | 'ash_echo_vision'
+  | 'cursed_ritual'
+  | 'catacombs_descent'
+  | 'road_encounter';
+
+export interface ExplorationFogSurgeProfile {
+  type: ExplorationFogEventType;
+  surgeBonus: number;
+  duration: number;
+  labelRu: string;
+  labelEn: string;
+}
+
+export const EXPLORATION_FOG_SURGE_PROFILES: Record<
+  ExplorationFogEventType,
+  ExplorationFogSurgeProfile
+> = {
+  none: {
+    type: 'none',
+    surgeBonus: 0,
+    duration: 0,
+    labelRu: 'Стабильный фон',
+    labelEn: 'Ambient Baseline',
+  },
+  biome_transition: {
+    type: 'biome_transition',
+    surgeBonus: 0.28,
+    duration: 10,
+    labelRu: 'Смена региона',
+    labelEn: 'Region Transition',
+  },
+  poi_discovery: {
+    type: 'poi_discovery',
+    surgeBonus: 0.36,
+    duration: 12,
+    labelRu: 'Открыта точка интереса',
+    labelEn: 'POI Discovered',
+  },
+  waystone_activation: {
+    type: 'waystone_activation',
+    surgeBonus: 0.26,
+    duration: 9,
+    labelRu: 'Резонанс Путевого Камня',
+    labelEn: 'Waystone Resonance',
+  },
+  ash_echo_vision: {
+    type: 'ash_echo_vision',
+    surgeBonus: 0.54,
+    duration: 15,
+    labelRu: 'Видение Отголоска Пепла',
+    labelEn: 'Ash Echo Vision',
+  },
+  cursed_ritual: {
+    type: 'cursed_ritual',
+    surgeBonus: 0.65,
+    duration: 18,
+    labelRu: 'Проклятый ритуал / Место Силы',
+    labelEn: 'Cursed Ritual / Place of Power',
+  },
+  catacombs_descent: {
+    type: 'catacombs_descent',
+    surgeBonus: 0.48,
+    duration: 16,
+    labelRu: 'Мгла Древних Катакомб',
+    labelEn: 'Ancient Catacombs Gloom',
+  },
+  road_encounter: {
+    type: 'road_encounter',
+    surgeBonus: 0.38,
+    duration: 14,
+    labelRu: 'Туманная встреча на тракте',
+    labelEn: 'Road Encounter Mist',
+  },
+};
+
+export const BIOME_FOG_MULTIPLIERS: Record<string, number> = {
+  village: 0.85,
+  crows_hollow: 0.85,
+  forgotten_lands: 1.0,
+  old_forest: 1.15,
+  cursed_sanctuary: 1.38,
+  ruined_fortress: 1.12,
+  ash_cemetery: 1.32,
+  catacombs: 1.42,
+  gallows_swamp: 1.48,
+  silver_pass: 1.18,
+  ash_bastion: 1.22,
+  eclipse_crater: 1.36,
+  sunken_port: 1.34,
+  sun_monastery: 0.78,
+  starfall_valley: 1.26,
+  emerald_weald: 1.28,
+  aether_sanctum: 0.82,
+  titan_cauldron: 1.35,
+};
+
+/**
+ * Pure deterministic calculation of the time-of-day atmospheric fog multiplier.
+ * - Dawn (05:00 - 08:00): Cold river/marsh condensation peaks at ~1.35x around 06:00.
+ * - Midday (11:00 - 16:00): Solar burn-off thins the mist to ~0.76x around 13:30.
+ * - Dusk (17:30 - 20:30): Evening cooling raises mist to ~1.14x.
+ * - Night (21:00 - 04:30): Nocturnal radiation fog settles around ~1.24x.
+ */
+export function computeTimeOfDayFogMultiplier(timeOfDay: number): number {
+  const hour = ((timeOfDay % 24) + 24) % 24;
+
+  // Dawn condensation bell curve centered at 06:00 (width ~2.5h)
+  const dawnDist = Math.min(Math.abs(hour - 6.0), Math.abs(hour + 24 - 6.0));
+  const dawnPeak = Math.max(0, 1 - dawnDist / 2.6);
+  const dawnSmooth = dawnPeak * dawnPeak * (3 - 2 * dawnPeak); // 0..1
+
+  // Midday burn-off curve centered at 13:30 (width ~4.0h)
+  const noonDist = Math.abs(hour - 13.5);
+  const noonT = Math.max(0, 1 - noonDist / 4.2);
+  const noonSmooth = noonT * noonT * (3 - 2 * noonT); // 0..1
+
+  // Nocturnal coolness based on solar elevation
+  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  const sunElevation = Math.sin(sunAngle); // +1 at 12:00, -1 at 00:00
+  const nightFactor = Math.max(0, -sunElevation); // 0 during day, up to 1 at midnight
+
+  const multiplier =
+    1.0 +
+    dawnSmooth * 0.35 -
+    noonSmooth * 0.24 +
+    nightFactor * 0.24;
+
+  return Number(Math.max(0.65, Math.min(1.45, multiplier)).toFixed(4));
+}
+
+export interface DynamicFogInput {
+  weather: WeatherType;
+  previousWeather?: WeatherType;
+  weatherBlend?: number;
+  timeOfDay: number;
+  biomeId?: string;
+  explorationSurge?: number; // 0..1 decaying surge factor from exploration events
+  explorationEventType?: ExplorationFogEventType;
+  userFogIntensity?: number; // 0.0 .. 2.0 from Settings menu (default 1.0)
+  weatherEffectsEnabled?: boolean;
+}
+
+export interface DynamicFogState {
+  fogDensity: number;
+  normalizedIntensity: number;
+  baseWeatherFogDensity: number;
+  timeMultiplier: number;
+  biomeMultiplier: number;
+  explorationMultiplier: number;
+  userMultiplier: number;
+  mistOpacity: number;
+  horizonHazeBlend: number;
+  activeEventType: ExplorationFogEventType;
+  activeEventLabelRu: string;
+  activeEventLabelEn: string;
+}
+
+/**
+ * Pure deterministic calculation of dynamic 'fog' intensity reacting to:
+ * 1. Weather preset & crossfade transition ('clear', 'fog', 'rain'),
+ * 2. Time of day (dawn mist condensation, midday burn-off, nocturnal fog),
+ * 3. In-game exploration events (biome baseline + active exploration surge from POIs, Waystones, Ash Echoes, Cursed Rituals, Catacombs, Road Encounters),
+ * 4. User setting multiplier ('fogIntensity' 0.0 .. 2.0 in Settings menu).
+ */
+export function computeDynamicFogIntensity(input: DynamicFogInput): DynamicFogState {
+  const weather = input.weather ?? 'fog';
+  const previousWeather = input.previousWeather ?? weather;
+  const weatherBlend = input.weatherBlend ?? 1.0;
+  const wMetrics = interpolateWeatherMetrics(previousWeather, weather, weatherBlend);
+
+  const timeMultiplier = computeTimeOfDayFogMultiplier(input.timeOfDay);
+  const biomeKey = input.biomeId ?? 'forgotten_lands';
+  const biomeMultiplier = BIOME_FOG_MULTIPLIERS[biomeKey] ?? 1.0;
+
+  const clampedSurge = Math.max(0, Math.min(1, input.explorationSurge ?? 0));
+  const eventType: ExplorationFogEventType =
+    clampedSurge > 0.001 ? input.explorationEventType ?? 'poi_discovery' : 'none';
+  const profile =
+    EXPLORATION_FOG_SURGE_PROFILES[eventType] ?? EXPLORATION_FOG_SURGE_PROFILES.none;
+
+  const surgeBonus =
+    clampedSurge > 0.001
+      ? clampedSurge * (profile.surgeBonus > 0 ? profile.surgeBonus : 0.32)
+      : 0;
+
+  const explorationMultiplier = Number((biomeMultiplier * (1 + surgeBonus)).toFixed(4));
+
+  const rawUserFog =
+    typeof input.userFogIntensity === 'number' && Number.isFinite(input.userFogIntensity)
+      ? input.userFogIntensity
+      : 1.0;
+  const userMultiplier = Math.max(0, Math.min(2.0, rawUserFog));
+  const weatherEffectsEnabled = input.weatherEffectsEnabled ?? true;
+
+  // Compute exponential fog density (THREE.FogExp2)
+  const rawDensity =
+    wMetrics.fogDensity * timeMultiplier * explorationMultiplier * userMultiplier;
+  const fogDensity =
+    userMultiplier <= 0.001
+      ? 0
+      : Number(Math.max(0.001, Math.min(0.058, rawDensity)).toFixed(5));
+
+  // Compute ground mist particle opacity
+  const rawMist =
+    (wMetrics.mistIntensity * 0.38 + surgeBonus * 0.28) *
+    timeMultiplier *
+    Math.min(1.45, biomeMultiplier) *
+    userMultiplier;
+  const mistOpacity =
+    !weatherEffectsEnabled || userMultiplier <= 0.01
+      ? 0
+      : Number(Math.max(0, Math.min(0.88, rawMist)).toFixed(4));
+
+  // Horizon atmospheric haze blend for Skybox shader
+  const horizonHazeBlend = Number(
+    Math.max(0, Math.min(0.92, (fogDensity / 0.026) * 0.65)).toFixed(4)
+  );
+
+  // Normalized 0..1 intensity indicator for UI / telemetry
+  const normalizedIntensity = Number(
+    Math.max(0, Math.min(1, fogDensity / 0.036)).toFixed(4)
+  );
+
+  return {
+    fogDensity,
+    normalizedIntensity,
+    baseWeatherFogDensity: wMetrics.fogDensity,
+    timeMultiplier,
+    biomeMultiplier,
+    explorationMultiplier,
+    userMultiplier,
+    mistOpacity,
+    horizonHazeBlend,
+    activeEventType: eventType,
+    activeEventLabelRu: profile.labelRu,
+    activeEventLabelEn: profile.labelEn,
+  };
+}
+
+export interface BloomInput {
+  bloomIntensity?: number; // 0.0 (off) .. 1.0 (default) .. 2.0 (200% intense glow)
+  quality?: 'low' | 'medium' | 'high';
+  timeOfDay?: number;
+  weather?: WeatherType;
+  biomeId?: string;
+}
+
+export interface BloomState {
+  settingIntensity: number;
+  strength: number;
+  radius: number;
+  threshold: number;
+  exposureBoost: number;
+  enabled: boolean;
+}
+
+const RADIANT_BIOMES: ReadonlySet<string> = new Set<string>([
+  'emerald_weald',
+  'aether_sanctum',
+  'titan_cauldron',
+  'starfall_valley',
+  'eclipse_crater',
+  'cursed_sanctuary',
+]);
+
+/**
+ * Pure deterministic calculation of post-processing UnrealBloomPass parameters
+ * driven by the 'Bloom Intensity' slider in Settings ('General' tab, 0%..200%),
+ * time of day, weather, and luminescent biomes.
+ */
+export function computeBloomParameters(input: BloomInput): BloomState {
+  const rawSetting =
+    typeof input.bloomIntensity === 'number' && Number.isFinite(input.bloomIntensity)
+      ? input.bloomIntensity
+      : 1.0;
+  const settingIntensity = Number(Math.max(0, Math.min(2.0, rawSetting)).toFixed(4));
+
+  if (settingIntensity <= 0.001) {
+    return {
+      settingIntensity: 0,
+      strength: 0,
+      radius: 0,
+      threshold: 1.0,
+      exposureBoost: 0,
+      enabled: false,
+    };
+  }
+
+  const hour = (((input.timeOfDay ?? 12) % 24) + 24) % 24;
+  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  const isNightOrDusk = Math.sin(sunAngle) < 0.15;
+  const timeGlowMult = isNightOrDusk ? 1.12 : 0.92;
+  const biomeGlowMult = RADIANT_BIOMES.has(input.biomeId ?? '') ? 1.14 : 1.0;
+  const qualityMult =
+    input.quality === 'low' ? 0.82 : input.quality === 'high' ? 1.04 : 1.0;
+
+  // Soft, atmospheric dark-fantasy glow — never blinding or blown out
+  const strength = Number(
+    Math.max(
+      0.02,
+      Math.min(0.58, 0.18 * settingIntensity * timeGlowMult * biomeGlowMult * qualityMult)
+    ).toFixed(4)
+  );
+  const radius = Number(
+    Math.max(0.12, Math.min(0.48, 0.22 + 0.12 * settingIntensity)).toFixed(4)
+  );
+  const threshold = Number(
+    Math.max(0.74, Math.min(0.95, 0.91 - 0.08 * settingIntensity)).toFixed(4)
+  );
+  const exposureBoost = Number((0.03 * (settingIntensity - 1.0)).toFixed(4));
+
+  return {
+    settingIntensity,
+    strength,
+    radius,
+    threshold,
+    exposureBoost,
+    enabled: true,
+  };
+}
+
 export type SkyboxPhase = 'dawn' | 'day' | 'dusk' | 'night';
 
 export interface SkyboxState {
@@ -1658,12 +2172,18 @@ const HEAVY_ENEMY_TYPES: ReadonlySet<EnemyType> = new Set<EnemyType>([
   'boss_colossus',
   'boss_vesper',
   'boss_avatar',
+  'boss_emerald_archon',
+  'boss_aether_seraph',
+  'boss_cauldron_behemoth',
   'demon',
   'werewolf',
   'gargoyle',
   'troglodyte',
   'void_knight',
   'plague_reaper',
+  'corrupted_treant',
+  'aether_construct',
+  'ravager_stalker',
 ]);
 
 /**
@@ -2567,19 +3087,85 @@ export function resolveInvestigationQuestChoice(
 }
 
 /**
- * Resolves 3D movement against both cylindrical obstacles (trees, pillars, rocks)
- * and AABB Box3 footprints (houses, fortress walls, chests, ruins) with smooth
- * X/Z axis-separated Sliding Collision and floor elevation clamping.
+ * Analytical circular palisade/fence ring collision check for all fortified settlements.
+ * Prevents any entity (player or enemy, walking or dodge-rolling) from slipping between discrete
+ * fence post cylinders, while allowing smooth passage through each settlement's open archway gates.
  */
-export function resolveSlidingCollision(
+export function resolveSettlementFenceRingCollision(
+  prevX: number,
+  prevZ: number,
+  nextX: number,
+  nextZ: number,
+  entityRadius: number
+): { x: number; z: number } {
+  let x = nextX;
+  let z = nextZ;
+  const fenceHalfThickness = 0.34;
+  const bandHalfWidth = entityRadius + fenceHalfThickness;
+
+  for (const zone of SETTLEMENT_ZONES) {
+    const dx = x - zone.x;
+    const dz = z - zone.z;
+    const dist = Math.hypot(dx, dz);
+
+    // Quick bounding reject if far from this settlement's fence ring
+    if (Math.abs(dist - zone.fenceRadius) > bandHalfWidth + 2.5) {
+      continue;
+    }
+
+    const angle = Math.atan2(dz, dx);
+    const effectiveGateHalfWidth = Math.max(0.8, zone.gateWidth * 0.44 - entityRadius * 0.5);
+    const gateHalfAngle = effectiveGateHalfWidth / Math.max(4, zone.fenceRadius);
+
+    let inOpenGate = false;
+    for (const gAngle of zone.gateAngles) {
+      const diff = Math.abs(Math.atan2(Math.sin(angle - gAngle), Math.cos(angle - gAngle)));
+      if (diff <= gateHalfAngle) {
+        inOpenGate = true;
+        break;
+      }
+    }
+
+    if (inOpenGate) {
+      continue;
+    }
+
+    const prevDx = prevX - zone.x;
+    const prevDz = prevZ - zone.z;
+    const prevDist = Math.hypot(prevDx, prevDz);
+
+    const innerLimit = zone.fenceRadius - bandHalfWidth;
+    const outerLimit = zone.fenceRadius + bandHalfWidth;
+
+    const crossedOutward = prevDist <= zone.fenceRadius && dist > innerLimit;
+    const crossedInward = prevDist >= zone.fenceRadius && dist < outerLimit;
+    const insideFenceBand = dist > innerLimit && dist < outerLimit;
+
+    if (crossedOutward || (insideFenceBand && prevDist <= zone.fenceRadius)) {
+      const safeR = Math.max(0.5, innerLimit);
+      const norm = dist > 0.0001 ? dist : 1;
+      x = zone.x + (dx / norm) * safeR;
+      z = zone.z + (dz / norm) * safeR;
+    } else if (crossedInward || (insideFenceBand && prevDist > zone.fenceRadius)) {
+      const safeR = outerLimit;
+      const norm = dist > 0.0001 ? dist : 1;
+      x = zone.x + (dx / norm) * safeR;
+      z = zone.z + (dz / norm) * safeR;
+    }
+  }
+
+  return { x, z };
+}
+
+function resolveSingleStepCollision(
   prevX: number,
   prevZ: number,
   targetX: number,
   targetZ: number,
   entityRadius: number,
   cylinders: { x: number; z: number; radius: number }[],
-  boxes: CollisionBox[] = []
-): { x: number; z: number; y: number } {
+  boxes: CollisionBox[]
+): { x: number; z: number } {
   let x = targetX;
   let z = targetZ;
 
@@ -2599,10 +3185,15 @@ export function resolveSlidingCollision(
       testZ > expandedMinZ &&
       testZ < expandedMaxZ
     ) {
-      // Push out along X to nearest edge
-      const distLeft = Math.abs(testX - expandedMinX);
-      const distRight = Math.abs(expandedMaxX - testX);
-      testX = distLeft < distRight ? expandedMinX : expandedMaxX;
+      if (prevX <= expandedMinX) {
+        testX = expandedMinX;
+      } else if (prevX >= expandedMaxX) {
+        testX = expandedMaxX;
+      } else {
+        const distLeft = Math.abs(testX - expandedMinX);
+        const distRight = Math.abs(expandedMaxX - testX);
+        testX = distLeft < distRight ? expandedMinX : expandedMaxX;
+      }
     }
   }
   x = testX;
@@ -2621,44 +3212,129 @@ export function resolveSlidingCollision(
       testZ > expandedMinZ &&
       testZ < expandedMaxZ
     ) {
-      // Push out along Z to nearest edge
-      const distTop = Math.abs(testZ - expandedMinZ);
-      const distBottom = Math.abs(expandedMaxZ - testZ);
-      testZ = distTop < distBottom ? expandedMinZ : expandedMaxZ;
+      if (prevZ <= expandedMinZ) {
+        testZ = expandedMinZ;
+      } else if (prevZ >= expandedMaxZ) {
+        testZ = expandedMaxZ;
+      } else {
+        const distTop = Math.abs(testZ - expandedMinZ);
+        const distBottom = Math.abs(expandedMaxZ - testZ);
+        testZ = distTop < distBottom ? expandedMinZ : expandedMaxZ;
+      }
     }
   }
   z = testZ;
 
-  // 2. Cylindrical radial push-out (smooth tangential slide around trees, rocks, pillars)
-  for (const obs of cylinders) {
-    const dx = x - obs.x;
-    const dz = z - obs.z;
-    const minDist = entityRadius + obs.radius;
-    const distSq = dx * dx + dz * dz;
-    if (distSq < minDist * minDist) {
-      const dist = Math.sqrt(distSq) || 0.001;
-      const overlap = minDist - dist;
-      x += (dx / dist) * overlap;
-      z += (dz / dist) * overlap;
+  // 2. Analytical circular settlement fence barrier check (prevents slipping between fence posts)
+  const fenceResolved = resolveSettlementFenceRingCollision(prevX, prevZ, x, z, entityRadius);
+  x = fenceResolved.x;
+  z = fenceResolved.z;
+
+  // 3. Cylindrical radial push-out (2 iterations for tight corners between adjacent obstacles)
+  for (let pass = 0; pass < 2; pass++) {
+    for (const obs of cylinders) {
+      const dx = x - obs.x;
+      const dz = z - obs.z;
+      const minDist = entityRadius + obs.radius;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < minDist * minDist) {
+        const dist = Math.sqrt(distSq) || 0.001;
+        const overlap = minDist - dist;
+        x += (dx / dist) * overlap;
+        z += (dz / dist) * overlap;
+      }
     }
   }
 
-  // 3. Determine accurate ground + walkable bridge/platform floor height
-  let y = x > 82 && x < 126 && z > 82 && z < 126 ? 0 : getGroundHeight(x, z);
+  // 4. Final safety re-verify against AABB boxes and settlement fence rings after cylinder push-outs
+  for (const box of boxes) {
+    if (box.isWalkableFloor) continue;
+    const expandedMinX = box.minX - entityRadius;
+    const expandedMaxX = box.maxX + entityRadius;
+    const expandedMinZ = box.minZ - entityRadius;
+    const expandedMaxZ = box.maxZ + entityRadius;
+    if (x > expandedMinX && x < expandedMaxX && z > expandedMinZ && z < expandedMaxZ) {
+      const dLeft = Math.abs(x - expandedMinX);
+      const dRight = Math.abs(expandedMaxX - x);
+      const dTop = Math.abs(z - expandedMinZ);
+      const dBottom = Math.abs(expandedMaxZ - z);
+      const minD = Math.min(dLeft, dRight, dTop, dBottom);
+      if (minD === dLeft) x = expandedMinX;
+      else if (minD === dRight) x = expandedMaxX;
+      else if (minD === dTop) z = expandedMinZ;
+      else z = expandedMaxZ;
+    }
+  }
+  const finalFence = resolveSettlementFenceRingCollision(prevX, prevZ, x, z, entityRadius);
+  x = finalFence.x;
+  z = finalFence.z;
+
+  return { x, z };
+}
+
+/**
+ * Resolves 3D movement against cylindrical obstacles (trees, pillars, rocks),
+ * AABB Box3 footprints (houses, fortress walls, chests, ruins), and analytical
+ * circular settlement fence rings with Continuous Collision Detection (CCD sub-stepping)
+ * so high-speed dodge rolls or frame spikes can never clip through walls or fences.
+ */
+export function resolveSlidingCollision(
+  prevX: number,
+  prevZ: number,
+  targetX: number,
+  targetZ: number,
+  entityRadius: number,
+  cylinders: { x: number; z: number; radius: number }[],
+  boxes: CollisionBox[] = []
+): { x: number; z: number; y: number } {
+  const totalDx = targetX - prevX;
+  const totalDz = targetZ - prevZ;
+  const totalDist = Math.hypot(totalDx, totalDz);
+
+  // Sub-step movements larger than 0.20m to prevent tunneling through walls or fences
+  const maxStep = 0.2;
+  const steps = Math.max(1, Math.min(32, Math.ceil(totalDist / maxStep)));
+  const stepDx = totalDx / steps;
+  const stepDz = totalDz / steps;
+
+  let curX = prevX;
+  let curZ = prevZ;
+
+  for (let i = 0; i < steps; i++) {
+    const stepTargetX = curX + stepDx;
+    const stepTargetZ = curZ + stepDz;
+    const stepped = resolveSingleStepCollision(
+      curX,
+      curZ,
+      stepTargetX,
+      stepTargetZ,
+      entityRadius,
+      cylinders,
+      boxes
+    );
+    curX = stepped.x;
+    curZ = stepped.z;
+  }
+
+  if (Math.abs(curX - targetX) < 1e-9) curX = targetX;
+  if (Math.abs(curZ - targetZ) < 1e-9) curZ = targetZ;
+
+  // Determine accurate ground + walkable bridge/platform floor height
+  let y = curX > 82 && curX < 126 && curZ > 82 && curZ < 126 ? 0 : getGroundHeight(curX, curZ);
   for (const box of boxes) {
     if (
       box.isWalkableFloor &&
       typeof box.floorY === 'number' &&
-      x >= box.minX &&
-      x <= box.maxX &&
-      z >= box.minZ &&
-      z <= box.maxZ
+      curX >= box.minX &&
+      curX <= box.maxX &&
+      curZ >= box.minZ &&
+      curZ <= box.maxZ
     ) {
       y = Math.max(y, box.floorY);
     }
   }
 
-  return { x, z, y };
+  return { x: curX, z: curZ, y };
 }
 
 /**
@@ -2861,6 +3537,9 @@ export function isRespawnableMob(
     'boss_colossus',
     'boss_vesper',
     'boss_avatar',
+    'boss_emerald_archon',
+    'boss_aether_seraph',
+    'boss_cauldron_behemoth',
     'werewolf',
     'noonwraith',
     'gargoyle',
@@ -3184,6 +3863,69 @@ export function getActorQuestIndicatorState(
     return 'none';
   }
 
+  // 20. Emerald Weald Archdruid Yserael («Акт IV: Сон Изумрудного Вечнолесья»)
+  if (actorId === 'npc_emerald_archdruid') {
+    const qEm = findQuest('quest_act4_emerald_dream');
+    if (!qEm || qEm.status === 'completed') return 'none';
+    if (qEm.status === 'active' && qEm.currentStageIndex === 3 && !qEm.stages[3]?.completed) {
+      return 'question';
+    }
+    if (qEm.currentStageIndex === 0 && !qEm.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  if (actorId === 'clue_emerald_nightmare_root') {
+    const qEm = findQuest('quest_act4_emerald_dream');
+    if (qEm && qEm.status === 'active' && qEm.currentStageIndex === 1 && !qEm.stages[1]?.completed) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 21. Aether Sanctum Legate Seraphina («Акт IV: Крылья Расколотой Вечности»)
+  if (actorId === 'npc_aether_legate') {
+    const qAe = findQuest('quest_act4_aether_sanctum');
+    if (!qAe || qAe.status === 'completed') return 'none';
+    if (qAe.status === 'active' && qAe.currentStageIndex === 3 && !qAe.stages[3]?.completed) {
+      return 'question';
+    }
+    if (qAe.currentStageIndex === 0 && !qAe.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  if (actorId === 'clue_aether_shattered_seal') {
+    const qAe = findQuest('quest_act4_aether_sanctum');
+    if (qAe && qAe.status === 'active' && qAe.currentStageIndex === 1 && !qAe.stages[1]?.completed) {
+      return 'question';
+    }
+    return 'none';
+  }
+
+  // 22. Titan Cauldron Seeker Aloya-Vald («Акт IV: Протокол Котла ГЕФЕСТ»)
+  if (actorId === 'npc_cauldron_seeker') {
+    const qCa = findQuest('quest_act4_titan_cauldron');
+    if (!qCa || qCa.status === 'completed') return 'none';
+    if (qCa.status === 'active' && qCa.currentStageIndex === 3 && !qCa.stages[3]?.completed) {
+      return 'question';
+    }
+    if (qCa.currentStageIndex === 0 && !qCa.stages[0]?.completed) {
+      return 'exclamation';
+    }
+    return 'none';
+  }
+
+  if (actorId === 'clue_cauldron_override_terminal') {
+    const qCa = findQuest('quest_act4_titan_cauldron');
+    if (qCa && qCa.status === 'active' && qCa.currentStageIndex === 1 && !qCa.stages[1]?.completed) {
+      return 'question';
+    }
+    return 'none';
+  }
+
   return 'none';
 }
 
@@ -3267,7 +4009,208 @@ export const SETTLEMENT_ZONES: SettlementZone[] = [
     gateAngles: [0],
     gateWidth: 6.2,
   },
+  {
+    id: 'settlement_emerald_glade',
+    name: 'Приют Сновидцев Сильверглейд',
+    x: -34,
+    z: -748,
+    fenceRadius: 15.0,
+    spawnSafeRadius: 21.0,
+    gateAngles: [0, -Math.PI / 2],
+    gateWidth: 6.8,
+  },
+  {
+    id: 'settlement_aether_bastion',
+    name: 'Застава Серафимов Элизиум',
+    x: 34,
+    z: -885,
+    fenceRadius: 15.0,
+    spawnSafeRadius: 21.0,
+    gateAngles: [Math.PI, -Math.PI / 2],
+    gateWidth: 6.8,
+  },
+  {
+    id: 'settlement_cauldron_hearth',
+    name: 'Железный Очаг Искателей',
+    x: -34,
+    z: -1020,
+    fenceRadius: 15.0,
+    spawnSafeRadius: 21.0,
+    gateAngles: [0, -Math.PI / 2],
+    gateWidth: 6.8,
+  },
 ];
+
+/**
+ * Maximum distance (in meters) at which a guard's combat against a monster
+ * produces audible sword/hit sound effects and floating damage numbers.
+ * If a guard fights a monster farther away than this threshold, damage numbers
+ * and sound are suppressed until the player approaches closer.
+ */
+export const GUARD_COMBAT_FEEDBACK_MAX_DISTANCE = 20;
+
+export function shouldEmitGuardCombatFeedback(
+  playerX: number,
+  playerZ: number,
+  combatX: number,
+  combatZ: number,
+  maxDistance = GUARD_COMBAT_FEEDBACK_MAX_DISTANCE
+): boolean {
+  const dist = Math.hypot(playerX - combatX, playerZ - combatZ);
+  return dist <= maxDistance;
+}
+
+export interface BiomeMobSpawnProfile {
+  biomeId: BiomeId;
+  regularMobTypes: EnemyType[];
+  mainBossType: EnemyType | null;
+  recommendedLevel: number;
+  respawnSeconds: number;
+  maxLeashDistance: number;
+}
+
+export const BIOME_MOB_SPAWN_PROFILES: Record<BiomeId, BiomeMobSpawnProfile> = {
+  village: {
+    biomeId: 'village',
+    regularMobTypes: [],
+    mainBossType: null,
+    recommendedLevel: 1,
+    respawnSeconds: 60,
+    maxLeashDistance: 24,
+  },
+  forgotten_lands: {
+    biomeId: 'forgotten_lands',
+    regularMobTypes: ['wolf', 'ghoul'],
+    mainBossType: 'werewolf',
+    recommendedLevel: 1,
+    respawnSeconds: 60,
+    maxLeashDistance: 28,
+  },
+  old_forest: {
+    biomeId: 'old_forest',
+    regularMobTypes: ['wolf', 'ghoul'],
+    mainBossType: 'werewolf',
+    recommendedLevel: 2,
+    respawnSeconds: 60,
+    maxLeashDistance: 28,
+  },
+  cursed_sanctuary: {
+    biomeId: 'cursed_sanctuary',
+    regularMobTypes: ['ghoul', 'skeleton'],
+    mainBossType: 'hag',
+    recommendedLevel: 3,
+    respawnSeconds: 60,
+    maxLeashDistance: 28,
+  },
+  ruined_fortress: {
+    biomeId: 'ruined_fortress',
+    regularMobTypes: ['skeleton', 'demon'],
+    mainBossType: 'boss',
+    recommendedLevel: 4,
+    respawnSeconds: 60,
+    maxLeashDistance: 30,
+  },
+  ash_cemetery: {
+    biomeId: 'ash_cemetery',
+    regularMobTypes: ['skeleton', 'ghoul'],
+    mainBossType: 'noonwraith',
+    recommendedLevel: 4,
+    respawnSeconds: 60,
+    maxLeashDistance: 28,
+  },
+  catacombs: {
+    biomeId: 'catacombs',
+    regularMobTypes: ['skeleton'],
+    mainBossType: 'malakor',
+    recommendedLevel: 5,
+    respawnSeconds: 60,
+    maxLeashDistance: 26,
+  },
+  gallows_swamp: {
+    biomeId: 'gallows_swamp',
+    regularMobTypes: ['drowned', 'plague_reaper'],
+    mainBossType: 'boss_hydra',
+    recommendedLevel: 5,
+    respawnSeconds: 55,
+    maxLeashDistance: 30,
+  },
+  silver_pass: {
+    biomeId: 'silver_pass',
+    regularMobTypes: ['troglodyte', 'frost_wraith'],
+    mainBossType: 'boss_colossus',
+    recommendedLevel: 6,
+    respawnSeconds: 55,
+    maxLeashDistance: 30,
+  },
+  ash_bastion: {
+    biomeId: 'ash_bastion',
+    regularMobTypes: ['fallen_ash', 'skeleton'],
+    mainBossType: 'boss_vesper',
+    recommendedLevel: 7,
+    respawnSeconds: 55,
+    maxLeashDistance: 30,
+  },
+  eclipse_crater: {
+    biomeId: 'eclipse_crater',
+    regularMobTypes: ['void_knight', 'fallen_ash'],
+    mainBossType: 'boss_avatar',
+    recommendedLevel: 8,
+    respawnSeconds: 55,
+    maxLeashDistance: 32,
+  },
+  sunken_port: {
+    biomeId: 'sunken_port',
+    regularMobTypes: ['drowned', 'skeleton'],
+    mainBossType: 'noonwraith',
+    recommendedLevel: 5,
+    respawnSeconds: 55,
+    maxLeashDistance: 28,
+  },
+  sun_monastery: {
+    biomeId: 'sun_monastery',
+    regularMobTypes: ['fallen_ash', 'void_knight'],
+    mainBossType: 'gargoyle',
+    recommendedLevel: 6,
+    respawnSeconds: 55,
+    maxLeashDistance: 28,
+  },
+  starfall_valley: {
+    biomeId: 'starfall_valley',
+    regularMobTypes: ['void_knight', 'troglodyte'],
+    mainBossType: 'boss_colossus',
+    recommendedLevel: 8,
+    respawnSeconds: 50,
+    maxLeashDistance: 32,
+  },
+  emerald_weald: {
+    biomeId: 'emerald_weald',
+    regularMobTypes: ['mana_wyrm', 'corrupted_treant'],
+    mainBossType: 'boss_emerald_archon',
+    recommendedLevel: 9,
+    respawnSeconds: 48,
+    maxLeashDistance: 30,
+  },
+  aether_sanctum: {
+    biomeId: 'aether_sanctum',
+    regularMobTypes: ['aether_construct', 'daeic_shadow'],
+    mainBossType: 'boss_aether_seraph',
+    recommendedLevel: 10,
+    respawnSeconds: 48,
+    maxLeashDistance: 30,
+  },
+  titan_cauldron: {
+    biomeId: 'titan_cauldron',
+    regularMobTypes: ['scrap_watcher', 'ravager_stalker'],
+    mainBossType: 'boss_cauldron_behemoth',
+    recommendedLevel: 11,
+    respawnSeconds: 48,
+    maxLeashDistance: 32,
+  },
+};
+
+export function getBiomeMobSpawnProfile(biomeId: BiomeId): BiomeMobSpawnProfile {
+  return BIOME_MOB_SPAWN_PROFILES[biomeId] ?? BIOME_MOB_SPAWN_PROFILES.forgotten_lands;
+}
 
 /**
  * Checks whether a world coordinate (x, z) lies inside any village's fenced perimeter.
@@ -3354,6 +4297,350 @@ export function clampEnemyPositionOutsideSettlements(
 
   return { x: curX, z: curZ, clamped, settlementId };
 }
+
+export type NpcVoiceGender = 'male' | 'female';
+
+export interface NpcVoiceProfile {
+  gender: NpcVoiceGender;
+  geminiVoiceName: 'Fenrir' | 'Charon' | 'Orus' | 'Puck' | 'Kore' | 'Aoede';
+  /** Pitch & vocal-tract formant ratio applied when converting base female neural TTS */
+  neuralPitchMultiplier: number;
+  /** Natural speaking tempo multiplier (0.94..1.05) */
+  speakingTempo: number;
+  /** Playback rate when audio is already gender-matched (1.0 default) */
+  nativePlaybackRate: number;
+  /** Fundamental frequency (Hz) for offline WebAudio formant synthesizer */
+  formantBaseHz: number;
+  /** Chest resonance low-shelf boost in dB at 140 Hz */
+  chestBassDb: number;
+  /** Human-readable Russian voice badge */
+  voiceLabelRu: string;
+  /** Human-readable English voice badge */
+  voiceLabelEn: string;
+}
+
+const FEMALE_NPC_IDS = new Set<string>([
+  'npc_herbalist',
+  'npc_water_carrier',
+  'npc_companion_lyra',
+  'npc_belltower_helga',
+  'npc_monastery_chronicler',
+  'npc_emerald_archdruid',
+  'npc_emerald_guard_1',
+  'npc_aether_legate',
+  'npc_cauldron_seeker',
+  'npc_cauldron_guard_1',
+]);
+
+const MALE_NPC_IDS = new Set<string>([
+  'npc_elder',
+  'npc_blacksmith',
+  'npc_merchant',
+  'npc_peasant_farmer',
+  'npc_peasant_woodcutter',
+  'npc_guard_1',
+  'npc_guard_2',
+  'npc_bard',
+  'npc_caravan_merchant',
+  'npc_fence_pass',
+  'npc_companion_thorvald',
+  'npc_companion_vesper',
+  'npc_lord_vane',
+  'npc_order_captain_mines',
+  'npc_sentient_ghoul_elder',
+  'npc_apprentice_erian',
+  'npc_inquisitor',
+  'npc_charon',
+  'npc_brom',
+  'npc_kael',
+  'npc_village_miller',
+  'npc_village_miller_apprentice',
+  'npc_guard_captain',
+  'npc_guard_west_bridge',
+  'npc_guard_east_bridge',
+  'npc_forest_ranger',
+  'npc_forest_sawyer',
+  'npc_cemetery_quartermaster',
+  'npc_swamp_watcher',
+  'npc_pass_smelter',
+  'npc_solheim_keeper',
+  'npc_solheim_smuggler',
+  'npc_solheim_fisherman',
+  'npc_solheim_guard',
+  'npc_monastery_abbot',
+  'npc_monastery_paladin',
+  'npc_starfall_herald',
+  'npc_emerald_guard_2',
+  'npc_aether_guard_1',
+  'npc_aether_guard_2',
+  'npc_cauldron_guard_2',
+  'npc_streamer_foozzee',
+]);
+
+/**
+ * Resolves the exact gender ('male' | 'female') and acoustic voice profile for any NPC or dialogue speaker.
+ * Guarantees that all male characters are voiced by a male voice and all female characters by a female voice.
+ */
+export function resolveNpcVoiceProfile(
+  npcName: string,
+  npcRole = '',
+  npcId = ''
+): NpcVoiceProfile {
+  const idLower = (npcId || '').trim().toLowerCase();
+  const nameLower = (npcName || '').trim().toLowerCase();
+  const roleLower = (npcRole || '').trim().toLowerCase();
+  const combined = `${nameLower} ${roleLower}`;
+
+  // 1. Check explicit female IDs or personal female names first (e.g. "Хельга, жена кузнеца Торна" mentions Торн, but she is Хельга)
+  const hasExplicitFemaleIdentity =
+    FEMALE_NPC_IDS.has(idLower) ||
+    nameLower.includes('марфа') ||
+    nameLower.includes('marfa') ||
+    nameLower.includes('травниц') ||
+    nameLower.includes('herbalist') ||
+    nameLower.includes('дарья') ||
+    nameLower.includes('darya') ||
+    nameLower.includes('лира') ||
+    nameLower.includes('lyra') ||
+    nameLower.includes('хельг') ||
+    nameLower.includes('helga') ||
+    nameLower.includes('аурели') ||
+    nameLower.includes('aurelia') ||
+    nameLower.includes('сестра') ||
+    nameLower.includes('sister') ||
+    nameLower.includes('изераэл') ||
+    nameLower.includes('yserael') ||
+    nameLower.includes('талисс') ||
+    nameLower.includes('talissa') ||
+    nameLower.includes('серафин') ||
+    nameLower.includes('seraphina') ||
+    nameLower.includes('алой') ||
+    nameLower.includes('aloy') ||
+    nameLower.includes('валья') ||
+    nameLower.includes('valya') ||
+    nameLower.includes('морана') ||
+    nameLower.includes('morana') ||
+    nameLower.includes('аделин') ||
+    nameLower.includes('adelina') ||
+    nameLower.includes('полуденниц') ||
+    nameLower.includes('матерь трясины') ||
+    nameLower.includes('хранительница') ||
+    nameLower.includes('стражница') ||
+    nameLower.includes('воительница') ||
+    nameLower.includes('матриарх');
+
+  // 2. Determine if the character is explicitly male by ID or masculine personal name
+  const hasExplicitMaleName =
+    !hasExplicitFemaleIdentity &&
+    (MALE_NPC_IDS.has(idLower) ||
+      nameLower.includes('foozzee') ||
+      nameLower.includes('фуззи') ||
+      nameLower.includes('стример') ||
+      nameLower.includes('андрей') ||
+      nameLower.includes('корвус') ||
+      nameLower.includes('corvus') ||
+      nameLower.includes('бран') ||
+      nameLower.includes('боримир') ||
+      nameLower.includes('bran') ||
+      nameLower.includes('торн') ||
+      nameLower.includes('thorn') ||
+      nameLower.includes('велеслав') ||
+      nameLower.includes('veleslav') ||
+      nameLower.includes('мирон') ||
+      nameLower.includes('степан') ||
+      nameLower.includes('гуннар') ||
+      nameLower.includes('рольф') ||
+      nameLower.includes('корвин') ||
+      nameLower.includes('corvin') ||
+      nameLower.includes('радован') ||
+      nameLower.includes('хорь') ||
+      nameLower.includes('торвальд') ||
+      nameLower.includes('thorvald') ||
+      nameLower.includes('веспер') ||
+      nameLower.includes('vesper') ||
+      nameLower.includes('эдгар') ||
+      nameLower.includes('вейн') ||
+      nameLower.includes('валлен') ||
+      nameLower.includes('торос') ||
+      nameLower.includes('эриан') ||
+      nameLower.includes('erian') ||
+      nameLower.includes('лазарь') ||
+      nameLower.includes('lazarus') ||
+      nameLower.includes('харон') ||
+      nameLower.includes('charon') ||
+      nameLower.includes('бром') ||
+      nameLower.includes('brom') ||
+      nameLower.includes('каэль') ||
+      nameLower.includes('kael') ||
+      nameLower.includes('тихон') ||
+      nameLower.includes('яромир') ||
+      nameLower.includes('родерик') ||
+      nameLower.includes('гарольд') ||
+      nameLower.includes('маркус') ||
+      nameLower.includes('берен') ||
+      nameLower.includes('корней') ||
+      nameLower.includes('кассиан') ||
+      nameLower.includes('варг') ||
+      nameLower.includes('дорн') ||
+      nameLower.includes('хендрик') ||
+      nameLower.includes('вейл') ||
+      nameLower.includes('олаф') ||
+      nameLower.includes('каэлум') ||
+      nameLower.includes('солярис') ||
+      nameLower.includes('эландр') ||
+      nameLower.includes('эренд') ||
+      nameLower.includes('кассиэль') ||
+      nameLower.includes('люциан') ||
+      nameLower.includes('рост') ||
+      nameLower.includes('малакор') ||
+      nameLower.includes('азраэль') ||
+      nameLower.includes('ксавий'));
+
+  const isFemale =
+    hasExplicitFemaleIdentity ||
+    (!hasExplicitMaleName &&
+      (roleLower.includes('знахарка') ||
+        roleLower.includes('жительница') ||
+        roleLower.includes('лучница') ||
+        roleLower.includes('друидка') ||
+        roleLower.includes('охотница') ||
+        roleLower.includes('дозорная') ||
+        roleLower.includes('подозреваемая')));
+
+  if (isFemale) {
+    // Mature / authoritative female voices (Alts / Mezzo-Sopranos)
+    const isMatureOrCommandingFemale =
+      nameLower.includes('марфа') ||
+      nameLower.includes('marfa') ||
+      nameLower.includes('травниц') ||
+      nameLower.includes('алой') ||
+      nameLower.includes('матриарх') ||
+      nameLower.includes('серафин') ||
+      nameLower.includes('изераэл') ||
+      nameLower.includes('морана');
+
+    if (isMatureOrCommandingFemale) {
+      return {
+        gender: 'female',
+        geminiVoiceName: 'Kore',
+        neuralPitchMultiplier: nameLower.includes('марфа') ? 0.96 : 0.99,
+        speakingTempo: nameLower.includes('марфа') ? 0.97 : 1.0,
+        nativePlaybackRate: 1.0,
+        formantBaseHz: 215,
+        chestBassDb: 0,
+        voiceLabelRu: 'Женский голос · Меццо-сопрано',
+        voiceLabelEn: 'Female Voice · Mezzo-Soprano',
+      };
+    }
+
+    // Younger / agile / lyrical female voices (Sopranos)
+    return {
+      gender: 'female',
+      geminiVoiceName: 'Aoede',
+      neuralPitchMultiplier: 1.04,
+      speakingTempo: 1.02,
+      nativePlaybackRate: 1.02,
+      formantBaseHz: 232,
+      chestBassDb: -1,
+      voiceLabelRu: 'Женский голос · Сопрано',
+      voiceLabelEn: 'Female Voice · Soprano',
+    };
+  }
+
+  // Male archetypes:
+  // 1. Deep heavy Bass-Baritone (Blacksmiths, Paladins, Inquisitors, Miners, Ancient Bosses)
+  const isDeepBassMale =
+    combined.includes('кузнец') ||
+    combined.includes('торн') ||
+    combined.includes('thorn') ||
+    combined.includes('гром') ||
+    combined.includes('торвальд') ||
+    combined.includes('thorvald') ||
+    combined.includes('инквизитор') ||
+    combined.includes('лазарь') ||
+    combined.includes('бром') ||
+    combined.includes('brom') ||
+    combined.includes('торос') ||
+    combined.includes('дорн') ||
+    combined.includes('олаф') ||
+    combined.includes('степан') ||
+    combined.includes('малакор') ||
+    combined.includes('алтарь') ||
+    combined.includes('наковальня');
+
+  if (isDeepBassMale) {
+    return {
+      gender: 'male',
+      geminiVoiceName: 'Fenrir',
+      neuralPitchMultiplier: 0.71,
+      speakingTempo: 0.96,
+      nativePlaybackRate: 0.96,
+      formantBaseHz: 106,
+      chestBassDb: 5.5,
+      voiceLabelRu: 'Мужской голос · Бас-баритон',
+      voiceLabelEn: 'Male Voice · Bass-Baritone',
+    };
+  }
+
+  // 2. Young / Lively / Tenor-Baritone (Streamer FooZzee, Bards, Young Apprentices, Merchants, Smugglers)
+  const isTenorBaritoneMale =
+    combined.includes('foozzee') ||
+    combined.includes('фуззи') ||
+    combined.includes('стример') ||
+    combined.includes('бард') ||
+    combined.includes('корвин') ||
+    combined.includes('эриан') ||
+    combined.includes('яромир') ||
+    combined.includes('подмастерье') ||
+    combined.includes('адепт') ||
+    combined.includes('каэль') ||
+    combined.includes('велеслав') ||
+    combined.includes('радован') ||
+    combined.includes('хорь') ||
+    combined.includes('вейл') ||
+    combined.includes('кассиан');
+
+  if (isTenorBaritoneMale) {
+    return {
+      gender: 'male',
+      geminiVoiceName: combined.includes('велеслав') || combined.includes('радован') ? 'Orus' : 'Puck',
+      neuralPitchMultiplier: 0.77,
+      speakingTempo: 1.01,
+      nativePlaybackRate: 1.0,
+      formantBaseHz: 126,
+      chestBassDb: 4.2,
+      voiceLabelRu: 'Мужской голос · Тенор-баритон',
+      voiceLabelEn: 'Male Voice · Tenor-Baritone',
+    };
+  }
+
+  // 3. Authoritative / Weathered Baritone (Elders, Grandmaster Vesper, Lords, Abbots, Guards, Rangers, Corvus)
+  const isGuardOrCaptain =
+    combined.includes('страж') ||
+    combined.includes('сотник') ||
+    combined.includes('капитан') ||
+    combined.includes('рыцарь') ||
+    combined.includes('центурион') ||
+    combined.includes('дозорн') ||
+    combined.includes('часовой') ||
+    combined.includes('копьеносец');
+
+  return {
+    gender: 'male',
+    geminiVoiceName: isGuardOrCaptain ? 'Fenrir' : 'Charon',
+    neuralPitchMultiplier: isGuardOrCaptain ? 0.74 : 0.73,
+    speakingTempo: 0.98,
+    nativePlaybackRate: 0.98,
+    formantBaseHz: 114,
+    chestBassDb: 5.0,
+    voiceLabelRu: 'Мужской голос · Баритон',
+    voiceLabelEn: 'Male Voice · Baritone',
+  };
+}
+
+export * from './npcPersonas.ts';
+
+
 
 
 

@@ -43,11 +43,27 @@ import {
   computeCombatScreenShake,
   computeCombatHapticPattern,
   isHeavyEnemyAttack,
+  computeTimeOfDayFogMultiplier,
+  computeDynamicFogIntensity,
+  BIOME_FOG_MULTIPLIERS,
+  EXPLORATION_FOG_SURGE_PROFILES,
+  computeBloomParameters,
+  shouldEmitGuardCombatFeedback,
+  GUARD_COMBAT_FEEDBACK_MAX_DISTANCE,
+  getBiomeMobSpawnProfile,
+  BESTIARY_DATA,
+  resolveNpcVoiceProfile,
+  resolveNpcPersona,
+  evaluateNpcCognitiveTurn,
+  createInitialRelationshipState,
+  STREAMER_FOOZZEE_TWITCH_URL,
+  STREAMER_FOOZZEE_SITE_URL,
 } from './rules.ts';
-import { t } from './i18n.ts';
+import { t, localizeQuest, localizeSkill, localizeDialogueNode } from './i18n.ts';
 import { ASH_ECHOES, CODEX_ARTICLES, PROLOGUE_SLIDES, WORLD_LORE_NOTES } from './loreData.ts';
 import { QuestSystem } from './QuestSystem.ts';
 import { DialogueSystem } from './DialogueSystem.ts';
+import { InventorySystem } from './InventorySystem.ts';
 import type { GameItem, PlayerStats, Quest, SignType, SkillNode } from './types.ts';
 
 test('MAGIC_SIGNS defines all 5 signs with valid staminaCost and cooldown', () => {
@@ -279,10 +295,10 @@ test('interpolateWeatherMetrics smoothly blends atmospheric parameters between w
   assert.equal(foggy.mistIntensity, 1);
 });
 
-test('WORLD_LORE_NOTES defines 28 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 28/28', () => {
-  assert.equal(WORLD_LORE_NOTES.length, 28);
+test('WORLD_LORE_NOTES defines 31 canonical chronicles and discoverLoreEntry awards +25 XP and unlocks Memory Keeper title at 31/31', () => {
+  assert.equal(WORLD_LORE_NOTES.length, 31);
   assert.equal(PROLOGUE_SLIDES.length, 3);
-  assert.ok(CODEX_ARTICLES.length >= 9);
+  assert.ok(CODEX_ARTICLES.length >= 12);
 
   let stats: PlayerStats = {
     level: 1,
@@ -857,7 +873,7 @@ test('New Biomes (Sunken Port Solheim, Sun Monastery, Starfall Valley Act III) r
 
   assert.ok(getGroundHeight(160, -15) > 2.5, 'Sun Monastery plateau should be elevated');
   assert.ok(getGroundHeight(0, -640) > 5.0, 'Starfall Valley forge plateau should be high');
-  assert.equal(WAYSTONES.length, 10);
+  assert.equal(WAYSTONES.length, 13);
 
   const qs = new QuestSystem();
   assert.equal(
@@ -884,7 +900,7 @@ test('New Biomes (Sunken Port Solheim, Sun Monastery, Starfall Valley Act III) r
 });
 
 test('Settlement fences, gates, safe spawn buffers, and mob exclusion prevent enemies from spawning in or entering villages', () => {
-  assert.equal(SETTLEMENT_ZONES.length, 6);
+  assert.equal(SETTLEMENT_ZONES.length, 9);
   for (const zone of SETTLEMENT_ZONES) {
     assert.ok(zone.fenceRadius > 8, `${zone.id} must have a positive fence radius`);
     assert.ok(
@@ -1131,3 +1147,541 @@ test('computeCombatHapticPattern triggers vibration patterns on mobile for criti
   assert.deepEqual(critShake.hapticPattern, [40, 25, 70]);
   assert.deepEqual(heavyEnemyShake.hapticPattern, [85, 40, 125]);
 });
+
+test('computeDynamicFogIntensity reacts to time of day, exploration events, weather states, and user fogIntensity setting', () => {
+  // 1. Time of day modulation: Dawn (06:00) and Midnight (00:00) produce denser fog than Midday (13:30)
+  const dawnMult = computeTimeOfDayFogMultiplier(6.0);
+  const middayMult = computeTimeOfDayFogMultiplier(13.5);
+  const midnightMult = computeTimeOfDayFogMultiplier(0.0);
+
+  assert.ok(dawnMult > 1.25, `Dawn mist multiplier should peak >1.25, got ${dawnMult}`);
+  assert.ok(middayMult < 0.85, `Midday solar burn-off should drop <0.85, got ${middayMult}`);
+  assert.ok(midnightMult > 1.15, `Midnight radiation fog should exceed 1.15, got ${midnightMult}`);
+
+  const dawnFog = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 6.0,
+    biomeId: 'forgotten_lands',
+    userFogIntensity: 1.0,
+  });
+  const middayFog = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 13.5,
+    biomeId: 'forgotten_lands',
+    userFogIntensity: 1.0,
+  });
+  assert.ok(
+    dawnFog.fogDensity > middayFog.fogDensity * 1.4,
+    'Dawn fog density must be significantly heavier than midday fog density'
+  );
+
+  // 2. Biome & Exploration Event surges increase fog density and mist opacity
+  const villageCalm = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 12.0,
+    biomeId: 'village',
+    explorationSurge: 0,
+    userFogIntensity: 1.0,
+  });
+  const swampCalm = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 12.0,
+    biomeId: 'gallows_swamp',
+    explorationSurge: 0,
+    userFogIntensity: 1.0,
+  });
+  const swampRitualSurge = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 12.0,
+    biomeId: 'gallows_swamp',
+    explorationSurge: 1.0,
+    explorationEventType: 'cursed_ritual',
+    userFogIntensity: 1.0,
+  });
+
+  assert.ok(BIOME_FOG_MULTIPLIERS.gallows_swamp > BIOME_FOG_MULTIPLIERS.village);
+  assert.ok(swampCalm.fogDensity > villageCalm.fogDensity);
+  assert.ok(
+    swampRitualSurge.fogDensity > swampCalm.fogDensity * 1.3,
+    'Exploration event surge (cursed_ritual) must boost fog density'
+  );
+  assert.ok(swampRitualSurge.mistOpacity > swampCalm.mistOpacity);
+  assert.equal(swampRitualSurge.activeEventType, 'cursed_ritual');
+  assert.equal(
+    swampRitualSurge.activeEventLabelEn,
+    EXPLORATION_FOG_SURGE_PROFILES.cursed_ritual.labelEn
+  );
+
+  // 3. User Settings multiplier (0.0 disables fog completely; 2.0 doubles intensity up to safety cap)
+  const disabledFog = computeDynamicFogIntensity({
+    weather: 'fog',
+    timeOfDay: 6.0,
+    biomeId: 'cursed_sanctuary',
+    explorationSurge: 1.0,
+    explorationEventType: 'ash_echo_vision',
+    userFogIntensity: 0.0,
+  });
+  const doubleFog = computeDynamicFogIntensity({
+    weather: 'clear',
+    timeOfDay: 12.0,
+    biomeId: 'forgotten_lands',
+    userFogIntensity: 2.0,
+  });
+  const normalClearFog = computeDynamicFogIntensity({
+    weather: 'clear',
+    timeOfDay: 12.0,
+    biomeId: 'forgotten_lands',
+    userFogIntensity: 1.0,
+  });
+
+  assert.equal(disabledFog.fogDensity, 0);
+  assert.equal(disabledFog.mistOpacity, 0);
+  assert.ok(
+    Math.abs(doubleFog.fogDensity - normalClearFog.fogDensity * 2) < 0.0002,
+    '200% user fogIntensity setting should double the effective fog density'
+  );
+});
+
+test('computeBloomParameters computes subtle, non-blinding post-processing UnrealBloomPass strength, radius, and threshold', () => {
+  const disabled = computeBloomParameters({
+    bloomIntensity: 0,
+    quality: 'high',
+    timeOfDay: 12,
+    biomeId: 'village',
+  });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.strength, 0);
+
+  const normalDay = computeBloomParameters({
+    bloomIntensity: 1.0,
+    quality: 'high',
+    timeOfDay: 12,
+    biomeId: 'village',
+  });
+  const highBloomAetherNight = computeBloomParameters({
+    bloomIntensity: 1.8,
+    quality: 'high',
+    timeOfDay: 0,
+    biomeId: 'aether_sanctum',
+  });
+
+  assert.equal(normalDay.enabled, true);
+  assert.ok(
+    normalDay.strength > 0.12 && normalDay.strength < 0.35,
+    `Normal day bloom strength should be subtle (0.12..0.35), got ${normalDay.strength}`
+  );
+  assert.ok(
+    normalDay.threshold >= 0.78,
+    `Normal day bloom threshold should be high (>=0.78) to avoid blinding glare, got ${normalDay.threshold}`
+  );
+  assert.ok(
+    highBloomAetherNight.strength > normalDay.strength * 1.4 &&
+      highBloomAetherNight.strength <= 0.58,
+    'Higher bloomIntensity in celestial night biome increases bloom while staying below blinding cap (0.58)'
+  );
+  assert.ok(highBloomAetherNight.threshold < normalDay.threshold);
+});
+
+test('resolveSlidingCollision prevents walking or high-speed dodge-rolling through walls and settlement fences while allowing open gates', () => {
+  // 1. High-speed dodge step (3.5m in one frame) toward a thin 0.4m stone wall must never tunnel through
+  const thinWall = [{ minX: -5, maxX: 5, minZ: 1.8, maxZ: 2.2, minY: 0, maxY: 4 }];
+  const stepResult = resolveSlidingCollision(0, 0, 0, 3.5, 0.42, [], thinWall);
+  assert.ok(
+    stepResult.z <= 1.8 - 0.41,
+    `Player must be stopped in front of thin wall (z <= 1.39), got z=${stepResult.z}`
+  );
+
+  // 2. Attempting to cross Crow Hollow's northeast fence perimeter (radius 31.5 around (0,0), angle PI/4 has no gate) is blocked
+  const startDiag = 30.2 / Math.SQRT2;
+  const endDiag = 33.5 / Math.SQRT2;
+  const fenceBlocked = resolveSlidingCollision(
+    startDiag,
+    startDiag,
+    endDiag,
+    endDiag,
+    0.42,
+    [],
+    []
+  );
+  const distFromCenter = Math.hypot(fenceBlocked.x, fenceBlocked.z);
+  assert.ok(
+    distFromCenter < 31.5,
+    `Player walking into solid northeast settlement fence must be blocked inside perimeter, dist=${distFromCenter}`
+  );
+
+  // 3. Walking through Crow Hollow's northern open gate (angle -PI/2 -> x=0, z=-31.5) is allowed
+  const gatePass = resolveSlidingCollision(0, -30.2, 0, -32.8, 0.42, [], []);
+  assert.ok(
+    gatePass.z < -32.0,
+    `Player walking through open northern gate must pass unimpeded, got z=${gatePass.z}`
+  );
+});
+
+
+test('shouldEmitGuardCombatFeedback suppresses distant guard vs monster damage numbers and audio beyond 20m', () => {
+  assert.equal(GUARD_COMBAT_FEEDBACK_MAX_DISTANCE, 20);
+  // Player close to guard combat (10m away) -> show damage & play audio
+  assert.equal(shouldEmitGuardCombatFeedback(0, 0, 6, 8), true);
+  // Player exactly at boundary (20m away) -> show damage & play audio
+  assert.equal(shouldEmitGuardCombatFeedback(0, 0, 20, 0), true);
+  // Player far from guard combat (45m away) -> suppress damage numbers & audio
+  assert.equal(shouldEmitGuardCombatFeedback(0, 0, 30, 35), false);
+});
+
+test('Act IV Biomes (WoW Emerald Weald, Aion Aether Sanctum, Horizon Titan Cauldron) resolve biomes, settlements, monsters, bosses, and quests', () => {
+  assert.equal(getBiomeAt(0, -760).id, 'emerald_weald');
+  assert.equal(getBiomeAt(0, -900).id, 'aether_sanctum');
+  assert.equal(getBiomeAt(0, -1040).id, 'titan_cauldron');
+
+  // Verify the 3 new fortified settlements exist and block enemy spawns/entry
+  const emeraldGlade = SETTLEMENT_ZONES.find((s) => s.id === 'settlement_emerald_glade');
+  const aetherBastion = SETTLEMENT_ZONES.find((s) => s.id === 'settlement_aether_bastion');
+  const cauldronHearth = SETTLEMENT_ZONES.find((s) => s.id === 'settlement_cauldron_hearth');
+  assert.ok(emeraldGlade);
+  assert.ok(aetherBastion);
+  assert.ok(cauldronHearth);
+
+  assert.equal(isPointInsideSettlementFence(-34, -748), true);
+  assert.equal(isPointInsideSettlementFence(34, -885), true);
+  assert.equal(isPointInsideSettlementFence(-34, -1020), true);
+
+  // Verify biome mob spawn profiles and bestiary entries for all 9 new enemy types
+  const emeraldProfile = getBiomeMobSpawnProfile('emerald_weald');
+  const aetherProfile = getBiomeMobSpawnProfile('aether_sanctum');
+  const cauldronProfile = getBiomeMobSpawnProfile('titan_cauldron');
+  assert.equal(emeraldProfile.mainBossType, 'boss_emerald_archon');
+  assert.equal(aetherProfile.mainBossType, 'boss_aether_seraph');
+  assert.equal(cauldronProfile.mainBossType, 'boss_cauldron_behemoth');
+
+  for (const newType of [
+    'mana_wyrm',
+    'corrupted_treant',
+    'boss_emerald_archon',
+    'aether_construct',
+    'daeic_shadow',
+    'boss_aether_seraph',
+    'scrap_watcher',
+    'ravager_stalker',
+    'boss_cauldron_behemoth',
+  ] as const) {
+    assert.ok(
+      BESTIARY_DATA.some((b) => b.type === newType),
+      `Bestiary must include ${newType}`
+    );
+  }
+
+  // Regular new mobs respawn, while the 3 new main bosses do not respawn
+  assert.equal(isRespawnableMob({ id: 'wyrm_1', type: 'mana_wyrm' }), true);
+  assert.equal(isRespawnableMob({ id: 'construct_1', type: 'aether_construct' }), true);
+  assert.equal(isRespawnableMob({ id: 'watcher_1', type: 'scrap_watcher' }), true);
+  assert.equal(isRespawnableMob({ id: 'b1', type: 'boss_emerald_archon' }), false);
+  assert.equal(isRespawnableMob({ id: 'b2', type: 'boss_aether_seraph' }), false);
+  assert.equal(isRespawnableMob({ id: 'b3', type: 'boss_cauldron_behemoth' }), false);
+
+  // Verify Act IV quest givers and progression
+  const qs = new QuestSystem();
+  assert.equal(
+    getActorQuestIndicatorState('npc_emerald_archdruid', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  assert.equal(
+    getActorQuestIndicatorState('npc_aether_legate', qs.quests, qs.contracts),
+    'exclamation'
+  );
+  assert.equal(
+    getActorQuestIndicatorState('npc_cauldron_seeker', qs.quests, qs.contracts),
+    'exclamation'
+  );
+
+  qs.activateQuest('quest_act4_emerald_dream');
+  qs.completeStage('quest_act4_emerald_dream', 'q_emerald_talk_archdruid');
+  qs.completeStage('quest_act4_emerald_dream', 'q_emerald_cleanse_roots');
+  qs.completeStage('quest_act4_emerald_dream', 'q_emerald_defeat_archon');
+  assert.equal(
+    getActorQuestIndicatorState('npc_emerald_archdruid', qs.quests, qs.contracts),
+    'question'
+  );
+});
+
+test('resolveNpcVoiceProfile assigns male voices to all male NPCs and female voices to all female NPCs', () => {
+  const maleNpcs: [string, string, string][] = [
+    ['Староста Бран (Боримир)', 'Глава Вороньей Пади · Вальдмарк', 'npc_elder'],
+    ['Кузнец Торн (Гром)', 'Оружейник старой гвардии Вальдмарка', 'npc_blacksmith'],
+    ['Торговец Велеслав', 'Странствующий купец и трактирщик', 'npc_merchant'],
+    ['Крестьянин Мирон', 'Житель Вороньей Пади · Земледелец', 'npc_peasant_farmer'],
+    ['Лесоруб Степан', 'Житель Вороньей Пади · Дровосек', 'npc_peasant_woodcutter'],
+    ['Стражник Гуннар', 'Дружина Вороньей Пади · Северный дозор', 'npc_guard_1'],
+    ['Стражник Рольф', 'Дружина Вороньей Пади · Южный дозор', 'npc_guard_2'],
+    ['Бард Корвин Песнопевец', 'Менестрель Вороньей Пади', 'npc_bard'],
+    ['Караванщик Радован', 'Странствующий торговец с караваном', 'npc_caravan_merchant'],
+    ['Скупщик редкостей «Хорь»', 'Чёрный рынок и контрабанда Среброзубого Перевала', 'npc_fence_pass'],
+    ['Брат Торвальд', 'Боевой Напарник · Паладин-Отступник', 'npc_companion_thorvald'],
+    ['Грандмастер Веспер', 'Боевой Напарник · Грандмастер Братства Пепла', 'npc_companion_vesper'],
+    ['Лорд Эдгар Вейн', 'Квест «Пир Воронов» · Хозяин поместья в Топях', 'npc_lord_vane'],
+    ['Капитан Ордена Валлен', 'Квест «Клятва в Мёртвых Шахтах» · Карательный отряд', 'npc_order_captain_mines'],
+    ['Старейшина горняков Торос', 'Квест «Клятва в Мёртвых Шахтах» · Разумный рудокоп-мутант', 'npc_sentient_ghoul_elder'],
+    ['Младший адепт Эриан', 'Квест «Последний Экзамен Зольника» · Послушник Школы Ворона', 'npc_apprentice_erian'],
+    ['Инквизитор Лазарь', 'Командор Ордена Алого Солнца (Акт II)', 'npc_inquisitor'],
+    ['Лодочник Харон', 'Проводник через Затопленные Топи', 'npc_charon'],
+    ['Старый Рудокоп Бром', 'Мастер-кузнец Среброзубого Перевала', 'npc_brom'],
+    ['Выживший Адепт Каэль', 'Хранитель архивов Братства Пепла', 'npc_kael'],
+    ['Мельник Тихон', 'Хозяин ветряной мельницы Вороньей Пади', 'npc_village_miller'],
+    ['Подмастерье мельника Яромир', 'Зерновой амбар Вороньей Пади', 'npc_village_miller_apprentice'],
+    ['Сотник Родерик', 'Начальник караула и южной заставы', 'npc_guard_captain'],
+    ['Страж западного моста Гарольд', 'Охрана тракта к гавани Сольхейм', 'npc_guard_west_bridge'],
+    ['Страж восточного моста Маркус', 'Охрана тракта к Лазурному Монастырю', 'npc_guard_east_bridge'],
+    ['Ловчий Берен', 'Старейший егерь Лесной Заставы', 'npc_forest_ranger'],
+    ['Пильщик Корней', 'Лесопильня у западного ручья', 'npc_forest_sawyer'],
+    ['Интендант Ордена Кассиан', 'Снабженец полевого лагеря Алого Солнца', 'npc_cemetery_quartermaster'],
+    ['Дозорный гатей Варг', 'Смотритель сигнальной вышки Топей', 'npc_swamp_watcher'],
+    ['Плавильщик Дорн', 'Мастер горной плавильни Среброзубого Перевала', 'npc_pass_smelter'],
+    ['Смотритель маяка Хендрик', 'Хранитель Маяка Бездны · Гавань Сольхейм', 'npc_solheim_keeper'],
+    ['Капитан Корсар Вейл', 'Контрабандист и вольный шкипер Сольхейма', 'npc_solheim_smuggler'],
+    ['Старый гарпунщик Олаф', 'Рыбацкий причал Сольхейма', 'npc_solheim_fisherman'],
+    ['Береговой страж Сольхейма', 'Охрана каменного пирса и таможни', 'npc_solheim_guard'],
+    ['Аббат Каэлум', 'Настоятель Лазурного Монастыря и Главный Звездочёт', 'npc_monastery_abbot'],
+    ['Рыцарь-хранитель Солярис', 'Страж врат Лазурного Монастыря', 'npc_monastery_paladin'],
+    ['Хранитель Звёздного Горна Эландр', 'Акт III · Последний Страж Кузницы Предтеч', 'npc_starfall_herald'],
+    ['Часовой Лунного Клинка Эренд', 'Страж восточных ворот Приюта Сильверглейд', 'npc_emerald_guard_2'],
+    ['Архонт-Центурион Кассиэль', 'Страж западных врат Заставы Серафимов', 'npc_aether_guard_1'],
+    ['Серафим-Дозорный Люциан', 'Страж северного моста Заставы Серафимов', 'npc_aether_guard_2'],
+    ['Копьеносец Искателей Рост', 'Страж восточных ворот Железного Очага', 'npc_cauldron_guard_2'],
+    ['Король-Лич Малакор Бессмертный', 'Последний монарх Вальдмарка', ''],
+  ];
+
+  for (const [name, role, id] of maleNpcs) {
+    const profile = resolveNpcVoiceProfile(name, role, id);
+    assert.equal(
+      profile.gender,
+      'male',
+      `Expected male voice for ${name} (${role}), got ${profile.gender}`
+    );
+    assert.ok(
+      ['Fenrir', 'Charon', 'Orus', 'Puck'].includes(profile.geminiVoiceName),
+      `Expected male Gemini voice for ${name}, got ${profile.geminiVoiceName}`
+    );
+    assert.ok(
+      profile.neuralPitchMultiplier <= 0.8,
+      `Expected lowered male baritone/bass pitch for ${name}, got ${profile.neuralPitchMultiplier}`
+    );
+    assert.ok(
+      profile.voiceLabelRu.startsWith('Мужской голос'),
+      `Expected Russian male voice label for ${name}, got ${profile.voiceLabelRu}`
+    );
+  }
+
+  const femaleNpcs: [string, string, string][] = [
+    ['Травница Марфа', 'Знахарка и хранительница Лесного Ковена', 'npc_herbalist'],
+    ['Водонос Дарья', 'Жительница Вороньей Пади', 'npc_water_carrier'],
+    ['Лира из Вольной Роты', 'Боевой Напарник · Лучница и следопыт', 'npc_companion_lyra'],
+    ['Хельга, жена кузнеца Торна', 'Квест «Кровь на колокольне» · Заражённая «Ночным Голодом»', 'npc_belltower_helga'],
+    ['Сестра Аурелия', 'Хранительница Скриптория и Аптекарского Сада', 'npc_monastery_chronicler'],
+    ['Хранительница Сна Изераэль', 'Верховная друидка Изумрудного Сна · Приют Сильверглейд', 'npc_emerald_archdruid'],
+    ['Стражница Рощи Талисса', 'Дозорная северных ворот Приюта Сильверглейд', 'npc_emerald_guard_1'],
+    ['Легат Даэвов Серафина', 'Командор Заставы Серафимов · Хранительница Башни Вечности', 'npc_aether_legate'],
+    ['Матриарх Искателей Алойя-Вальд', 'Глава племени Искателей · Охотница на Древние Машины', 'npc_cauldron_seeker'],
+    ['Воительница Очага Валья', 'Дозорная северных ворот Железного Очага', 'npc_cauldron_guard_1'],
+  ];
+
+  for (const [name, role, id] of femaleNpcs) {
+    const profile = resolveNpcVoiceProfile(name, role, id);
+    assert.equal(
+      profile.gender,
+      'female',
+      `Expected female voice for ${name} (${role}), got ${profile.gender}`
+    );
+    assert.ok(
+      ['Kore', 'Aoede'].includes(profile.geminiVoiceName),
+      `Expected female Gemini voice for ${name}, got ${profile.geminiVoiceName}`
+    );
+    assert.ok(
+      profile.neuralPitchMultiplier >= 0.95,
+      `Expected natural female pitch for ${name}, got ${profile.neuralPitchMultiplier}`
+    );
+    assert.ok(
+      profile.voiceLabelRu.startsWith('Женский голос'),
+      `Expected Russian female voice label for ${name}, got ${profile.voiceLabelRu}`
+    );
+  }
+
+  // Verify Streamer FooZzee has a male voice profile
+  const foozzeeVoice = resolveNpcVoiceProfile(
+    'Стример FooZzee (Андрей)',
+    'Хроно-Стример из Будущего · Twitch: twitch.tv/foozzee',
+    'npc_streamer_foozzee'
+  );
+  assert.equal(foozzeeVoice.gender, 'male');
+  assert.equal(foozzeeVoice.geminiVoiceName, 'Puck');
+});
+
+test('resolveNpcPersona and evaluateNpcCognitiveTurn provide unique biographies, inner thoughts, non-repeating replies, friendship, quarrels, romance, and Streamer FooZzee Twitch integration', () => {
+  // 1. Streamer FooZzee unique profile & Twitch info
+  const foozzee = resolveNpcPersona(
+    'Стример FooZzee (Андрей)',
+    'Хроно-Стример из Будущего · Twitch: twitch.tv/foozzee',
+    'npc_streamer_foozzee'
+  );
+  assert.equal(foozzee.id, 'npc_streamer_foozzee');
+  assert.equal(foozzee.twitchUrl, STREAMER_FOOZZEE_TWITCH_URL);
+  assert.equal(foozzee.twitchUrl, 'https://www.twitch.tv/foozzee');
+  assert.equal(foozzee.communityUrl, STREAMER_FOOZZEE_SITE_URL);
+  assert.ok(foozzee.biography.includes('Euro Truck Simulator 2'));
+  assert.ok(foozzee.biography.includes('https://www.twitch.tv/foozzee'));
+
+  // 2. Every NPC gets a distinct backstory and personality
+  const marfa = resolveNpcPersona('Травница Марфа', 'Знахарка и хранительница Лесного Ковена');
+  const lyra = resolveNpcPersona('Лира из Вольной Роты', 'Лучница и следопыт');
+  const guardGunnar = resolveNpcPersona('Стражник Гуннар', 'Дружина Вороньей Пади');
+  const guardRolf = resolveNpcPersona('Стражник Рольф', 'Дружина Вороньей Пади');
+
+  assert.notEqual(marfa.biography, lyra.biography);
+  assert.notEqual(guardGunnar.biography, guardRolf.biography);
+  assert.notEqual(guardGunnar.secretDream, guardRolf.secretDream);
+
+  // 3. Non-repeating cognitive responses + inner thought process
+  let rel = createInitialRelationshipState(foozzee);
+  const seenReplies = new Set<string>();
+  const history: { role: 'user' | 'npc'; text: string }[] = [];
+
+  for (let i = 0; i < 4; i++) {
+    const turn = evaluateNpcCognitiveTurn({
+      npcName: 'Стример FooZzee (Андрей)',
+      npcRole: 'Хроно-Стример из Будущего',
+      npcId: 'npc_streamer_foozzee',
+      playerText: 'Привет, расскажи про свой стрим на Twitch и во что ты играешь?',
+      currentRelationship: rel,
+      history,
+      biomeName: 'Деревня Воронья Падь',
+      questTitle: 'Пропавшие охотники',
+      socialAction: 'chat',
+    });
+    assert.ok(turn.replyText.length > 20, 'Reply must be a thoughtful full sentence');
+    assert.ok(turn.thoughtProcess.length > 15, 'NPC must generate an inner thought process');
+    assert.ok(
+      !seenReplies.has(turn.replyText),
+      `NPC must not repeat identical phrase on turn ${i + 1}: ${turn.replyText}`
+    );
+    seenReplies.add(turn.replyText);
+    history.push({ role: 'user', text: 'Привет, расскажи про свой стрим на Twitch и во что ты играешь?' });
+    history.push({ role: 'npc', text: turn.replyText });
+    rel = turn.updatedRelationship;
+  }
+
+  // 4. Quarrel and Apology mechanics
+  const thornRel = createInitialRelationshipState(resolveNpcPersona('Кузнец Торн (Гром)', 'Оружейник'));
+  const quarrelTurn = evaluateNpcCognitiveTurn({
+    npcName: 'Кузнец Торн (Гром)',
+    npcRole: 'Оружейник',
+    playerText: 'Ты меня раздражаешь, хватит стучать молотом!',
+    currentRelationship: thornRel,
+    history: [],
+    biomeName: 'Деревня Воронья Падь',
+    socialAction: 'quarrel',
+  });
+  assert.ok(quarrelTurn.updatedRelationship.affinity < thornRel.affinity, 'Quarrel must lower affinity');
+  assert.ok(
+    quarrelTurn.updatedRelationship.mood === 'offended' ||
+      quarrelTurn.updatedRelationship.mood === 'hostile'
+  );
+
+  const apologizeTurn = evaluateNpcCognitiveTurn({
+    npcName: 'Кузнец Торн (Гром)',
+    npcRole: 'Оружейник',
+    playerText: 'Прости меня, друг, я погорячился. Давай помиримся!',
+    currentRelationship: quarrelTurn.updatedRelationship,
+    history: [],
+    biomeName: 'Деревня Воронья Падь',
+    socialAction: 'apologize',
+  });
+  assert.ok(
+    apologizeTurn.updatedRelationship.affinity > quarrelTurn.updatedRelationship.affinity,
+    'Apology must restore affinity'
+  );
+
+  // 5. Romance & Falling in Love with any NPC (up to Lover / Soulmate)
+  let romanceRel = createInitialRelationshipState(marfa);
+  for (let i = 0; i < 3; i++) {
+    const flirtTurn = evaluateNpcCognitiveTurn({
+      npcName: 'Травница Марфа',
+      npcRole: 'Знахарка',
+      playerText: 'Ты невероятно красива, Марфа, рядом с тобой моё сердце бьётся чаще.',
+      currentRelationship: romanceRel,
+      history: [],
+      biomeName: 'Деревня Воронья Падь',
+      socialAction: 'flirt',
+    });
+    romanceRel = flirtTurn.updatedRelationship;
+  }
+  assert.ok(romanceRel.romance >= 35, `Expected romance >= 35 after flirting, got ${romanceRel.romance}`);
+
+  for (let i = 0; i < 3; i++) {
+    const loveTurn = evaluateNpcCognitiveTurn({
+      npcName: 'Травница Марфа',
+      npcRole: 'Знахарка',
+      playerText: 'Я безумно люблю тебя! Моё сердце принадлежит тебе навсегда.',
+      currentRelationship: romanceRel,
+      history: [],
+      biomeName: 'Деревня Воронья Падь',
+      socialAction: 'confess_love',
+    });
+    romanceRel = loveTurn.updatedRelationship;
+  }
+  assert.ok(
+    romanceRel.stage === 'lover' || romanceRel.stage === 'soulmate',
+    `Expected lover or soulmate stage after confessing love, got ${romanceRel.stage}`
+  );
+  assert.equal(romanceRel.mood, 'passionate');
+});
+
+test('Audit integrity: all quest itemRewards and contract trophyItemIds exist in InventorySystem and localize cleanly', () => {
+  const qs = new QuestSystem();
+  const inv = new InventorySystem();
+
+  for (const quest of qs.quests) {
+    if (quest.itemReward) {
+      assert.equal(
+        inv.hasItemDefinition(quest.itemReward),
+        true,
+        `Quest ${quest.id} itemReward "${quest.itemReward}" must exist in InventorySystem`
+      );
+    }
+    const localized = localizeQuest(quest, 'en');
+    assert.ok(localized.title.length > 0);
+    assert.notEqual(
+      localized.title[0],
+      localized.title[0].toLowerCase(),
+      `Quest ${quest.id} English title should start with an uppercase letter: ${localized.title}`
+    );
+  }
+
+  for (const contract of qs.contracts) {
+    if (contract.trophyItemId) {
+      assert.equal(
+        inv.hasItemDefinition(contract.trophyItemId),
+        true,
+        `Contract ${contract.id} trophyItemId "${contract.trophyItemId}" must exist in InventorySystem`
+      );
+    }
+  }
+
+  for (const skill of inv.skills) {
+    const localizedSkill = localizeSkill(skill, 'en');
+    assert.notEqual(
+      localizedSkill.name,
+      skill.name,
+      `Skill ${skill.id} should have an English translation`
+    );
+  }
+
+  const ds = new DialogueSystem();
+  const foozzeeNode = ds.getDialogueNode('foozzee_root', qs.quests);
+  const enFoozzee = localizeDialogueNode(foozzeeNode, 'en');
+  assert.ok(enFoozzee);
+  assert.equal(enFoozzee?.speaker, 'Streamer FooZzee (Andrey)');
+  assert.ok(enFoozzee?.text.includes('https://www.twitch.tv/foozzee'));
+});
+
+
+
+
+

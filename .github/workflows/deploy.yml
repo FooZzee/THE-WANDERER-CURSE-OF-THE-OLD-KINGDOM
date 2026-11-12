@@ -35,7 +35,7 @@ jobs:
       - name: Run TypeScript type check
         run: npm run lint
 
-      - name: Run unit tests (31 suites)
+      - name: Run unit tests (39 suites)
         run: npm test
 
       - name: Build production web bundle

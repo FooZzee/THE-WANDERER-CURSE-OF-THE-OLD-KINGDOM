@@ -168,6 +168,22 @@ export class WorldSystem {
     });
 
     add({
+      id: 'npc_streamer_foozzee',
+      type: 'npc',
+      name: 'Стример FooZzee (Андрей)',
+      roleOrSubtitle: 'Хроно-Стример из Будущего · Twitch: twitch.tv/foozzee',
+      promptText: 'Поговорить со Стримером FooZzee [🎥 Стрим на Twitch: twitch.tv/foozzee]',
+      x: 2.2,
+      z: 2.2,
+      radius: 4.0,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'foozzee_root',
+      homeX: 2.2,
+      homeZ: 2.2,
+    });
+
+    add({
       id: 'npc_blacksmith',
       type: 'npc',
       name: 'Кузнец Торн (Гром)',
@@ -2128,6 +2144,339 @@ export class WorldSystem {
     });
 
     // =========================================================================
+    // АКТ IV — НОВЫЙ БИОМ I (Стиль World of Warcraft): ИЗУМРУДНЫЙ СОН ВЕЧНОЛЕСЬЯ И ПРИЮТ СИЛЬВЕРГЛЕЙД
+    // =========================================================================
+    add({
+      id: 'npc_emerald_archdruid',
+      type: 'npc',
+      name: 'Хранительница Сна Изераэль (Сильверглейд)',
+      roleOrSubtitle: 'Верховная друидка Изумрудного Сна · Приют Сильверглейд',
+      promptText: 'Поговорить с Хранительницей Сна Изераэль',
+      x: -36,
+      z: -750,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'emerald_archdruid_root',
+    });
+    add({
+      id: 'npc_emerald_guard_1',
+      type: 'npc',
+      name: 'Часовой Лунного Клинка Эренд',
+      roleOrSubtitle: 'Страж восточных ворот Приюта Сильверглейд',
+      promptText: 'Часовой Сильверглейда несёт дозор у ворот',
+      x: -20,
+      z: -746,
+      homeX: -20,
+      homeZ: -746,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_emerald_guard_2',
+      type: 'npc',
+      name: 'Стражница Рощи Талисса',
+      roleOrSubtitle: 'Дозорная северных ворот Приюта Сильверглейд',
+      promptText: 'Стражница Рощи охраняет Лунный Колодец',
+      x: -34,
+      z: -761,
+      homeX: -34,
+      homeZ: -761,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'campfire_emerald_glade',
+      type: 'campfire',
+      name: 'Костёр Сновидцев у Лунного Колодца',
+      roleOrSubtitle: 'Приют Сильверглейд · Отдых и Алхимия [N]',
+      promptText: 'Отдохнуть у Лунного Костра и сварить эликсиры',
+      x: -30,
+      z: -751,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'clue_emerald_nightmare_root',
+      type: 'clue',
+      name: 'Осквернённый Корень Мирового Древа Шаладрассил',
+      roleOrSubtitle: 'Улика Акта IV · Пульсирующий нарост Изумрудного Кошмара',
+      promptText: 'Выжечь багровую смолу Кошмара Знаком Пламени [E]',
+      x: 0,
+      z: -772,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_act4_emerald_dream',
+      questStageId: 'q_emerald_cleanse_roots',
+      loreText:
+        'Вы выжгли багровый узел Кошмара на корне Мирового Древа! Путь к логову Архидруида Ксавия-Вальда на восточной поляне (18, -802) открыт.',
+    });
+    add({
+      id: 'poi_emerald_moonwell_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Алтарь Изумрудного Сна',
+      roleOrSubtitle: 'Древний монолит друидов Вечнолесья',
+      promptText: 'Почерпнуть мощь Изумрудного Сна (+1 Очко Навыков и +25% к Знакам)',
+      x: 34,
+      z: -742,
+      radius: 4.0,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_emerald_silverglade',
+      type: 'chest',
+      name: 'Реликварий Высокорождённых Сильверглейда',
+      roleOrSubtitle: 'Сокровище Изумрудного Вечнолесья (Стиль WoW)',
+      promptText: 'Открыть Реликварий Сильверглейда',
+      x: -39,
+      z: -743,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 620,
+      lootItems: [
+        { itemId: 'cursed_essence', count: 3 },
+        { itemId: 'void_dust', count: 3 },
+        { itemId: 'potion_swallow', count: 2 },
+      ],
+    });
+
+    // =========================================================================
+    // АКТ IV — НОВЫЙ БИОМ II (Стиль Aion): НЕБЕСНЫЙ ПРЕДЕЛ ЭЛИЗИУМА И БАШНЯ ВЕЧНОСТИ
+    // =========================================================================
+    add({
+      id: 'npc_aether_legate',
+      type: 'npc',
+      name: 'Легат Даэвов Серафина (Элизиум)',
+      roleOrSubtitle: 'Командор Заставы Серафимов · Хранительница Башни Вечности',
+      promptText: 'Поговорить с Легатом Даэвов Серафиной',
+      x: 36,
+      z: -888,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'aether_legate_root',
+    });
+    add({
+      id: 'npc_aether_guard_1',
+      type: 'npc',
+      name: 'Архонт-Центурион Кассиэль',
+      roleOrSubtitle: 'Страж западных врат Заставы Серафимов',
+      promptText: 'Архонт-Центурион охраняет врата Элизиума',
+      x: 20,
+      z: -884,
+      homeX: 20,
+      homeZ: -884,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_aether_guard_2',
+      type: 'npc',
+      name: 'Серафим-Дозорный Люциан',
+      roleOrSubtitle: 'Страж северного моста Заставы Серафимов',
+      promptText: 'Серафим-Дозорный следит за вихрями Бездны',
+      x: 34,
+      z: -898,
+      homeX: 34,
+      homeZ: -898,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'campfire_aether_bastion',
+      type: 'campfire',
+      name: 'Эфирная Жаровня Серафимов',
+      roleOrSubtitle: 'Застава Элизиум · Медитация и Алхимия [N]',
+      promptText: 'Помедитировать у Эфирной Жаровни',
+      x: 30,
+      z: -889,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'clue_aether_shattered_seal',
+      type: 'clue',
+      name: 'Расколотая Печать Эфирного Резонатора Башни Вечности',
+      roleOrSubtitle: 'Улика Акта IV · Кристальный узел поля Айона',
+      promptText: 'Сфокусировать поток Эфира Знаком Пепла [E]',
+      x: 0,
+      z: -912,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_act4_aether_sanctum',
+      questStageId: 'q_aether_restore_relay',
+      loreText:
+        'Эфирный Резонатор вспыхнул лазурным светом! Защитный купол Башни Вечности ослабил Падшего Серафима Азраэля на арене (-18, -938).',
+    });
+    add({
+      id: 'poi_aether_eternity_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Осколок Башни Вечности',
+      roleOrSubtitle: 'Парящий кристалл чистого Эфира',
+      promptText: 'Почерпнуть мощь Эфира (+1 Очко Навыков и +25% к Знакам)',
+      x: -32,
+      z: -878,
+      radius: 4.0,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_aether_elysium',
+      type: 'chest',
+      name: 'Златокованый Ковчег Лордов Элизиума',
+      roleOrSubtitle: 'Сокровище Небесного Предела (Стиль Aion)',
+      promptText: 'Открыть Ковчег Лордов Элизиума',
+      x: 39,
+      z: -880,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 720,
+      lootItems: [
+        { itemId: 'void_dust', count: 4 },
+        { itemId: 'ice_lotus', count: 3 },
+        { itemId: 'rune_frost_sup', count: 1 },
+      ],
+    });
+
+    // =========================================================================
+    // АКТ IV — НОВЫЙ БИОМ III (Стиль Horizon): КОТЁЛ ДРЕВНИХ МАШИН «ГЕФЕСТ» И ОЧАГ ИСКАТЕЛЕЙ
+    // =========================================================================
+    add({
+      id: 'npc_cauldron_seeker',
+      type: 'npc',
+      name: 'Матриарх Искателей Алойя-Вальд (Железный Очаг)',
+      roleOrSubtitle: 'Глава племени Искателей · Охотница на Древние Машины',
+      promptText: 'Поговорить с Матриархом Искателей Алойей-Вальд',
+      x: -36,
+      z: -1023,
+      radius: 3.8,
+      interacted: false,
+      repeatable: true,
+      dialogueRootId: 'cauldron_seeker_root',
+    });
+    add({
+      id: 'npc_cauldron_guard_1',
+      type: 'npc',
+      name: 'Копьеносец Искателей Рост',
+      roleOrSubtitle: 'Страж восточных ворот Железного Очага',
+      promptText: 'Копьеносец Искателей охраняет периметр от Рыскарей',
+      x: -20,
+      z: -1019,
+      homeX: -20,
+      homeZ: -1019,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'npc_cauldron_guard_2',
+      type: 'npc',
+      name: 'Воительница Очага Валья',
+      roleOrSubtitle: 'Дозорная северных ворот Железного Очага',
+      promptText: 'Воительница Очага несёт вахту у машинных ворот',
+      x: -34,
+      z: -1033,
+      homeX: -34,
+      homeZ: -1033,
+      radius: 3.2,
+      interacted: false,
+      repeatable: true,
+      npcScheduleRole: 'torch_guard',
+      isArmedDefender: true,
+    });
+    add({
+      id: 'campfire_cauldron_hearth',
+      type: 'campfire',
+      name: 'Механический Горн Железного Очага',
+      roleOrSubtitle: 'Железный Очаг Искателей · Привал и Алхимия [N]',
+      promptText: 'Отдохнуть у Очага Искателей и пополнить эликсиры',
+      x: -30,
+      z: -1024,
+      radius: 3.6,
+      interacted: false,
+      repeatable: true,
+    });
+    add({
+      id: 'clue_cauldron_override_terminal',
+      type: 'clue',
+      name: 'Голографический Терминал Перехвата Котла «ГЕФЕСТ»',
+      roleOrSubtitle: 'Улика Акта IV · Консоль управления сборочным ядром',
+      promptText: 'Ввести код дешифровки Предтеч в Терминал [E]',
+      x: 0,
+      z: -1048,
+      radius: 4.2,
+      interacted: false,
+      repeatable: false,
+      questId: 'quest_act4_titan_cauldron',
+      questStageId: 'q_cauldron_override_core',
+      loreText:
+        'Протокол перехвата «ОМЕГА-ГЕФЕСТ» активирован! Силовые щиты Первородного Громозева в центре Котла (18, -1075) отключены.',
+    });
+    add({
+      id: 'poi_cauldron_core_power',
+      type: 'place_of_power',
+      name: 'Место Силы: Спираль Титана ГЕФЕСТ',
+      roleOrSubtitle: 'Высоковольтный узел древней кузницы машин',
+      promptText: 'Почерпнуть импульс Спирали Титана (+1 Очко Навыков и +25% к Знакам)',
+      x: 34,
+      z: -1012,
+      radius: 4.0,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+    });
+    add({
+      id: 'chest_cauldron_seeker_vault',
+      type: 'chest',
+      name: 'Бронированный Контейнер Древних Предтеч',
+      roleOrSubtitle: 'Сокровище Котла Машин ГЕФЕСТ (Стиль Horizon)',
+      promptText: 'Вскрыть Бронированный Контейнер Предтеч',
+      x: -39,
+      z: -1015,
+      radius: 3.8,
+      interacted: false,
+      repeatable: false,
+      isPOI: true,
+      discovered: false,
+      goldAmount: 850,
+      lootItems: [
+        { itemId: 'black_ore', count: 5 },
+        { itemId: 'void_dust', count: 5 },
+        { itemId: 'rune_void_sup', count: 1 },
+      ],
+    });
+
+    // =========================================================================
     // ПРИЗРАЧНЫЕ СЦЕНЫ «ОТГОЛОСКИ ПЕПЛА» (ЧУТЬЁ ЗОЛЬНИКА [V] + [E])
     // =========================================================================
     for (const echo of ASH_ECHOES) {
@@ -2171,7 +2520,9 @@ export class WorldSystem {
 
   private spawnVisualForInteractable(item: WorldInteractable): void {
     if (item.type === 'npc') {
-      const role = item.id.includes('elder') || item.id.includes('abbot') || item.id.includes('keeper') || item.id.includes('herald')
+      const role = item.id.includes('foozzee')
+        ? 'streamer_foozzee'
+        : item.id.includes('elder') || item.id.includes('abbot') || item.id.includes('keeper') || item.id.includes('herald')
         ? 'elder'
         : item.id.includes('blacksmith') || item.id.includes('smelter')
         ? 'blacksmith'
@@ -3138,18 +3489,67 @@ export class WorldSystem {
           }
         }
       } else if (item.type === 'npc' && mesh && parts) {
-        // Static quest/camp NPCs: idle breathing, subtle arm sway, and turning toward player when nearby
-        if (dPlayer < 6.5) {
-          mesh.lookAt(playerX, item.y, playerZ);
-        }
         const torso = parts.npcTorso;
-        if (torso) {
-          torso.position.y = 1.15 + Math.sin(elapsed * 2.1 + item.x) * 0.016;
-        }
         const leftArm = parts.npcLeftArm;
         const rightArm = parts.npcRightArm;
-        if (leftArm) leftArm.rotation.x = Math.sin(elapsed * 1.8 + item.z) * 0.04;
-        if (rightArm) rightArm.rotation.x = -Math.sin(elapsed * 1.8 + item.z) * 0.04;
+        const leftLeg = parts.npcLeftLeg;
+        const rightLeg = parts.npcRightLeg;
+
+        if (item.id === 'npc_streamer_foozzee') {
+          // Animate floating holographic stream drone
+          const drone = mesh.getObjectByName('foozzeeDrone');
+          if (drone) {
+            drone.position.y = 2.05 + Math.sin(elapsed * 3.4) * 0.12;
+            drone.rotation.y = elapsed * 1.8;
+          }
+
+          // Streamer FooZzee is friendly & sociable: approaches player when within 22m in village and invites to Twitch stream
+          if (dPlayer > 2.5 && dPlayer < 22) {
+            const dirX = (playerX - item.x) / dPlayer;
+            const dirZ = (playerZ - item.z) / dPlayer;
+            const step = Math.min(dPlayer - 2.4, 2.75 * dt);
+            item.x += dirX * step;
+            item.z += dirZ * step;
+            item.y = getGroundHeight(item.x, item.z);
+            mesh.position.set(item.x, item.y, item.z);
+            mesh.lookAt(playerX, item.y, playerZ);
+
+            const walkCycle = Math.sin(elapsed * 8.5);
+            if (leftLeg) leftLeg.rotation.x = walkCycle * 0.5;
+            if (rightLeg) rightLeg.rotation.x = -walkCycle * 0.5;
+            if (leftArm) leftArm.rotation.x = -walkCycle * 0.38;
+            if (rightArm) rightArm.rotation.x = walkCycle * 0.38;
+          } else {
+            if (leftLeg) leftLeg.rotation.x = 0;
+            if (rightLeg) rightLeg.rotation.x = 0;
+            mesh.lookAt(playerX, item.y, playerZ);
+            // Friendly wave gesture when close to player
+            if (leftArm) {
+              leftArm.rotation.x = -2.2 + Math.sin(elapsed * 6.5) * 0.25;
+              leftArm.rotation.z = -0.35 + Math.cos(elapsed * 6.5) * 0.22;
+            }
+            if (rightArm) {
+              rightArm.rotation.x = -Math.sin(elapsed * 1.8) * 0.06;
+            }
+          }
+          if (torso) {
+            torso.position.y = 1.15 + Math.sin(elapsed * 2.6) * 0.02;
+          }
+          item.promptText =
+            dPlayer < 5.5
+              ? '🎥 FooZzee: «Здорово, Корвус! Залетай ко мне на стрим https://www.twitch.tv/foozzee ! Поговорим?» [E]'
+              : 'Поговорить со Стримером FooZzee [🎥 Стрим на Twitch: twitch.tv/foozzee]';
+        } else {
+          // Static quest/camp NPCs: idle breathing, subtle arm sway, and turning toward player when nearby
+          if (dPlayer < 6.5) {
+            mesh.lookAt(playerX, item.y, playerZ);
+          }
+          if (torso) {
+            torso.position.y = 1.15 + Math.sin(elapsed * 2.1 + item.x) * 0.016;
+          }
+          if (leftArm) leftArm.rotation.x = Math.sin(elapsed * 1.8 + item.z) * 0.04;
+          if (rightArm) rightArm.rotation.x = -Math.sin(elapsed * 1.8 + item.z) * 0.04;
+        }
       }
 
       if (mesh && (item.type === 'clue' || item.type === 'signpost')) {

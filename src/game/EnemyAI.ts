@@ -4,6 +4,8 @@ import {
   clampEnemyPositionOutsideSettlements,
   clampEnemySpawnOutsideSettlements,
   DEFAULT_MOB_RESPAWN_SECONDS,
+  getBiomeAt,
+  getBiomeMobSpawnProfile,
   getGroundHeight,
   isPointInsideSettlementFence,
   isRespawnableMob,
@@ -925,6 +927,267 @@ export class EnemyAI {
       lootTable: ['void_dust', 'black_ore', 'rune_void_sup'],
       questTag: 'q_star_archon',
     });
+
+    // =========================================================================
+    // 13. АКТ IV — НОВЫЙ БИОМ I (Стиль World of Warcraft): ИЗУМРУДНЫЙ СОН ВЕЧНОЛЕСЬЯ И ПРИЮТ СИЛЬВЕРГЛЕЙД (z: -705..-840)
+    // =========================================================================
+    this.createEnemy({
+      id: 'emerald_wyrm_1',
+      type: 'mana_wyrm',
+      name: 'Мана-Змей Вечнолесья',
+      level: 10,
+      hp: 460,
+      damage: 48,
+      speed: 5.5,
+      detectRadius: 22,
+      attackRadius: 11.5,
+      spawnX: 20,
+      spawnZ: -735,
+      xpReward: 320,
+      goldReward: 210,
+      lootTable: ['cursed_essence', 'void_dust'],
+      packId: 'pack_emerald_weald',
+    });
+    this.createEnemy({
+      id: 'emerald_wyrm_2',
+      type: 'mana_wyrm',
+      name: 'Лазурный Мана-Змей Лунного Колодца',
+      level: 10,
+      hp: 480,
+      damage: 50,
+      speed: 5.6,
+      detectRadius: 22,
+      attackRadius: 11.5,
+      spawnX: -8,
+      spawnZ: -768,
+      xpReward: 330,
+      goldReward: 220,
+      lootTable: ['cursed_essence', 'ice_lotus'],
+      packId: 'pack_emerald_weald',
+    });
+    this.createEnemy({
+      id: 'emerald_treant_1',
+      type: 'corrupted_treant',
+      name: 'Искажённый Древень Сна',
+      level: 11,
+      hp: 620,
+      damage: 56,
+      speed: 4.3,
+      detectRadius: 22,
+      attackRadius: 3.8,
+      spawnX: 34,
+      spawnZ: -765,
+      xpReward: 360,
+      goldReward: 240,
+      lootTable: ['herb_swallow', 'cursed_essence'],
+    });
+    this.createEnemy({
+      id: 'emerald_treant_2',
+      type: 'corrupted_treant',
+      name: 'Вековой Страж Багрового Кошмара',
+      level: 11,
+      hp: 650,
+      damage: 58,
+      speed: 4.4,
+      detectRadius: 22,
+      attackRadius: 3.8,
+      spawnX: -18,
+      spawnZ: -812,
+      xpReward: 380,
+      goldReward: 250,
+      lootTable: ['herb_swallow', 'void_dust'],
+    });
+    this.createEnemy({
+      id: 'boss_emerald_archon',
+      type: 'boss_emerald_archon',
+      name: 'Архидруид Изумрудного Кошмара Ксавий-Вальд',
+      level: 11,
+      hp: 1620,
+      damage: 68,
+      speed: 5.2,
+      detectRadius: 30,
+      attackRadius: 4.4,
+      spawnX: 18,
+      spawnZ: -802,
+      xpReward: 1850,
+      goldReward: 1250,
+      lootTable: ['void_dust', 'cursed_essence', 'rune_void_sup'],
+      questTag: 'q_emerald_archon',
+    });
+
+    // =========================================================================
+    // 14. АКТ IV — НОВЫЙ БИОМ II (Стиль Aion): НЕБЕСНЫЙ ПРЕДЕЛ ЭЛИЗИУМА И БАШНЯ ВЕЧНОСТИ (z: -840..-975)
+    // =========================================================================
+    this.createEnemy({
+      id: 'aether_construct_1',
+      type: 'aether_construct',
+      name: 'Эфирный Часовой Элизиума',
+      level: 11,
+      hp: 540,
+      damage: 54,
+      speed: 5.1,
+      detectRadius: 23,
+      attackRadius: 11.5,
+      spawnX: -22,
+      spawnZ: -872,
+      xpReward: 390,
+      goldReward: 260,
+      lootTable: ['void_dust', 'ice_lotus'],
+      packId: 'pack_aether_sanctum',
+    });
+    this.createEnemy({
+      id: 'aether_construct_2',
+      type: 'aether_construct',
+      name: 'Архонт-Конструкт Башни Вечности',
+      level: 12,
+      hp: 570,
+      damage: 56,
+      speed: 5.2,
+      detectRadius: 23,
+      attackRadius: 11.5,
+      spawnX: 10,
+      spawnZ: -915,
+      xpReward: 410,
+      goldReward: 275,
+      lootTable: ['void_dust', 'black_ore'],
+      packId: 'pack_aether_sanctum',
+    });
+    this.createEnemy({
+      id: 'aether_shadow_1',
+      type: 'daeic_shadow',
+      name: 'Крылатый Тень-Асмодиан',
+      level: 12,
+      hp: 590,
+      damage: 60,
+      speed: 5.9,
+      detectRadius: 23,
+      attackRadius: 3.1,
+      spawnX: -34,
+      spawnZ: -905,
+      xpReward: 420,
+      goldReward: 285,
+      lootTable: ['void_dust', 'cursed_essence'],
+    });
+    this.createEnemy({
+      id: 'aether_shadow_2',
+      type: 'daeic_shadow',
+      name: 'Каратель Бездны Эрешукигаль',
+      level: 12,
+      hp: 615,
+      damage: 62,
+      speed: 6.0,
+      detectRadius: 23,
+      attackRadius: 3.1,
+      spawnX: 18,
+      spawnZ: -948,
+      xpReward: 440,
+      goldReward: 295,
+      lootTable: ['void_dust', 'black_ore'],
+    });
+    this.createEnemy({
+      id: 'boss_aether_seraph',
+      type: 'boss_aether_seraph',
+      name: 'Падший Серафим Вечности Азраэль',
+      level: 12,
+      hp: 1780,
+      damage: 72,
+      speed: 5.5,
+      detectRadius: 32,
+      attackRadius: 4.5,
+      spawnX: -18,
+      spawnZ: -938,
+      xpReward: 2100,
+      goldReward: 1450,
+      lootTable: ['void_dust', 'king_crown_shard', 'rune_void_sup'],
+      questTag: 'q_aether_seraph',
+    });
+
+    // =========================================================================
+    // 15. АКТ IV — НОВЫЙ БИОМ III (Стиль Horizon): КОТЁЛ ДРЕВНИХ МАШИН «ГЕФЕСТ» И ОЧАГ ИСКАТЕЛЕЙ (z < -975)
+    // =========================================================================
+    this.createEnemy({
+      id: 'cauldron_watcher_1',
+      type: 'scrap_watcher',
+      name: 'Рыскарь Древнего Котла',
+      level: 12,
+      hp: 610,
+      damage: 58,
+      speed: 5.7,
+      detectRadius: 24,
+      attackRadius: 3.6,
+      spawnX: 22,
+      spawnZ: -1008,
+      xpReward: 450,
+      goldReward: 310,
+      lootTable: ['black_ore', 'iron_ore'],
+      packId: 'pack_titan_cauldron',
+    });
+    this.createEnemy({
+      id: 'cauldron_watcher_2',
+      type: 'scrap_watcher',
+      name: 'Огнеглазый Рыскарь-Разведчик',
+      level: 12,
+      hp: 640,
+      damage: 60,
+      speed: 5.8,
+      detectRadius: 24,
+      attackRadius: 3.6,
+      spawnX: -8,
+      spawnZ: -1052,
+      xpReward: 470,
+      goldReward: 325,
+      lootTable: ['black_ore', 'void_dust'],
+      packId: 'pack_titan_cauldron',
+    });
+    this.createEnemy({
+      id: 'cauldron_ravager_1',
+      type: 'ravager_stalker',
+      name: 'Пилозуб Багровой Чумы',
+      level: 13,
+      hp: 710,
+      damage: 64,
+      speed: 6.1,
+      detectRadius: 24,
+      attackRadius: 3.5,
+      spawnX: 34,
+      spawnZ: -1038,
+      xpReward: 510,
+      goldReward: 350,
+      lootTable: ['black_ore', 'iron_ore', 'void_dust'],
+    });
+    this.createEnemy({
+      id: 'cauldron_ravager_2',
+      type: 'ravager_stalker',
+      name: 'Свирепый Лиходей Котла ГЕФЕСТ',
+      level: 13,
+      hp: 740,
+      damage: 66,
+      speed: 6.2,
+      detectRadius: 24,
+      attackRadius: 3.5,
+      spawnX: -20,
+      spawnZ: -1085,
+      xpReward: 530,
+      goldReward: 365,
+      lootTable: ['black_ore', 'void_dust'],
+    });
+    this.createEnemy({
+      id: 'boss_cauldron_behemoth',
+      type: 'boss_cauldron_behemoth',
+      name: 'Первородный Громозев Котла ГЕФЕСТ',
+      level: 13,
+      hp: 1980,
+      damage: 78,
+      speed: 5.3,
+      detectRadius: 34,
+      attackRadius: 4.8,
+      spawnX: 18,
+      spawnZ: -1075,
+      xpReward: 2500,
+      goldReward: 1750,
+      lootTable: ['black_ore', 'void_dust', 'rune_void_sup'],
+      questTag: 'q_cauldron_behemoth',
+    });
   }
 
   public shatterColossusCrystal(enemyId: string): number {
@@ -1126,7 +1389,10 @@ export class EnemyAI {
       cfg.type === 'boss_hydra' ||
       cfg.type === 'boss_colossus' ||
       cfg.type === 'boss_vesper' ||
-      cfg.type === 'boss_avatar';
+      cfg.type === 'boss_avatar' ||
+      cfg.type === 'boss_emerald_archon' ||
+      cfg.type === 'boss_aether_seraph' ||
+      cfg.type === 'boss_cauldron_behemoth';
 
     // Overhead 3D Health Bar
     const hpBarGroup = new THREE.Group();
@@ -1136,7 +1402,10 @@ export class EnemyAI {
         cfg.type === 'werewolf' ||
         cfg.type === 'gargoyle' ||
         cfg.type === 'troglodyte' ||
-        cfg.type === 'void_knight'
+        cfg.type === 'void_knight' ||
+        cfg.type === 'corrupted_treant' ||
+        cfg.type === 'scrap_watcher' ||
+        cfg.type === 'ravager_stalker'
       ? 3.35
       : 2.15;
     hpBarGroup.position.set(0, barHeight, 0);
@@ -1154,12 +1423,17 @@ export class EnemyAI {
             cfg.type === 'werewolf' ||
             cfg.type === 'gargoyle' ||
             cfg.type === 'troglodyte' ||
-            cfg.type === 'void_knight'
+            cfg.type === 'void_knight' ||
+            cfg.type === 'corrupted_treant' ||
+            cfg.type === 'scrap_watcher' ||
+            cfg.type === 'ravager_stalker'
           ? 0xf97316
           : cfg.type === 'hag' ||
             cfg.type === 'noonwraith' ||
             cfg.type === 'plague_reaper' ||
-            cfg.type === 'frost_wraith'
+            cfg.type === 'frost_wraith' ||
+            cfg.type === 'mana_wyrm' ||
+            cfg.type === 'aether_construct'
           ? 0xa855f7
           : 0xef4444,
         side: THREE.DoubleSide,
@@ -1180,12 +1454,17 @@ export class EnemyAI {
       cfg.type === 'gargoyle' ||
       cfg.type === 'werewolf' ||
       cfg.type === 'troglodyte' ||
-      cfg.type === 'void_knight'
+      cfg.type === 'void_knight' ||
+      cfg.type === 'corrupted_treant' ||
+      cfg.type === 'scrap_watcher'
     ) {
       aoeTelegraphGroup = this.createAoETelegraphMesh(aoeRadius);
       aoeTelegraphGroup.visible = false;
       this.scene.add(aoeTelegraphGroup);
     }
+
+    const spawnBiome = getBiomeAt(spawnX, spawnZ);
+    const biomeSpawnProfile = getBiomeMobSpawnProfile(spawnBiome.id);
 
     const data: EnemyData = {
       id: cfg.id,
@@ -1204,19 +1483,26 @@ export class EnemyAI {
       detectRadius: cfg.detectRadius,
       attackRadius: cfg.attackRadius,
       attackCooldown:
-        cfg.type === 'wolf' || cfg.type === 'boss_vesper'
+        cfg.type === 'wolf' || cfg.type === 'boss_vesper' || cfg.type === 'daeic_shadow'
           ? 1.25
           : cfg.type === 'ghoul' ||
             cfg.type === 'skeleton' ||
             cfg.type === 'drowned' ||
-            cfg.type === 'fallen_ash'
+            cfg.type === 'fallen_ash' ||
+            cfg.type === 'ravager_stalker'
           ? 1.45
           : cfg.type === 'hag' ||
             cfg.type === 'noonwraith' ||
             cfg.type === 'plague_reaper' ||
-            cfg.type === 'frost_wraith'
+            cfg.type === 'frost_wraith' ||
+            cfg.type === 'mana_wyrm' ||
+            cfg.type === 'aether_construct'
           ? 1.9
-          : cfg.type === 'demon' || cfg.type === 'gargoyle' || cfg.type === 'boss_colossus'
+          : cfg.type === 'demon' ||
+            cfg.type === 'gargoyle' ||
+            cfg.type === 'boss_colossus' ||
+            cfg.type === 'corrupted_treant' ||
+            cfg.type === 'boss_cauldron_behemoth'
           ? 2.2
           : 1.85,
       xpReward: cfg.xpReward,
@@ -1241,6 +1527,7 @@ export class EnemyAI {
       astralInvulnerable: cfg.astralInvulnerable,
       crystalArmorCount: cfg.crystalArmorCount,
       vesperHealed: false,
+      respawnDuration: biomeSpawnProfile.respawnSeconds,
     };
 
     this.enemies.push({
@@ -1621,6 +1908,38 @@ export class EnemyAI {
         }
       }
 
+      // Act IV Boss Transitions: Emerald Archon, Aether Seraph & Cauldron Behemoth
+      if (d.type === 'boss_emerald_archon' && (d.phase ?? 1) < 2 && d.hp <= d.maxHp * 0.55) {
+        d.phase = 2;
+        d.speed = 5.7;
+        d.attackCooldown = 1.45;
+        enemy.aoeRadius = 5.5;
+        onCombatEvent?.(
+          'Архидруид Ксавий-Вальд (Фаза II): Пробуждение Корней Изумрудного Кошмара!',
+          'quest'
+        );
+      }
+      if (d.type === 'boss_aether_seraph' && (d.phase ?? 1) < 2 && d.hp <= d.maxHp * 0.55) {
+        d.phase = 2;
+        d.speed = 6.0;
+        d.attackCooldown = 1.35;
+        enemy.aoeRadius = 5.6;
+        onCombatEvent?.(
+          'Падший Серафим Азраэль (Фаза II): Крылья Башни Вечности и Эфирный Шторм!',
+          'quest'
+        );
+      }
+      if (d.type === 'boss_cauldron_behemoth' && (d.phase ?? 1) < 2 && d.hp <= d.maxHp * 0.55) {
+        d.phase = 2;
+        d.speed = 5.8;
+        d.attackCooldown = 1.45;
+        enemy.aoeRadius = 6.0;
+        onCombatEvent?.(
+          'Первородный Громозев Котла ГЕФЕСТ (Фаза II): Перегрузка Плазменного Ядра!',
+          'quest'
+        );
+      }
+
       // Contract Boss 1: Alpha Werewolf regeneration (unless burning with Flame Sign) & 50% HP wolf pack summon
       if (d.type === 'werewolf') {
         if (d.burnTimer <= 0 && d.hp < d.maxHp && d.state !== 'PATROL') {
@@ -1744,6 +2063,9 @@ export class EnemyAI {
           d.type === 'boss_colossus' ||
           d.type === 'boss_vesper' ||
           d.type === 'boss_avatar' ||
+          d.type === 'boss_emerald_archon' ||
+          d.type === 'boss_aether_seraph' ||
+          d.type === 'boss_cauldron_behemoth' ||
           d.isContractBoss) &&
         distToRealPlayer < 35
       ) {
@@ -1779,17 +2101,18 @@ export class EnemyAI {
         (d.type === 'hag' ||
           d.type === 'noonwraith' ||
           d.type === 'frost_wraith' ||
-          d.type === 'boss_vesper') &&
+          d.type === 'boss_vesper' ||
+          d.type === 'daeic_shadow') &&
         playerAlive &&
         distToTarget < 3.8 &&
         enemy.teleportCooldown <= 0 &&
         d.slowTimer <= 0
       ) {
-        enemy.teleportCooldown = d.type === 'boss_vesper' ? 5.0 : 6.5;
+        enemy.teleportCooldown = d.type === 'boss_vesper' || d.type === 'daeic_shadow' ? 5.0 : 6.5;
         const angle = Math.random() * Math.PI * 2;
-        const teleDist = d.type === 'boss_vesper' ? 4.2 : 7.5 + Math.random() * 2.5;
-        const rawTeleX = (d.type === 'boss_vesper' ? aggroX : d.spawnX) + Math.cos(angle) * teleDist;
-        const rawTeleZ = (d.type === 'boss_vesper' ? aggroZ : d.spawnZ) + Math.sin(angle) * teleDist;
+        const teleDist = d.type === 'boss_vesper' || d.type === 'daeic_shadow' ? 4.2 : 7.5 + Math.random() * 2.5;
+        const rawTeleX = (d.type === 'boss_vesper' || d.type === 'daeic_shadow' ? aggroX : d.spawnX) + Math.cos(angle) * teleDist;
+        const rawTeleZ = (d.type === 'boss_vesper' || d.type === 'daeic_shadow' ? aggroZ : d.spawnZ) + Math.sin(angle) * teleDist;
         const clampedTele = clampEnemyPositionOutsideSettlements(rawTeleX, rawTeleZ, 1.3);
         d.x = clampedTele.x;
         d.z = clampedTele.z;
@@ -1813,6 +2136,9 @@ export class EnemyAI {
         d.type === 'boss_colossus' ||
         d.type === 'boss_vesper' ||
         d.type === 'boss_avatar' ||
+        d.type === 'boss_emerald_archon' ||
+        d.type === 'boss_aether_seraph' ||
+        d.type === 'boss_cauldron_behemoth' ||
         d.isContractBoss
           ? 38
           : 30;
@@ -1949,12 +2275,14 @@ export class EnemyAI {
             this.animateEnemy(enemy, 'idle');
           }
         }
-        // 2. GHOUL, SKELETON, DROWNED, FALLEN ASH & GRANDMASTER VESPER: Rapid Multi-Hit Flurry
+        // 2. GHOUL, SKELETON, DROWNED, FALLEN ASH, DAEIC SHADOW, RAVAGER STALKER & GRANDMASTER VESPER: Rapid Multi-Hit Flurry
         else if (
           d.type === 'ghoul' ||
           d.type === 'skeleton' ||
           d.type === 'drowned' ||
           d.type === 'fallen_ash' ||
+          d.type === 'daeic_shadow' ||
+          d.type === 'ravager_stalker' ||
           d.type === 'boss_vesper'
         ) {
           if (enemy.flurryRemaining > 0) {
@@ -1965,9 +2293,21 @@ export class EnemyAI {
               if (!isTauntedByDecoy && Math.hypot(playerX - d.x, playerZ - d.z) <= d.attackRadius + 0.95) {
                 onAttackPlayer(d, Math.round(d.damage * 0.55));
               }
-              if (enemy.flurryRemaining === 0 && (d.type === 'fallen_ash' || d.type === 'boss_vesper')) {
+              if (
+                enemy.flurryRemaining === 0 &&
+                (d.type === 'fallen_ash' ||
+                  d.type === 'boss_vesper' ||
+                  d.type === 'daeic_shadow' ||
+                  d.type === 'ravager_stalker')
+              ) {
                 const targetY = getGroundHeight(aggroX, aggroZ);
-                this.spawnMagicProjectile(d, aggroX, targetY, aggroZ, 0, 0xf97316);
+                const projHex =
+                  d.type === 'daeic_shadow'
+                    ? 0x38bdf8
+                    : d.type === 'ravager_stalker'
+                    ? 0xef4444
+                    : 0xf97316;
+                this.spawnMagicProjectile(d, aggroX, targetY, aggroZ, 0, projHex);
               }
               if (enemy.flurryRemaining > 0) {
                 enemy.flurryTickTimer = 0.16;
@@ -1989,12 +2329,14 @@ export class EnemyAI {
             this.animateEnemy(enemy, 'idle');
           }
         }
-        // 3. SWAMP HAG, NOONWRAITH, PLAGUE REAPER & FROST WRAITH: Kiting, Lateral Strafe & Magical Projectiles
+        // 3. SWAMP HAG, NOONWRAITH, PLAGUE REAPER, FROST WRAITH, MANA WYRM & AETHER CONSTRUCT: Kiting, Lateral Strafe & Magical Projectiles
         else if (
           d.type === 'hag' ||
           d.type === 'noonwraith' ||
           d.type === 'plague_reaper' ||
-          d.type === 'frost_wraith'
+          d.type === 'frost_wraith' ||
+          d.type === 'mana_wyrm' ||
+          d.type === 'aether_construct'
         ) {
           if (dist < 5.6) {
             const backStep = d.speed * 0.78 * speedMult * dt;
@@ -2016,8 +2358,10 @@ export class EnemyAI {
             if (enemy.attackWindupTimer === 0) {
               const targetY = getGroundHeight(aggroX, aggroZ);
               const projColor =
-                d.type === 'frost_wraith'
+                d.type === 'frost_wraith' || d.type === 'aether_construct'
                   ? 0x38bdf8
+                  : d.type === 'mana_wyrm'
+                  ? 0x10b981
                   : d.type === 'plague_reaper'
                   ? 0x84cc16
                   : d.type === 'noonwraith'
@@ -2031,7 +2375,7 @@ export class EnemyAI {
             enemy.attackWindupTimer = 0.42;
           }
         }
-        // 4. HEAVY BOSSES & ELITES (Demon, Werewolf, Gargoyle, Troglodyte, Void Knight, Hydra, Colossus, Guardian, Malakor, Avatar)
+        // 4. HEAVY BOSSES & ELITES (Demon, Werewolf, Gargoyle, Troglodyte, Void Knight, Hydra, Colossus, Guardian, Malakor, Avatar, Act IV Bosses)
         else {
           if (enemy.attackWindupTimer > 0) {
             enemy.attackWindupTimer = Math.max(0, enemy.attackWindupTimer - dt);
@@ -2062,9 +2406,12 @@ export class EnemyAI {
                   (d.phase ?? 1) >= 2 ? Math.round(d.damage * 1.25) : d.damage;
                 onAttackPlayer(d, slamDamage);
               }
-              // Ranged fan volleys for Hydra, Colossus Phase 2, Guardian Phase 2, Malakor Phase 2+, Avatar
+              // Ranged fan volleys for Hydra, Colossus Phase 2, Guardian Phase 2, Malakor Phase 2+, Avatar, Act IV Bosses
               if (
                 d.type === 'boss_hydra' ||
+                d.type === 'boss_emerald_archon' ||
+                d.type === 'boss_aether_seraph' ||
+                d.type === 'boss_cauldron_behemoth' ||
                 ((d.type === 'boss' ||
                   d.type === 'malakor' ||
                   d.type === 'boss_colossus' ||
@@ -2074,10 +2421,12 @@ export class EnemyAI {
               ) {
                 const targetY = getGroundHeight(aggroX, aggroZ);
                 const orbColor =
-                  d.type === 'boss_hydra'
+                  d.type === 'boss_hydra' || d.type === 'boss_emerald_archon'
                     ? 0x22c55e
-                    : d.type === 'boss_colossus'
+                    : d.type === 'boss_colossus' || d.type === 'boss_aether_seraph'
                     ? 0x38bdf8
+                    : d.type === 'boss_cauldron_behemoth'
+                    ? 0xf97316
                     : d.type === 'boss_avatar'
                     ? 0xef4444
                     : d.type === 'malakor'

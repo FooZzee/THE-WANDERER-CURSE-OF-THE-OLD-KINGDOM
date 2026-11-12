@@ -34,6 +34,10 @@ import {
   Zap,
   ChevronDown,
   ChevronUp,
+  Mic,
+  MicOff,
+  Send,
+  MessageSquare,
 } from 'lucide-react';
 import type { Game } from '../game/Game';
 import {
@@ -109,6 +113,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
   const [settingsTab, setSettingsTab] = useState<'general' | 'hud'>('general');
   const [typedDialogueText, setTypedDialogueText] = useState<string>('');
   const [isDialogueTyping, setIsDialogueTyping] = useState<boolean>(false);
+  const [voiceTextInput, setVoiceTextInput] = useState<string>('');
   const [joyState, setJoyState] = useState<{
     x: number;
     y: number;
@@ -220,6 +225,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
     bestiary,
     activeCompanion,
     reputationInfo,
+    voiceAI,
   } = hud;
   const discoveredLoreIds = player.discoveredLoreIds ?? [];
   const totalLoreNotes = worldLoreNotes?.length ?? 22;
@@ -1180,36 +1186,126 @@ export const UIManager: React.FC<UIManagerProps> = ({
       {/* CENTER-BOTTOM INTERACTION PROMPT, COMBAT LOG & MOBILE/DESKTOP CONTROLS */}
       <div className="relative z-10 flex flex-col items-center gap-1.5 w-full">
         {nearbyInteractable && activeModal === 'none' && (
-          <button
-            onClick={() => game.triggerInteract()}
-            className="pointer-events-auto flex items-center gap-2 sm:gap-3 medieval-panel-ornate text-stone-100 px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-xl shadow-2xl hover:border-amber-400 transition-colors cursor-pointer max-w-[92vw]"
-          >
-            <ItemIcon
-              item={{
-                id: nearbyInteractable.lootItems?.[0]?.itemId ?? nearbyInteractable.id,
-                name: nearbyInteractable.name,
-                category:
-                  nearbyInteractable.type === 'herb'
-                    ? 'resource'
-                    : nearbyInteractable.type === 'chest' || nearbyInteractable.type === 'loot'
-                    ? 'quest'
-                    : 'quest',
-              }}
-              size={24}
-            />
-            <span className="px-2 py-0.5 bg-amber-600 text-stone-950 font-mono-tabular font-bold text-[11px] rounded shrink-0">
-              {isMobile ? (lang === 'en' ? 'TAP' : 'ТАП') : 'E'}
-            </span>
-            <div className="text-left min-w-0">
-              <div className="text-xs font-semibold text-amber-300 truncate">
-                {nearbyInteractable.name}
+          <div className="pointer-events-auto flex items-center gap-2 max-w-[95vw]">
+            <button
+              onClick={() => game.triggerInteract()}
+              className="flex items-center gap-2 sm:gap-3 medieval-panel-ornate text-stone-100 px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-xl shadow-2xl hover:border-amber-400 transition-colors cursor-pointer min-w-0"
+            >
+              <ItemIcon
+                item={{
+                  id: nearbyInteractable.lootItems?.[0]?.itemId ?? nearbyInteractable.id,
+                  name: nearbyInteractable.name,
+                  category:
+                    nearbyInteractable.type === 'herb'
+                      ? 'resource'
+                      : nearbyInteractable.type === 'chest' || nearbyInteractable.type === 'loot'
+                      ? 'quest'
+                      : 'quest',
+                }}
+                size={24}
+              />
+              <span className="px-2 py-0.5 bg-amber-600 text-stone-950 font-mono-tabular font-bold text-[11px] rounded shrink-0">
+                {isMobile ? (lang === 'en' ? 'TAP' : 'ТАП') : 'E'}
+              </span>
+              <div className="text-left min-w-0">
+                <div className="text-xs font-semibold text-amber-300 truncate">
+                  {nearbyInteractable.name}
+                </div>
+                <div className="text-[11px] sm:text-xs text-stone-300 truncate">
+                  {nearbyInteractable.promptText}
+                </div>
               </div>
-              <div className="text-[11px] sm:text-xs text-stone-300 truncate">
-                {nearbyInteractable.promptText}
-              </div>
-            </div>
-          </button>
+            </button>
+
+            {nearbyInteractable.type === 'npc' && (
+              <button
+                data-testid="hud-voice-mic-button"
+                onClick={() => game.toggleVoiceMic()}
+                title="Говорить с персонажем по микрофону (ИИ, Русский)"
+                className={`px-3 py-2 sm:py-2.5 rounded-xl border flex items-center gap-1.5 text-xs font-semibold shadow-2xl transition-all cursor-pointer shrink-0 ${
+                  voiceAI?.state === 'listening'
+                    ? 'bg-red-900/95 border-red-400 text-red-100 animate-pulse'
+                    : voiceAI?.state === 'processing'
+                    ? 'bg-amber-900/95 border-amber-400 text-amber-100'
+                    : voiceAI?.state === 'speaking'
+                    ? 'bg-emerald-900/95 border-emerald-400 text-emerald-100'
+                    : 'medieval-panel-ornate text-amber-300 hover:border-amber-400'
+                }`}
+              >
+                {voiceAI?.state === 'listening' ? (
+                  <MicOff className="w-4 h-4 text-red-300" />
+                ) : (
+                  <Mic className="w-4 h-4 text-amber-300" />
+                )}
+                <span className="hidden sm:inline">
+                  {voiceAI?.state === 'listening'
+                    ? 'Слушаю...'
+                    : voiceAI?.state === 'processing'
+                    ? 'Думает...'
+                    : voiceAI?.state === 'speaking'
+                    ? 'Отвечает...'
+                    : 'Микрофон ИИ'}
+                </span>
+              </button>
+            )}
+          </div>
         )}
+
+        {/* Live HUD Voice AI Reply Banner when outside dialogue modal (automatically disappears when idle) */}
+        {activeModal === 'none' &&
+          voiceAI &&
+          voiceAI.state !== 'idle' && (
+            <div
+              data-testid="hud-voice-ai-banner"
+              className="pointer-events-auto w-full max-w-xl medieval-panel-ornate rounded-xl px-3.5 py-2.5 border border-amber-600/60 shadow-2xl flex flex-col gap-1"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-display font-bold text-amber-300">
+                  <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {voiceAI.activeNpcName || 'Собеседник'}{' '}
+                    {voiceAI.state === 'listening'
+                      ? '• Слушает микрофон (RU)...'
+                      : voiceAI.state === 'processing'
+                      ? '• Обдумывает ответ...'
+                      : voiceAI.state === 'speaking'
+                      ? '• Отвечает голосом...'
+                      : '• Голосовой ИИ'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => game.toggleVoiceMic()}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer ${
+                      voiceAI.state === 'listening'
+                        ? 'bg-red-700 text-white'
+                        : 'bg-amber-700/80 text-amber-100 hover:bg-amber-600'
+                    }`}
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>{voiceAI.state === 'listening' ? 'Стоп' : 'Сказать'}</span>
+                  </button>
+                  <button
+                    onClick={() => game.voiceAI.clearConversationOverlay()}
+                    title="Скрыть голосовой чат"
+                    className="px-2 py-0.5 rounded bg-stone-800 border border-stone-600 text-stone-300 hover:text-white text-[11px] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              {voiceAI.lastUserTranscript && (
+                <div className="text-[11px] text-stone-400 italic truncate">
+                  Вы: «{voiceAI.lastUserTranscript}»
+                </div>
+              )}
+              {voiceAI.lastNpcReply && (
+                <div className="text-xs text-stone-100 leading-snug">
+                  «{voiceAI.lastNpcReply}»
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Subtle Combat Log (Toggled via settings.hudVisibility.combatLog) */}
         {hudVis.combatLog && combatLog.length > 0 && activeModal === 'none' && (
@@ -1603,35 +1699,215 @@ export const UIManager: React.FC<UIManagerProps> = ({
       {/* MODAL WINDOWS */}
       {/* ===================================================================== */}
 
-      {/* 1. DIALOGUE MODAL (Enhanced Legibility + Typewriter Effect) */}
+      {/* 1. DIALOGUE MODAL (Enhanced Legibility + Typewriter Effect + Full Cognitive AI & Romance) */}
       {activeModal === 'dialogue' && localizedDialogue && (
-        <div className="fixed inset-0 bg-black/55 backdrop-blur-[3px] pointer-events-auto flex items-end justify-center p-4 md:p-8 z-30 transition-all duration-300">
-          <div className="w-full max-w-3xl medieval-dialogue-box rounded-2xl p-6 md:p-7">
-            <div className="flex items-center justify-between border-b border-amber-700/40 pb-3.5 mb-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-stone-900 border-2 border-amber-500/70 flex items-center justify-center text-amber-300 font-display font-bold text-base shadow-inner">
-                  {localizedDialogue.speaker.charAt(0)}
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-[3px] pointer-events-auto flex items-end justify-center p-3 md:p-6 z-30 transition-all duration-300">
+          <div className="w-full max-w-3xl medieval-dialogue-box rounded-2xl p-4 md:p-6 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-amber-700/40 pb-3 mb-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-11 h-11 rounded-xl border-2 flex items-center justify-center font-display font-bold text-base shadow-inner ${
+                    voiceAI?.activeNpcPersona?.id === 'npc_streamer_foozzee' ||
+                    Boolean(voiceAI?.activeNpcPersona?.twitchUrl)
+                      ? 'bg-purple-950/90 border-cyan-400 text-cyan-300 shadow-[0_0_14px_rgba(145,70,255,0.65)]'
+                      : 'bg-stone-900 border-amber-500/70 text-amber-300'
+                  }`}
+                >
+                  {voiceAI?.activeNpcPersona?.id === 'npc_streamer_foozzee' ||
+                  Boolean(voiceAI?.activeNpcPersona?.twitchUrl)
+                    ? '🎥'
+                    : localizedDialogue.speaker.charAt(0)}
                 </div>
                 <div>
-                  <h2 className="text-lg md:text-xl font-display font-bold text-amber-300 tracking-wide">
-                    {localizedDialogue.speaker}
-                  </h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-lg md:text-xl font-display font-bold text-amber-300 tracking-wide">
+                      {localizedDialogue.speaker}
+                    </h2>
+                    {voiceAI?.activeNpcVoiceLabel && (
+                      <span
+                        data-testid="dialogue-voice-gender-badge"
+                        data-voice-gender={voiceAI.activeNpcGender}
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                          voiceAI.activeNpcGender === 'female'
+                            ? 'bg-pink-950/70 border-pink-500/50 text-pink-200'
+                            : 'bg-sky-950/70 border-sky-500/50 text-sky-200'
+                        }`}
+                      >
+                        {voiceAI.activeNpcVoiceLabel}
+                      </span>
+                    )}
+                    {voiceAI?.activeNpcRelationship && (
+                      <span
+                        data-testid="dialogue-relationship-stage-badge"
+                        data-relationship-stage={voiceAI.activeNpcRelationship.stage}
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                          voiceAI.activeNpcRelationship.stage === 'soulmate' ||
+                          voiceAI.activeNpcRelationship.stage === 'lover' ||
+                          voiceAI.activeNpcRelationship.stage === 'crush'
+                            ? 'bg-rose-950/85 border-rose-400/70 text-rose-200'
+                            : voiceAI.activeNpcRelationship.stage === 'friend' ||
+                              voiceAI.activeNpcRelationship.stage === 'close_friend'
+                            ? 'bg-emerald-950/85 border-emerald-400/70 text-emerald-200'
+                            : voiceAI.activeNpcRelationship.stage === 'enemy' ||
+                              voiceAI.activeNpcRelationship.stage === 'rival'
+                            ? 'bg-red-950/85 border-red-400/70 text-red-200'
+                            : 'bg-stone-900/85 border-amber-600/40 text-amber-200'
+                        }`}
+                      >
+                        {voiceAI.activeNpcRelationship.statusTitleRu}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs md:text-sm text-stone-300/90">
                     {localizedDialogue.role}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 {isDialogueTyping && (
                   <span className="text-[11px] text-amber-300/80 animate-pulse hidden sm:inline">
                     {t(lang, 'dialogue.skipTypewriter')}
                   </span>
                 )}
-                <div className="text-[11px] uppercase tracking-wider font-mono text-amber-300/90 border border-amber-700/50 px-3 py-1 rounded-full bg-stone-950/80">
-                  {t(lang, 'dialogue.badge')}
-                </div>
+                <button
+                  data-testid="dialogue-voice-replay-button"
+                  onClick={() => {
+                    if (voiceAI?.state === 'speaking') {
+                      game.stopVoiceSpeaking();
+                    } else {
+                      void game.voiceAI.speakNpcDialogueLine(
+                        hud.activeDialogueNode?.speaker || localizedDialogue.speaker,
+                        hud.activeDialogueNode?.role || localizedDialogue.role,
+                        hud.activeDialogueNode?.text || localizedDialogue.text
+                      );
+                    }
+                  }}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    voiceAI?.state === 'speaking'
+                      ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200 animate-pulse'
+                      : 'bg-stone-950/80 border-amber-700/50 text-amber-300 hover:border-amber-400'
+                  }`}
+                  title="Озвучить реплику персонажа голосом"
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>
+                    {voiceAI?.state === 'speaking' ? 'Говорит голосом...' : 'Озвучить'}
+                  </span>
+                </button>
+                <button
+                  data-testid="dialogue-close-button"
+                  onClick={() => game.closeDialogue()}
+                  className="text-[11px] font-mono text-stone-300 hover:text-amber-200 border border-stone-700 hover:border-amber-500/70 px-2.5 py-1 rounded-full bg-stone-950/85 cursor-pointer"
+                  title="Завершить диалог [Esc]"
+                >
+                  ✕ [Esc]
+                </button>
               </div>
             </div>
+
+            {/* STREAMER FOOZZEE SPECIAL TWITCH & PORTAL BANNER */}
+            {(voiceAI?.activeNpcPersona?.id === 'npc_streamer_foozzee' ||
+              Boolean(voiceAI?.activeNpcPersona?.twitchUrl) ||
+              localizedDialogue.speaker.toLowerCase().includes('foozzee')) && (
+              <div
+                data-testid="foozzee-twitch-banner"
+                className="mb-3 rounded-xl border border-purple-500/60 bg-gradient-to-r from-purple-950/80 via-slate-950/90 to-cyan-950/75 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-[0_0_20px_rgba(145,70,255,0.25)]"
+              >
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-purple-200 flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                    <span>ПРЯМОЙ ЭФИР ИЗ БУДУЩЕГО · Стример FooZzee (Андрей)</span>
+                  </span>
+                  <span className="text-[11px] text-cyan-200/90">
+                    Тёплые ламповые стримы (ETS 2, ATS, Выживание, RPG), живое общение с чатом и раздачи игр!
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <a
+                    data-testid="foozzee-twitch-link"
+                    href="https://www.twitch.tv/foozzee"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-[#9146ff] hover:bg-[#7c2ff2] text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                  >
+                    <span>🎥 Twitch: twitch.tv/foozzee</span>
+                  </a>
+                  <a
+                    data-testid="foozzee-portal-link"
+                    href="https://foozzee.ru"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 rounded-lg bg-cyan-950/90 border border-cyan-400/60 hover:border-cyan-300 text-cyan-200 font-semibold text-xs transition-all cursor-pointer"
+                  >
+                    <span>🌐 foozzee.ru</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* UNIQUE NPC BIOGRAPHY, PERSONALITY & RELATIONSHIP METERS */}
+            {voiceAI?.activeNpcPersona && voiceAI?.activeNpcRelationship && (
+              <div
+                data-testid="dialogue-npc-persona-card"
+                className="mb-3 rounded-xl bg-stone-950/80 border border-amber-800/40 p-3 flex flex-col gap-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="text-stone-300">
+                    <span className="text-amber-400 font-semibold">Характер:</span>{' '}
+                    {voiceAI.activeNpcPersona.archetype} (
+                    {voiceAI.activeNpcPersona.personalityTraits.join(', ')})
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5" title="Уровень дружбы и доверия">
+                      <span className="text-[11px] text-emerald-300 font-semibold">
+                        🤝 Дружба: {voiceAI.activeNpcRelationship.affinity}
+                      </span>
+                      <div className="w-16 h-2 rounded-full bg-stone-800 overflow-hidden border border-stone-700">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            voiceAI.activeNpcRelationship.affinity < 0
+                              ? 'bg-red-500'
+                              : 'bg-emerald-400'
+                          }`}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.max(5, (voiceAI.activeNpcRelationship.affinity + 100) / 2)
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5" title="Уровень симпатии и влюблённости">
+                      <span className="text-[11px] text-rose-300 font-semibold">
+                        ❤️ Любовь: {voiceAI.activeNpcRelationship.romance}%
+                      </span>
+                      <div className="w-16 h-2 rounded-full bg-stone-800 overflow-hidden border border-stone-700">
+                        <div
+                          className="h-full bg-gradient-to-r from-pink-500 to-rose-400 transition-all duration-300"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, voiceAI.activeNpcRelationship.romance))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-[11px] text-stone-300/90 leading-snug">
+                  <span className="text-amber-400/90 font-semibold">История:</span>{' '}
+                  {voiceAI.activeNpcPersona.biography}
+                </div>
+                {voiceAI.lastNpcThought && (
+                  <div
+                    data-testid="dialogue-npc-thought"
+                    className="text-[11px] italic text-sky-200/95 bg-sky-950/45 border border-sky-500/35 rounded-lg px-2.5 py-1.5"
+                  >
+                    💭 <span className="font-semibold text-sky-300">Мысли персонажа:</span> «
+                    {voiceAI.lastNpcThought}»
+                  </div>
+                )}
+              </div>
+            )}
 
             <div
               onClick={() => {
@@ -1640,7 +1916,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   setIsDialogueTyping(false);
                 }
               }}
-              className="cursor-pointer text-stone-100 text-base md:text-lg leading-relaxed mb-6 bg-stone-950/75 p-5 rounded-xl border border-amber-800/45 shadow-inner min-h-[5.5rem] flex items-center"
+              className="cursor-pointer text-stone-100 text-sm md:text-base leading-relaxed mb-3.5 bg-stone-950/75 p-4 rounded-xl border border-amber-800/45 shadow-inner min-h-[4.5rem] flex items-center"
             >
               <p className="font-normal tracking-normal">
                 «{typedDialogueText || localizedDialogue.text}»
@@ -1650,14 +1926,14 @@ export const UIManager: React.FC<UIManagerProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               {localizedDialogue.options.map((opt, idx) => (
                 <button
                   key={opt.id}
                   onClick={() => game.selectDialogueOption(opt)}
-                  className="w-full text-left px-4 py-3.5 rounded-xl medieval-button text-sm md:text-base text-stone-100 transition-all duration-150 flex items-center gap-3.5 group cursor-pointer"
+                  className="w-full text-left px-3.5 py-2.5 rounded-xl medieval-button text-xs md:text-sm text-stone-100 transition-all duration-150 flex items-center gap-3 group cursor-pointer"
                 >
-                  <span className="w-6 h-6 rounded-md bg-amber-950/90 border border-amber-500/70 text-amber-300 font-mono-tabular font-bold text-xs flex items-center justify-center group-hover:bg-amber-500 group-hover:text-stone-950 transition-colors shrink-0">
+                  <span className="w-5 h-5 rounded-md bg-amber-950/90 border border-amber-500/70 text-amber-300 font-mono-tabular font-bold text-xs flex items-center justify-center group-hover:bg-amber-500 group-hover:text-stone-950 transition-colors shrink-0">
                     {idx + 1}
                   </span>
                   <span className="group-hover:text-amber-200 transition-colors font-medium">
@@ -1665,6 +1941,179 @@ export const UIManager: React.FC<UIManagerProps> = ({
                   </span>
                 </button>
               ))}
+            </div>
+
+            {/* RUSSIAN MICROPHONE AI VOICE CONVERSATION & SOCIAL/ROMANCE SYSTEM */}
+            <div
+              data-testid="dialogue-voice-ai-panel"
+              className="mt-4 pt-3.5 border-t border-amber-700/40 flex flex-col gap-2.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Mic className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs md:text-sm font-display font-bold text-amber-300 tracking-wide">
+                    Живой ИИ-диалог, Дружба и Романтика (Голос + Текст RU)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {voiceAI?.state === 'speaking' && (
+                    <button
+                      onClick={() => game.stopVoiceSpeaking()}
+                      className="px-2.5 py-1 rounded-lg bg-stone-800 border border-stone-600 text-stone-300 text-xs hover:text-white cursor-pointer"
+                    >
+                      Остановить озвучку
+                    </button>
+                  )}
+                  <button
+                    data-testid="voice-ai-mic-button"
+                    onClick={() => game.toggleVoiceMic()}
+                    disabled={voiceAI?.state === 'processing'}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs md:text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+                      voiceAI?.state === 'listening'
+                        ? 'bg-red-700/95 border-2 border-red-300 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]'
+                        : voiceAI?.state === 'processing'
+                        ? 'bg-amber-900/70 border border-amber-500/50 text-amber-200 opacity-75 cursor-wait'
+                        : 'medieval-button-primary text-stone-950 font-bold'
+                    }`}
+                  >
+                    {voiceAI?.state === 'listening' ? (
+                      <>
+                        <MicOff className="w-4 h-4" />
+                        <span>Слушаю... (нажмите для отправки)</span>
+                      </>
+                    ) : voiceAI?.state === 'processing' ? (
+                      <>
+                        <Sparkles className="w-4 h-4 animate-spin" />
+                        <span>Персонаж обдумывает ответ...</span>
+                      </>
+                    ) : voiceAI?.state === 'speaking' ? (
+                      <>
+                        <Volume2 className="w-4 h-4 animate-bounce" />
+                        <span>Персонаж говорит вслух...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-4 h-4" />
+                        <span>Говорить в микрофон (RU)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Social, Friendship, Quarrel & Romance Action Buttons */}
+              <div
+                data-testid="dialogue-social-actions"
+                className="flex flex-wrap items-center gap-1.5"
+              >
+                <button
+                  data-testid="social-btn-befriend"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('befriend')}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-950/75 hover:bg-emerald-900/90 border border-emerald-500/50 text-emerald-200 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🤝 Подружиться
+                </button>
+                <button
+                  data-testid="social-btn-flirt"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('flirt')}
+                  className="px-2.5 py-1 rounded-lg bg-pink-950/75 hover:bg-pink-900/90 border border-pink-500/50 text-pink-200 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  💕 Флирт / Романтика
+                </button>
+                <button
+                  data-testid="social-btn-confess-love"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('confess_love')}
+                  className="px-2.5 py-1 rounded-lg bg-rose-950/85 hover:bg-rose-900/95 border border-rose-400/70 text-rose-100 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  ❤️ Влюбить / Признаться в любви
+                </button>
+                <button
+                  data-testid="social-btn-gift"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('gift')}
+                  className="px-2.5 py-1 rounded-lg bg-amber-950/75 hover:bg-amber-900/90 border border-amber-500/50 text-amber-200 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🎁 Подарить подарок
+                </button>
+                <button
+                  data-testid="social-btn-quarrel"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('quarrel')}
+                  className="px-2.5 py-1 rounded-lg bg-red-950/75 hover:bg-red-900/90 border border-red-500/50 text-red-200 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  ⚡ Поругаться
+                </button>
+                <button
+                  data-testid="social-btn-apologize"
+                  disabled={voiceAI?.state === 'processing'}
+                  onClick={() => void game.sendSocialActionToNpc('apologize')}
+                  className="px-2.5 py-1 rounded-lg bg-sky-950/75 hover:bg-sky-900/90 border border-sky-500/50 text-sky-200 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🕊️ Помириться
+                </button>
+              </div>
+
+              {/* Free-form Russian question input (works alongside microphone) */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const trimmed = voiceTextInput.trim();
+                  if (!trimmed || voiceAI?.state === 'processing') return;
+                  setVoiceTextInput('');
+                  void game.sendVoiceTextToNpc(trimmed);
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  data-testid="voice-ai-text-input"
+                  type="text"
+                  value={voiceTextInput}
+                  onChange={(e) => setVoiceTextInput(e.target.value)}
+                  placeholder={`Напишите или скажите ${localizedDialogue.speaker} что угодно (о жизни, дружбе, любви, стримах)...`}
+                  className="flex-1 bg-stone-950/90 border border-amber-700/50 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs md:text-sm text-stone-100 placeholder-stone-500 outline-none"
+                />
+                <button
+                  data-testid="voice-ai-send-button"
+                  type="submit"
+                  disabled={!voiceTextInput.trim() || voiceAI?.state === 'processing'}
+                  className="px-3.5 py-2 rounded-xl medieval-button text-amber-300 hover:text-amber-100 disabled:opacity-40 flex items-center gap-1.5 text-xs md:text-sm font-semibold cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Ответить</span>
+                </button>
+              </form>
+
+              {voiceAI?.errorMessage && (
+                <div className="text-xs text-amber-300/90 bg-amber-950/50 border border-amber-700/40 rounded-lg px-3 py-1.5">
+                  {voiceAI.errorMessage}
+                </div>
+              )}
+
+              {(voiceAI?.lastUserTranscript || voiceAI?.lastNpcReply) && (
+                <div
+                  data-testid="voice-ai-npc-reply"
+                  className="bg-stone-950/85 border border-amber-600/40 rounded-xl p-3 flex flex-col gap-1"
+                >
+                  {voiceAI.lastUserTranscript && (
+                    <div className="text-xs text-stone-400">
+                      <span className="text-amber-400/90 font-semibold">Вы сказали:</span> «
+                      {voiceAI.lastUserTranscript}»
+                    </div>
+                  )}
+                  {voiceAI.lastNpcReply && (
+                    <div className="text-xs md:text-sm text-amber-100 leading-relaxed">
+                      <span className="text-amber-400 font-display font-bold">
+                        {voiceAI.activeNpcName || localizedDialogue.speaker}:
+                      </span>{' '}
+                      «{voiceAI.lastNpcReply}»
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2456,6 +2905,24 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     sub: 'Зодчий Астрарион, Наковальня Света и Архонт Солярис',
                     x: 0,
                     z: -565,
+                  },
+                  {
+                    name: 'Акт IV (Биом I · WoW): Изумрудный Сон Вечнолесья',
+                    sub: 'Деревня Приют Сильверглейд, Хранительница Изераэль и Архидруид Ксавий-Вальд',
+                    x: -34,
+                    z: -743,
+                  },
+                  {
+                    name: 'Акт IV (Биом II · Aion): Небесный Предел Элизиума',
+                    sub: 'Деревня Застава Серафимов, Легат Серафина и Падший Серафим Азраэль',
+                    x: 34,
+                    z: -880,
+                  },
+                  {
+                    name: 'Акт IV (Биом III · Horizon): Котёл Древних Машин «ГЕФЕСТ»',
+                    sub: 'Деревня Железный Очаг Искателей, Алойя-Вальд и Первородный Громозев',
+                    x: -34,
+                    z: -1015,
                   },
                 ].map((loc) => (
                   <button
@@ -3260,144 +3727,135 @@ export const UIManager: React.FC<UIManagerProps> = ({
             </div>
 
             {settingsTab === 'general' ? (
-              <div className="space-y-3.5 bg-stone-950/75 p-4 rounded-xl border border-amber-900/35 text-xs overflow-y-auto pr-1">
-                {/* Language Switcher (Default: Russian) */}
-                <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
-                  <span className="text-stone-200 font-medium">{t(lang, 'pause.language')}</span>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => game.updateSettings({ language: 'ru' })}
-                      className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
-                        lang === 'ru'
-                          ? 'bg-amber-600 text-stone-950'
-                          : 'bg-stone-900 text-stone-300 border border-stone-700'
-                      }`}
-                    >
-                      Русский
-                    </button>
-                    <button
-                      onClick={() => game.updateSettings({ language: 'en' })}
-                      className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
-                        lang === 'en'
-                          ? 'bg-amber-600 text-stone-950'
-                          : 'bg-stone-900 text-stone-300 border border-stone-700'
-                      }`}
-                    >
-                      English
-                    </button>
-                  </div>
-                </div>
-
-                {/* Control Mode & Detected Platform Switcher */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
-                  <div>
-                    <div className="text-stone-200 font-medium">{t(lang, 'pause.controlMode')}</div>
-                    <div className="text-[10px] text-amber-400/90 mt-0.5">
-                      {activePlatform === 'mobile'
-                        ? lang === 'en'
-                          ? 'Active: Phone (Touch Controls)'
-                          : 'Активно: Телефон (Сенсорное управление)'
-                        : lang === 'en'
-                        ? 'Active: PC (Keyboard & Mouse)'
-                        : 'Активно: ПК (Клавиатура и Мышь)'}
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    {(
-                      [
-                        { id: 'auto', label: t(lang, 'pause.controlMode.auto') },
-                        { id: 'pc', label: t(lang, 'pause.controlMode.pc') },
-                        { id: 'mobile', label: t(lang, 'pause.controlMode.mobile') },
-                      ] as { id: ControlModeSetting; label: string }[]
-                    ).map((m) => (
+              <div className="space-y-2.5 bg-stone-950/75 p-3.5 rounded-xl border border-amber-900/35 text-xs overflow-y-auto pr-1">
+                {/* Language & Platform Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pb-2 border-b border-stone-800">
+                  <div className="flex items-center justify-between gap-2 bg-stone-900/60 px-2.5 py-1.5 rounded-lg border border-stone-800/80">
+                    <span className="text-stone-200 font-medium">{t(lang, 'pause.language')}</span>
+                    <div className="flex gap-1">
                       <button
-                        key={m.id}
-                        onClick={() => game.updateSettings({ controlMode: m.id })}
-                        className={`px-2.5 py-1.5 rounded-lg font-semibold cursor-pointer ${
-                          controlMode === m.id
+                        onClick={() => game.updateSettings({ language: 'ru' })}
+                        className={`px-2.5 py-1 rounded font-semibold cursor-pointer ${
+                          lang === 'ru'
                             ? 'bg-amber-600 text-stone-950'
                             : 'bg-stone-900 text-stone-300 border border-stone-700'
                         }`}
                       >
-                        {m.label}
+                        RU
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Sound & Music Toggle Buttons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pb-2.5 border-b border-stone-800">
-                  <div className="flex items-center justify-between bg-stone-900/80 p-2.5 rounded-lg border border-stone-800">
-                    <span className="text-stone-300">{t(lang, 'pause.sfxEnabled')}</span>
-                    <button
-                      onClick={() =>
-                        game.updateSettings({
-                          audioEnabled: !settings.audioEnabled,
-                        })
-                      }
-                      className="px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {settings.audioEnabled ? (
-                        <>
-                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> {t(lang, 'pause.on')}
-                        </>
-                      ) : (
-                        <>
-                          <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between bg-stone-900/80 p-2.5 rounded-lg border border-stone-800">
-                    <span className="text-stone-300">{t(lang, 'pause.musicEnabled')}</span>
-                    <button
-                      onClick={() =>
-                        game.updateSettings({
-                          musicEnabled: !(settings.musicEnabled ?? true),
-                        })
-                      }
-                      className="px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {(settings.musicEnabled ?? true) ? (
-                        <>
-                          <Music className="w-3.5 h-3.5 text-amber-400" /> {t(lang, 'pause.on')}
-                        </>
-                      ) : (
-                        <>
-                          <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Volume Sliders: Master, SFX, Music */}
-                <div className="space-y-2.5 pb-2.5 border-b border-stone-800">
-                  <div>
-                    <div className="flex justify-between text-stone-300 mb-1">
-                      <span>{t(lang, 'pause.masterVolume')}</span>
-                      <span className="font-mono-tabular text-amber-300">
-                        {Math.round((settings.masterVolume ?? 0.6) * 100)}%
-                      </span>
+                      <button
+                        onClick={() => game.updateSettings({ language: 'en' })}
+                        className={`px-2.5 py-1 rounded font-semibold cursor-pointer ${
+                          lang === 'en'
+                            ? 'bg-amber-600 text-stone-950'
+                            : 'bg-stone-900 text-stone-300 border border-stone-700'
+                        }`}
+                      >
+                        EN
+                      </button>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round((settings.masterVolume ?? 0.6) * 100)}
-                      onChange={(e) =>
-                        game.updateSettings({
-                          masterVolume: Number(e.target.value) / 100,
-                        })
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1.5 bg-stone-900/60 px-2.5 py-1.5 rounded-lg border border-stone-800/80">
+                    <div className="min-w-0">
+                      <div className="text-stone-200 font-medium truncate">{t(lang, 'pause.controlMode')}</div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {(
+                        [
+                          { id: 'auto', label: t(lang, 'pause.controlMode.auto') },
+                          { id: 'pc', label: 'ПК / PC' },
+                          { id: 'mobile', label: 'Touch' },
+                        ] as { id: ControlModeSetting; label: string }[]
+                      ).map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => game.updateSettings({ controlMode: m.id })}
+                          className={`px-2 py-1 rounded font-semibold cursor-pointer ${
+                            controlMode === m.id
+                              ? 'bg-amber-600 text-stone-950'
+                              : 'bg-stone-900 text-stone-300 border border-stone-700'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sound & Music Toggle + Sliders */}
+                <div className="space-y-2 pb-2 border-b border-stone-800">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
+                    <div className="flex items-center justify-between bg-stone-900/80 px-2.5 py-1.5 rounded-lg border border-stone-800">
+                      <span className="text-stone-300">{t(lang, 'pause.sfxEnabled')}</span>
+                      <button
+                        onClick={() =>
+                          game.updateSettings({
+                            audioEnabled: !settings.audioEnabled,
+                          })
+                        }
+                        className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1 cursor-pointer"
+                      >
+                        {settings.audioEnabled ? (
+                          <>
+                            <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> {t(lang, 'pause.on')}
+                          </>
+                        ) : (
+                          <>
+                            <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-stone-900/80 px-2.5 py-1.5 rounded-lg border border-stone-800">
+                      <span className="text-stone-300">{t(lang, 'pause.musicEnabled')}</span>
+                      <button
+                        onClick={() =>
+                          game.updateSettings({
+                            musicEnabled: !(settings.musicEnabled ?? true),
+                          })
+                        }
+                        className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-100 flex items-center gap-1 cursor-pointer"
+                      >
+                        {(settings.musicEnabled ?? true) ? (
+                          <>
+                            <Music className="w-3.5 h-3.5 text-amber-400" /> {t(lang, 'pause.on')}
+                          </>
+                        ) : (
+                          <>
+                            <VolumeX className="w-3.5 h-3.5 text-red-400" /> {t(lang, 'pause.off')}
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-stone-300 mb-0.5">
+                        <span>{t(lang, 'pause.masterVolume')}</span>
+                        <span className="font-mono-tabular text-amber-300">
+                          {Math.round((settings.masterVolume ?? 0.6) * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round((settings.masterVolume ?? 0.6) * 100)}
+                        onChange={(e) =>
+                          game.updateSettings({
+                            masterVolume: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-amber-500 cursor-pointer"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <div className="flex justify-between text-stone-300 mb-1">
+                      <div className="flex justify-between text-stone-300 mb-0.5">
                         <span>{t(lang, 'pause.sfxVolume')}</span>
                         <span className="font-mono-tabular text-amber-300">
                           {Math.round((settings.sfxVolume ?? 0.85) * 100)}%
@@ -3418,7 +3876,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-stone-300 mb-1">
+                      <div className="flex justify-between text-stone-300 mb-0.5">
                         <span>{t(lang, 'pause.musicVolume')}</span>
                         <span className="font-mono-tabular text-amber-300">
                           {Math.round((settings.musicVolume ?? 0.65) * 100)}%
@@ -3441,7 +3899,7 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 </div>
 
                 {/* Day/Night Cycle Preset Selector */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-800">
                   <span className="text-stone-300">
                     {lang === 'en' ? 'Time of Day & Lighting' : 'Время суток и освещение'} ({formatTime(timeOfDay)})
                   </span>
@@ -3464,49 +3922,181 @@ export const UIManager: React.FC<UIManagerProps> = ({
                 </div>
 
                 {/* Graphics & Weather */}
-                <div className="flex items-center justify-between">
-                  <span className="text-stone-300">{t(lang, 'pause.graphics')}</span>
-                  <div className="flex gap-1">
-                    {(['low', 'medium', 'high'] as const).map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => game.updateSettings({ quality: q })}
-                        className={`px-2.5 py-1 rounded cursor-pointer ${
-                          settings.quality === q
-                            ? 'bg-amber-600 text-stone-950 font-semibold'
-                            : 'bg-stone-800 text-stone-300'
-                        }`}
-                      >
-                        {q === 'low'
-                          ? t(lang, 'pause.quality.low')
-                          : q === 'medium'
-                          ? t(lang, 'pause.quality.medium')
-                          : t(lang, 'pause.quality.high')}
-                      </button>
-                    ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pb-2 border-b border-stone-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-stone-300">{t(lang, 'pause.graphics')}</span>
+                    <div className="flex gap-1">
+                      {(['low', 'medium', 'high'] as const).map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => game.updateSettings({ quality: q })}
+                          className={`px-2 py-1 rounded cursor-pointer ${
+                            settings.quality === q
+                              ? 'bg-amber-600 text-stone-950 font-semibold'
+                              : 'bg-stone-800 text-stone-300'
+                          }`}
+                        >
+                          {q === 'low'
+                            ? t(lang, 'pause.quality.low')
+                            : q === 'medium'
+                            ? t(lang, 'pause.quality.medium')
+                            : t(lang, 'pause.quality.high')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-stone-300">{t(lang, 'pause.weather')}</span>
+                    <div className="flex gap-1">
+                      {(['clear', 'fog', 'rain'] as const).map((w) => (
+                        <button
+                          key={w}
+                          onClick={() => game.setWeather(w)}
+                          className={`px-2 py-1 rounded cursor-pointer ${
+                            weather === w
+                              ? 'bg-amber-600 text-stone-950 font-semibold'
+                              : 'bg-stone-800 text-stone-300'
+                          }`}
+                        >
+                          {w === 'clear'
+                            ? t(lang, 'hud.weather.clear')
+                            : w === 'fog'
+                            ? t(lang, 'hud.weather.fog')
+                            : t(lang, 'hud.weather.rain')}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-stone-300">{t(lang, 'pause.weather')}</span>
-                  <div className="flex gap-1">
-                    {(['clear', 'fog', 'rain'] as const).map((w) => (
-                      <button
-                        key={w}
-                        onClick={() => game.setWeather(w)}
-                        className={`px-2.5 py-1 rounded cursor-pointer ${
-                          weather === w
-                            ? 'bg-amber-600 text-stone-950 font-semibold'
-                            : 'bg-stone-800 text-stone-300'
-                        }`}
+                {/* Dynamic Fog Intensity Control (Reacts to Time of Day & Exploration Events) */}
+                <div
+                  data-testid="fog-intensity-control"
+                  className="space-y-1.5 bg-stone-900/75 p-2.5 rounded-lg border border-amber-800/40"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-stone-100 font-semibold">
+                        {t(lang, 'pause.fogIntensity')}
+                      </div>
+                      <div className="text-[10px] text-stone-400">
+                        {t(lang, 'pause.fogIntensity.hint')}
+                      </div>
+                    </div>
+                    <span
+                      data-testid="fog-intensity-value"
+                      className="font-mono-tabular text-amber-300 font-bold text-sm"
+                    >
+                      {Math.round((settings.fogIntensity ?? 1.0) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    data-testid="fog-intensity-slider"
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={10}
+                    value={Math.round((settings.fogIntensity ?? 1.0) * 100)}
+                    onChange={(e) =>
+                      game.updateSettings({
+                        fogIntensity: Number(e.target.value) / 100,
+                      })
+                    }
+                    className="w-full accent-amber-500 cursor-pointer"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex gap-1">
+                      {[0, 0.5, 1.0, 1.5, 2.0].map((mult) => (
+                        <button
+                          key={mult}
+                          data-testid={`fog-preset-${Math.round(mult * 100)}`}
+                          onClick={() => game.updateSettings({ fogIntensity: mult })}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono-tabular cursor-pointer ${
+                            Math.abs((settings.fogIntensity ?? 1.0) - mult) < 0.05
+                              ? 'bg-amber-600 text-stone-950 font-bold'
+                              : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                          }`}
+                        >
+                          {Math.round(mult * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                    {hud.fogState && (
+                      <span
+                        data-testid="fog-live-telemetry"
+                        className="text-[10px] font-mono-tabular text-amber-200/90"
                       >
-                        {w === 'clear'
-                          ? t(lang, 'hud.weather.clear')
-                          : w === 'fog'
-                          ? t(lang, 'hud.weather.fog')
-                          : t(lang, 'hud.weather.rain')}
-                      </button>
-                    ))}
+                        {lang === 'en'
+                          ? `Time ×${hud.fogState.timeMultiplier.toFixed(2)} · Explore ×${hud.fogState.explorationMultiplier.toFixed(2)} (${hud.fogState.activeEventLabelEn})`
+                          : `Время ×${hud.fogState.timeMultiplier.toFixed(2)} · Мир ×${hud.fogState.explorationMultiplier.toFixed(2)} (${hud.fogState.activeEventLabelRu})`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Post-Processing Bloom Intensity Control */}
+                <div
+                  data-testid="bloom-intensity-control"
+                  className="space-y-1.5 bg-stone-900/75 p-2.5 rounded-lg border border-amber-800/40"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-stone-100 font-semibold">
+                        {t(lang, 'pause.bloomIntensity')}
+                      </div>
+                      <div className="text-[10px] text-stone-400">
+                        {t(lang, 'pause.bloomIntensity.hint')}
+                      </div>
+                    </div>
+                    <span
+                      data-testid="bloom-intensity-value"
+                      className="font-mono-tabular text-amber-300 font-bold text-sm"
+                    >
+                      {Math.round((settings.bloomIntensity ?? 1.0) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    data-testid="bloom-intensity-slider"
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={10}
+                    value={Math.round((settings.bloomIntensity ?? 1.0) * 100)}
+                    onChange={(e) =>
+                      game.updateSettings({
+                        bloomIntensity: Number(e.target.value) / 100,
+                      })
+                    }
+                    className="w-full accent-amber-500 cursor-pointer"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex gap-1">
+                      {[0, 0.5, 1.0, 1.5, 2.0].map((mult) => (
+                        <button
+                          key={mult}
+                          data-testid={`bloom-preset-${Math.round(mult * 100)}`}
+                          onClick={() => game.updateSettings({ bloomIntensity: mult })}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono-tabular cursor-pointer ${
+                            Math.abs((settings.bloomIntensity ?? 1.0) - mult) < 0.05
+                              ? 'bg-amber-600 text-stone-950 font-bold'
+                              : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                          }`}
+                        >
+                          {Math.round(mult * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                    {hud.bloomState && (
+                      <span
+                        data-testid="bloom-live-telemetry"
+                        className="text-[10px] font-mono-tabular text-amber-200/90"
+                      >
+                        {hud.bloomState.enabled
+                          ? `Strength ${hud.bloomState.strength.toFixed(2)} · Radius ${hud.bloomState.radius.toFixed(2)} · Threshold ${hud.bloomState.threshold.toFixed(2)}`
+                          : 'Bloom OFF (0%)'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

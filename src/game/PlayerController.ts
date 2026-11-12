@@ -460,9 +460,9 @@ export class PlayerController {
       nextX = Math.max(89, Math.min(121, nextX));
       nextZ = Math.max(89, Math.min(121, nextZ));
     } else if (nextZ < -95) {
-      // Massively expanded Northern March & Starfall Valley bounds (z down to -705, x in [-165, 165])
+      // Massively expanded Northern March, Starfall Valley & Act IV Biomes bounds (z down to -1120, x in [-165, 165])
       nextX = Math.max(-165, Math.min(165, nextX));
-      nextZ = Math.max(-705, nextZ);
+      nextZ = Math.max(-1120, nextZ);
     } else {
       // Expanded Central Valley, Sunken Port Solheim (West) & Sun Monastery (East)
       nextX = Math.max(-205, Math.min(205, nextX));

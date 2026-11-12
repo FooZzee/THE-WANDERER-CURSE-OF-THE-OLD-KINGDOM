@@ -13,6 +13,9 @@ export class AudioManager {
   private droneOsc: OscillatorNode | null = null;
   private melodyTimer: number | null = null;
   private isAmbientRunning = false;
+  private ambientRequested = false;
+  private userGestureUnlocked = false;
+  private unlockBound: (() => void) | null = null;
 
   public audioEnabled = true;
   public musicEnabled = true;
@@ -20,8 +23,26 @@ export class AudioManager {
   public sfxVolume = 0.85;
   public musicVolume = 0.65;
 
+  constructor() {
+    if (typeof window !== 'undefined') {
+      this.unlockBound = () => {
+        if (this.userGestureUnlocked) return;
+        this.userGestureUnlocked = true;
+        if (this.ambientRequested && this.audioEnabled && this.musicEnabled && !this.isAmbientRunning) {
+          this.startAmbient();
+        } else if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+      };
+      window.addEventListener('pointerdown', this.unlockBound, { passive: true });
+      window.addEventListener('keydown', this.unlockBound, { passive: true });
+      window.addEventListener('touchstart', this.unlockBound, { passive: true });
+    }
+  }
+
   private initContext(): boolean {
     if (typeof window === 'undefined') return false;
+    if (!this.userGestureUnlocked) return false;
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -89,12 +110,13 @@ export class AudioManager {
   }
 
   public startAmbient(): void {
+    this.ambientRequested = true;
     if (this.isAmbientRunning) return;
     if (!this.initContext() || !this.ctx || !this.musicGain) return;
     this.isAmbientRunning = true;
 
     try {
-      // Soft atmospheric wind noise
+      // 1. Dark atmospheric wind & cavern resonance noise
       const bufferSize = this.ctx.sampleRate * 2;
       const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const output = noiseBuffer.getChannelData(0);
@@ -108,52 +130,86 @@ export class AudioManager {
 
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.value = 260;
+      filter.frequency.value = 210;
       this.windFilter = filter;
 
       const windGain = this.ctx.createGain();
-      windGain.gain.value = 0.04;
+      windGain.gain.value = 0.035;
 
       whiteNoise.connect(filter);
       filter.connect(windGain);
       windGain.connect(this.musicGain);
       whiteNoise.start();
 
-      // Deep dark-fantasy cello/hurdy-gurdy drone (D2 = 73.42Hz + A2 = 110Hz fifth)
+      // 2. Deep dark-fantasy bowed cello + sub-contrabass drone (D1 = 36.71Hz, D2 = 73.42Hz, A2 = 110Hz)
+      const subDrone = this.ctx.createOscillator();
       const drone = this.ctx.createOscillator();
       const droneFifth = this.ctx.createOscillator();
       const droneFilter = this.ctx.createBiquadFilter();
       const droneGain = this.ctx.createGain();
 
+      subDrone.type = 'sine';
+      subDrone.frequency.value = 36.71; // D1 deep sub-bass
       drone.type = 'sawtooth';
-      drone.frequency.value = 73.42; // D2
+      drone.frequency.value = 73.42; // D2 dark cello root
       droneFifth.type = 'triangle';
-      droneFifth.frequency.value = 110.0; // A2
+      droneFifth.frequency.value = 110.0; // A2 hollow fifth
+
+      // Slow LFO modulating the cello lowpass filter for organic bow breathing
+      const lfo = this.ctx.createOscillator();
+      const lfoGain = this.ctx.createGain();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.14;
+      lfoGain.gain.value = 55;
+      lfo.connect(lfoGain);
 
       droneFilter.type = 'lowpass';
-      droneFilter.frequency.value = 180;
-      droneGain.gain.value = 0.045;
+      droneFilter.frequency.value = 165;
+      lfoGain.connect(droneFilter.frequency);
+      droneGain.gain.value = 0.068;
 
+      subDrone.connect(droneFilter);
       drone.connect(droneFilter);
       droneFifth.connect(droneFilter);
       droneFilter.connect(droneGain);
       droneGain.connect(this.musicGain);
 
+      subDrone.start();
       drone.start();
       droneFifth.start();
+      lfo.start();
       this.droneOsc = drone;
 
-      // Medieval Dorian/Aeolian lute arpeggio motif every 2.8s
-      const scaleNotes = [146.83, 164.81, 174.61, 196.0, 220.0, 233.08, 261.63, 293.66];
+      // 3. Dark Gothic Phrygian / Harmonic Minor score sequencer (D3, Eb3, F3, G3, A3, Bb3, C#4, D4)
+      const scaleNotes = [146.83, 155.56, 174.61, 196.0, 220.0, 233.08, 277.18, 293.66];
+      const darkChords: [number, number, number][] = [
+        [73.42, 110.0, 174.61], // D minor (D2, A2, F3)
+        [58.27, 116.54, 174.61], // Bb major / Phrygian VI (Bb1, Bb2, F3)
+        [98.0, 146.83, 233.08], // G minor (G2, D3, Bb3)
+        [55.0, 110.0, 164.81], // A dark dominant / Phrygian V (A1, A2, E3)
+      ];
       let stepIndex = 0;
-      const pattern = [0, 2, 4, 3, 6, 4, 2, 1];
+      const pattern = [0, 2, 4, 5, 4, 1, 3, 0, 7, 6, 4, 2, 1, 0];
+
+      // Trigger initial dark chord & ritual drum immediately so the player hears the dark score right away
+      this.playDarkChoirPad(darkChords[0]);
+      this.playDarkRitualDrum();
+
       this.melodyTimer = window.setInterval(() => {
         if (!this.audioEnabled || !this.musicEnabled || !this.ctx || !this.musicGain) return;
         if (this.ctx.state !== 'running') return;
         const noteFreq = scaleNotes[pattern[stepIndex % pattern.length]];
-        stepIndex++;
         this.playLutePluck(noteFreq);
-      }, 2600);
+
+        if (stepIndex % 2 === 0) {
+          this.playDarkRitualDrum();
+        }
+        if (stepIndex % 3 === 0) {
+          const chord = darkChords[Math.floor(stepIndex / 3) % darkChords.length];
+          this.playDarkChoirPad(chord);
+        }
+        stepIndex++;
+      }, 2200);
     } catch {
       // Ignore Web Audio restriction errors before user gesture
     }
@@ -162,7 +218,7 @@ export class AudioManager {
   public setWeatherAtmosphere(weather: string): void {
     if (!this.ctx || !this.windFilter) return;
     const now = this.ctx.currentTime;
-    const targetFreq = weather === 'rain' ? 520 : weather === 'fog' ? 190 : 260;
+    const targetFreq = weather === 'rain' ? 460 : weather === 'fog' ? 165 : 210;
     this.windFilter.frequency.setTargetAtTime(targetFreq, now, 0.5);
   }
 
@@ -178,35 +234,94 @@ export class AudioManager {
       silver_pass: 82.41, // E2
       ash_bastion: 65.41, // C2
       eclipse_crater: 55.0, // A1
+      emerald_weald: 65.41, // C2
+      aether_sanctum: 73.42, // D2
+      titan_cauldron: 51.91, // Ab1
     };
     const freq = rootByBiome[biomeId] ?? 73.42;
     this.droneOsc.frequency.setTargetAtTime(freq, now, 0.8);
+  }
+
+  private playDarkChoirPad(chordFreqs: [number, number, number]): void {
+    if (!this.ctx || !this.musicGain) return;
+    const now = this.ctx.currentTime;
+    for (const freq of chordFreqs) {
+      const osc = this.ctx.createOscillator();
+      const filter = this.ctx.createBiquadFilter();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, now);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(240, now);
+      filter.frequency.linearRampToValueAtTime(380, now + 2.4);
+      filter.frequency.exponentialRampToValueAtTime(160, now + 5.8);
+
+      gain.gain.setValueAtTime(0.0005, now);
+      gain.gain.linearRampToValueAtTime(0.026, now + 1.8);
+      gain.gain.exponentialRampToValueAtTime(0.0006, now + 6.0);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGain);
+
+      osc.start(now);
+      osc.stop(now + 6.1);
+    }
+  }
+
+  private playDarkRitualDrum(): void {
+    if (!this.ctx || !this.musicGain) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(76, now);
+    osc.frequency.exponentialRampToValueAtTime(31, now + 0.55);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.085, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.75);
+
+    osc.connect(gain);
+    gain.connect(this.musicGain);
+
+    osc.start(now);
+    osc.stop(now + 0.8);
   }
 
   private playLutePluck(freq: number): void {
     if (!this.ctx || !this.musicGain) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
+    const subOsc = this.ctx.createOscillator();
     const filter = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
 
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, now);
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(freq * 0.5, now);
 
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(950, now);
-    filter.frequency.exponentialRampToValueAtTime(240, now + 1.8);
+    filter.frequency.setValueAtTime(780, now);
+    filter.frequency.exponentialRampToValueAtTime(190, now + 2.4);
 
     gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.055, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0008, now + 2.1);
+    gain.gain.linearRampToValueAtTime(0.062, now + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0008, now + 2.6);
 
     osc.connect(filter);
+    subOsc.connect(filter);
     filter.connect(gain);
     gain.connect(this.musicGain);
 
     osc.start(now);
-    osc.stop(now + 2.15);
+    subOsc.start(now);
+    osc.stop(now + 2.65);
+    subOsc.stop(now + 2.65);
   }
 
   public playSwordSwing(heavy = false): void {
@@ -461,6 +576,12 @@ export class AudioManager {
   }
 
   public dispose(): void {
+    if (typeof window !== 'undefined' && this.unlockBound) {
+      window.removeEventListener('pointerdown', this.unlockBound);
+      window.removeEventListener('keydown', this.unlockBound);
+      window.removeEventListener('touchstart', this.unlockBound);
+      this.unlockBound = null;
+    }
     if (this.melodyTimer !== null) {
       clearInterval(this.melodyTimer);
       this.melodyTimer = null;
